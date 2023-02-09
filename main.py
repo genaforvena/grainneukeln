@@ -1,16 +1,25 @@
-# This is a sample Python script.
+import sampler
+import sampler.sample as s
 
-# Press ⌃R to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
+# /Users/ilyamozerov/Downloads/daddy.mp3
+# /Users/ilyamozerov/Downloads/devil.mp3
+# /Users/ilyamozerov/Downloads/krug.mp3
+def main():
+    filenames = [
+        "/Users/ilyamozerov/Downloads/duewest.mp3",
+        "/Users/ilyamozerov/Downloads/devil.mp3",
+        "/Users/ilyamozerov/Downloads/krug.mp3"
+    ]
 
+    for filename in filenames:
+        s.sampler.load_track(filename)
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press ⌘F8 to toggle the breakpoint.
+    effects = ["loudness", "speedup"]
+    merged_track = s.sampler.merge_tracks()
+    transformed_track = s.sampler.transform_track(merged_track, effects)
+    s.sampler.play(transformed_track)
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    main()
