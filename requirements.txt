@@ -1,0 +1,5 @@
+pydub
+numpy
+matplotlib
+scipy
+pandas
