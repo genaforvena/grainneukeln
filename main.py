@@ -7,8 +7,6 @@ import cutter.sample_cut_tool as sct
 def cut_samples():
     tool = sct.MP3SampleCutTool("/Users/ilyamozerov/Downloads/devil.mp3")
     tool.select_cut_points()
-    tool.cut_track()
-
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
