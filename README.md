@@ -6,7 +6,7 @@ But the goal is to make it upload freshly cut samples directly to Digitakt (or o
 # Usage
 The user can run the script by typing the following command in the terminal:
 ```
-python3 mp3_cut.py
+python3 mp3_cut.mp3
 ```
 
 # Commands
