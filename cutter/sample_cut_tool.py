@@ -1,6 +1,7 @@
 import pydub.playback
 import pydub.effects
 import pydub.utils
+import mixer.mixer
 from pydub import AudioSegment
 import matplotlib.pyplot as plt
 import os
@@ -88,7 +89,20 @@ class MP3SampleCutTool:
                 print("load (filepath) - change the track to cut")
                 print("cut - cut the track")
                 print("cut -a - cut the track and adjust the cut position")
+                print("mix <seconds>- mix the track from cut samples with the given length")
                 print("q - quit")
+
+            elif command.startswith("mix"):
+                # Check if the length is given
+                if len(command.split(" ")) > 1:
+                    # Ensure that the length is a number
+                    if command.split(" ")[1].isdigit():
+                        length = int(command.split(" ")[1]) * 1000
+                # If length is not given, set it to 60 seconds
+                else:
+                    length = 60000
+
+                mixer.mixer.generate_mix("samples/", length)
 
             elif command.startswith("load"):
                 # Get file path
@@ -142,7 +156,7 @@ class MP3SampleCutTool:
         cut_audio = self.audio[start_cut:end_cut]
         original_name = os.path.basename(self.audio_file_path).split(".")[0]
         sample_file_name = original_name + "_" + str(start_cut) + "_" + str(length) + ".mp3"
-        cut_audio.export(sample_file_name, format="mp3")
+        cut_audio.export("samples/" + sample_file_name, format="mp3")
         print("Saved " + sample_file_name)
 
     def _adjust_cut_position(self, current_position, length, threshold=0.05):
