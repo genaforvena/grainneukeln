@@ -42,7 +42,7 @@ class MP3SampleCutTool:
                     current_position = int(command.split(" ")[1]) * 1000
 
             # Set the length of the playback
-            elif command.startswith("l"):
+            elif command.split(" ")[0] == "l":
                 # Ensure that the length is a number
                 if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
                     length = int(command.split(" ")[1]) * 1000
@@ -85,9 +85,24 @@ class MP3SampleCutTool:
                 print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
                 print("plot - plot amplitude of the selected part of the track")
                 print("info - print information about cutting the track")
+                print("load (filepath) - change the track to cut")
                 print("cut - cut the track")
                 print("cut -a - cut the track and adjust the cut position")
                 print("q - quit")
+
+            elif command.startswith("load"):
+                # Get file path
+                audio_file_path = command.split(" ")[1]
+                # Check if the file exists
+                if not os.path.isfile(audio_file_path):
+                    print("File doesn't exist")
+                    continue
+                # Update the audio file path
+                self.audio_file_path = audio_file_path
+                # Load the audio file
+                self.audio = AudioSegment.from_mp3(audio_file_path)
+                self.select_cut_points()
+                print("File loaded from " + audio_file_path)
 
             elif command.startswith("plot"):
                 # Extract the samples for the selected part of the track
@@ -102,6 +117,7 @@ class MP3SampleCutTool:
 
             # Print the information about the audio file
             elif command.startswith("info"):
+                print("File path: " + self.audio_file_path)
                 print("Current position: " + str(current_position / 1000))
                 print("Length: " + str(length))
                 print("Step: " + str(step))

@@ -18,6 +18,7 @@ python3 mp3_cut.mp3
 * `r` to rewind the playback. `rrrrr` to rewind 5 times, etc.
 * `plot` to plot the amplitude of the selected portion
 * `cut` to cut the selected portion
+* `load (filepath)` to load a new file
 * `info` to display the information about the selected portion
 * `help` to display the available commands
 * `q` to quit
