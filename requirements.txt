@@ -1,4 +1,5 @@
 pydub
+pyaudio
 numpy
 matplotlib
 scipy
