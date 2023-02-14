@@ -9,6 +9,5 @@ import controller
 if __name__ == '__main__':
     # Parse command line arguments
     controller = controller.Controller()
-    command = input(">>>")
-    controller.pick_command(command)
+    controller.pick_command()
 

@@ -4,7 +4,7 @@ import mixer.mixer as mixer
 
 class Controller:
 
-    def pick_command(self, command):
+    def pick_command(self, command = "help"):
         while True:
             command = input(">>>")
             if command == "cut":
@@ -26,8 +26,8 @@ class Controller:
         tool.select_cut_points()
 
     def create_sequence(self):
-        file_path = input("Enter the path to the sample: ")
-        sequencer.play_sequence(file_path)
+        seq = sequencer.SequencerController()
+        seq.command()
 
     def mix_samples(self, command):
         # Check if the length is given
