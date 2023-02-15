@@ -1,4 +1,4 @@
-import pydub.playback as playback
+import pygame
 
 class SequencerController:
 
@@ -35,34 +35,46 @@ class SequencerController:
             7: None,
             8: None,
         }
+        pygame.mixer.init()
+
 
     def __gen_playables(self, sample_number, sequence_number):
-        from pydub import AudioSegment
+        if not self.sample_paths[sample_number]:
+            return
 
-        # Load a random audio file
-        audio = AudioSegment.from_file(self.sample_paths[sample_number])
+        # Load the audio file
+        audio = pygame.mixer.Sound(self.sample_paths[sample_number])
 
-        # Set the length of each note in milliseconds
-        note_length = 1000
+        # Set the tempo# Calculate the length of a beat in milliseconds based on the tempo
+        tempo = 20
+        beat_length = 60000 / tempo
 
-        # Set the number of notes in the sequence
-        num_notes = 10
+        beats_per_minute = pygame.time.Clock()
+        beats_per_minute.tick(tempo)
 
-        # Create an empty AudioSegment for the sequence
-        sequence = AudioSegment.silent(duration=num_notes * note_length)
+        # Create a list of beat times
+        beat_times = [pygame.time.get_ticks()]
 
-        # Check if the sequence is empty
-        if self.sequences[sequence_number] == "":
-            self.sequences[sequence_number] = "0" * num_notes
-        # Add notes to the sequence based on the binary sequence
-        for i, bit in enumerate(self.sequences[sequence_number] * (num_notes // 8)):
-            if bit == '1':
-                start = i * note_length
-                end = start + note_length
-                note = audio[start:end].fade_in(10).fade_out(10)
-                sequence = sequence.overlay(note)
+        # Set the number of beats in the sequence
+        num_beats = 8
 
-        self.playables[sample_number] = sequence
+        # Add beat times to the list
+        for i in range(num_beats - 1):
+            beat_times.append(beat_times[-1] + beats_per_minute.get_time())
+
+        # Transform the sequence into a list of true and false values
+        sequence = self.sequences[sequence_number]
+        sequence = [True if beat == "1" else False for beat in sequence]
+
+        if not sequence:
+            return
+
+        # Play the sound at each beat time
+        for beat_time in beat_times:
+            if sequence[beat_time % len(sequence)]:
+                audio.play()
+            pygame.time.wait(100)  # Add a slight delay to avoid overlapping sounds
+
 
     def command(self, command = "help"):
         working = True
@@ -135,7 +147,9 @@ class SequencerController:
         # play the sequences in the order of the samples
         for sample_number in self.sample_paths:
             if self.playables[sample_number] is not None:
-                playback.play(self.playables[sample_number])
+                sound = pygame.mixer.Sound(self.playables[sample_number])
+                sound.play()
+                pygame.time.wait(int(self.playables[sample_number].duration_seconds * 1000))
 
     def stop_sequence(self):
         pass

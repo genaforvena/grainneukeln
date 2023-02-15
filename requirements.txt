@@ -5,3 +5,4 @@ matplotlib
 scipy
 pandas
 mido
+pygame
