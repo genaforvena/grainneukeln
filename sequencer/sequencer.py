@@ -1,10 +1,12 @@
 import pygame
+import itertools
+import os
 
 class SequencerController:
 
     def __init__(self):
         self.tempo = 160
-        self.current_sample = 1
+        self.length_ms = 60000
         self.sample_paths = {
             1: "",
             2: "",
@@ -64,17 +66,17 @@ class SequencerController:
 
         # Transform the sequence into a list of true and false values
         sequence = self.sequences[sequence_number]
-        sequence = [True if beat == "1" else False for beat in sequence]
-
         if not sequence:
             return
 
+        sequence = itertools.cycle(sequence)
+        sequence = [next(sequence) == "1" for _ in range(len(beat_times))]
+
         # Play the sound at each beat time
         for beat_time in beat_times:
-            if sequence[beat_time % len(sequence)]:
+            if sequence[beat_times.index(beat_time)]:
                 audio.play()
             pygame.time.wait(100)  # Add a slight delay to avoid overlapping sounds
-
 
     def command(self, command = "help"):
         working = True
@@ -88,10 +90,14 @@ class SequencerController:
                 self.print_info()
             elif command.startswith("tempo"):
                 self.set_tempo(command)
+            elif command.startswith("load_dir"):
+                self.load_dir(command)
             elif command.startswith("sam"):
                 self.set_sample(command)
             elif command.startswith("seq"):
                 self.set_sequence(command)
+            elif command.startswith("len"):
+                self.set_length(command)
             elif command == "help":
                 self.print_help()
             elif command == "exit":
@@ -100,18 +106,40 @@ class SequencerController:
             else:
                 print("Unknown command")
 
+    def set_length(self, command):
+        if len(command.split(" ")) > 1:
+            self.length_ms = int(command.split(" ")[1]) * 1000
+        else:
+            print("Unknown command")
+
     def print_help(self):
         print("play - play the sequence")
         print("stop - stop the sequence")
         print("info - print the info")
         print("tempo - set the tempo")
-        print("sample - set the sample")
+        print("seq - set the sequence")
+        print("len - set the length of the sequence (in seconds)")
+        print("sam - set the sample")
         print("exit - exit the program")
 
     def print_info(self):
         print("Tempo: " + str(self.tempo))
         print("Sample paths: " + str(self.sample_paths))
         print("Sequence: " + str(self.sequences))
+
+    def load_dir(self, command):
+        if len(command.split(" ")) > 1:
+            directory_path = command.split(" ")[1]
+            index = 1
+            for filename in os.listdir(directory_path):
+                if index > 8:
+                    break
+                if filename.endswith(".mp3") or filename.endswith(".wav"):
+                    self.sample_paths[index] = directory_path + "/" + filename
+                    index += 1
+            self.print_info()
+        else:
+            print("Unknown command")
 
     def set_sample(self, command):
         if len(command.split(" ")) > 1:
