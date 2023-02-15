@@ -41,18 +41,19 @@ class SequencerController:
 
 
     def __gen_playables(self, sample_number, sequence_number):
-        if not self.sample_paths[sample_number]:
-            return
+        # Create a list to store the audio objects
+        audio_list = []
 
-        # Load the audio file
-        audio = pygame.mixer.Sound(self.sample_paths[sample_number])
+        # Load the audio files
+        for index, path in self.sample_paths.items():
+            if path:
+                # Load the audio file
+                audio = pygame.mixer.Sound(path)
+                audio_list.append(audio)
 
-        # Set the tempo# Calculate the length of a beat in milliseconds based on the tempo
-        tempo = 20
-        beat_length = 60000 / tempo
-
+        # Set the tempo
         beats_per_minute = pygame.time.Clock()
-        beats_per_minute.tick(tempo)
+        beats_per_minute.tick(self.tempo)
 
         # Create a list of beat times
         beat_times = [pygame.time.get_ticks()]
@@ -72,11 +73,15 @@ class SequencerController:
         sequence = itertools.cycle(sequence)
         sequence = [next(sequence) == "1" for _ in range(len(beat_times))]
 
-        # Play the sound at each beat time
+        # Play the sounds at each beat time
         for beat_time in beat_times:
-            if sequence[beat_times.index(beat_time)]:
-                audio.play()
-            pygame.time.wait(100)  # Add a slight delay to avoid overlapping sounds
+            for i, audio in enumerate(audio_list):
+                if sequence[beat_times.index(beat_time)]:
+                    # Play the sound with a slight delay based on the index of the audio object
+                    audio.play()
+                    pygame.time.wait(100 * i)
+            # Add a slight delay to avoid overlapping sounds
+            pygame.time.wait(100)
 
     def command(self, command = "help"):
         working = True
