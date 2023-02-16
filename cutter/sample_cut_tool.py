@@ -143,8 +143,8 @@ class MP3SampleCutTool:
         end_cut = start_cut + length
         cut_audio = self.audio[start_cut:end_cut]
         original_name = os.path.basename(self.audio_file_path).split(".")[0]
-        sample_file_name = original_name + "_" + str(start_cut) + "_" + str(length) + ".mp3"
-        cut_audio.export("samples/" + sample_file_name, format="mp3")
+        sample_file_name = original_name + "_" + str(start_cut) + "_" + str(length) + ".wav"
+        cut_audio.export("samples/" + sample_file_name, format="wav")
         print("Saved " + sample_file_name)
 
     def _adjust_cut_position(self, current_position, length, threshold=0.05):
