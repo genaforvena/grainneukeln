@@ -25,14 +25,17 @@ class SampleCutter:
             self.audio = AudioSegment.from_file(audio_file_path, "m4a")
         else:
             raise Exception("File is not wav or mp3")
+        print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
         self.step = self._calculate_step()
         self.length = self.step * 4
         self.show_help()
         self.destination_path = destination_path
+        print("Ready to cut samples")
 
     def _detect_beats(self):
+        print("Detecting beats...")
         import numpy as np
         beat_probabilities = madmom.features.beats.RNNBeatProcessor()(self.audio_file_path)
         beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(beat_probabilities)
