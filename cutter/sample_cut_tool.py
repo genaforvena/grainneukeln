@@ -181,11 +181,18 @@ class SampleCutter:
 
     def _3chan_automix(self, mix):
         start_cut = 0
-        while start_cut + self.length < len(self.audio):
-            start_low = random.choice(self.beats)
-            start_mid = random.choice(self.beats)
-            start_high = random.choice(self.beats)
+        index = 0
+        tries = 0
+        while start_cut + self.length < len(self.audio) and index < len(self.beats):
+            start_low = random.choice(self.beats[index:])
+            start_mid = random.choice(self.beats[index:])
+            start_high = random.choice(self.beats[index:])
+            if tries > 100:
+                return mix
+            if start_low + self.length == len(self.audio) or start_high + self.length == len(self.audio) or start_mid + self.length == len(self.audio):
+                return mix
             if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
+                tries += 1
                 continue
             print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
             print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
@@ -200,6 +207,7 @@ class SampleCutter:
                 ), crossfade=0)
             print("Mix length: " + str(len(mix)))
             start_cut += self.length
+            index += 1
         return mix
 
     def _random_automix(self, mix):
