@@ -87,17 +87,28 @@ class SampleCutter:
             self.current_position = int(command.split(" ")[1])
 
     def set_length(self, command):
-        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-            length = int(command.split(" ")[1])
-            if self.current_position + length > len(self.audio):
-                length = len(self.audio) - self.current_position
-            self.length = length
-            print("Length: " + str(self.length))
+        if "*" in command:
+            self.length = int(command.split("*")[1]) * self.length
+        if "/" in command:
+            self.length = self.length / int(command.split("/")[1])
+
+        if len(command.split(" ")) == 2:
+            arg = command.split(" ")[1]
+            if arg.isdigit():
+                self.length = float(arg)
+        print("Length: " + str(self.length))
 
     def set_step(self, command):
-        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-            self.step = int(command.split(" ")[1])
-            print("Step: " + str(self.step))
+        if "*" in command:
+            self.step = int(command.split("*")[1]) * self.step
+        if "/" in command:
+            self.step = self.step / int(command.split("/")[1])
+
+        if len(command.split(" ")) == 2:
+            arg = command.split(" ")[1]
+            if arg.isdigit():
+                self.step = int(arg)
+        print("Step: " + str(self.step))
 
     def fast_forward(self, command):
         if len(command) == command.count("f"):
