@@ -73,6 +73,8 @@ class SampleCutter:
                 self.show_info()
             elif command.startswith("autocut"):
                 self.autocut(command)
+            elif command.startswith("automix"):
+                self.automix()
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
@@ -134,6 +136,7 @@ class SampleCutter:
         print("cut - cut the track")
         print("cut -a - cut the track and adjust the cut position")
         print("autocut [number of samples] - cut the whole track from the beginning to the end with the given step, number of samples is optional parameter how many samples will be cut")
+        print("automix - cut the whole track from the beginning to the end with the given step and mix it into one track")
         print("q - quit")
 
     def load_file(self, command):
@@ -163,6 +166,22 @@ class SampleCutter:
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.length, adjust_cut_position)
+
+    def automix(self):
+        start_cut = 0
+        mix = AudioSegment.empty()
+        while start_cut + self.length < len(self.audio):
+            start = random.choice(self.beats)
+            if start + self.length > len(self.audio):
+                continue
+            print("Cutting from " + str(start) + " to " + str(start + self.length))
+            print("Part length: " + str(len(self.audio[start:start + self.length])))
+            mix = mix.append(self.audio[start: start + self.length], crossfade=0)
+            print(len(mix))
+            start_cut += self.length
+        mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
+        print("Saved mix.wav to " + self.destination_path)
+
 
     def autocut(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
