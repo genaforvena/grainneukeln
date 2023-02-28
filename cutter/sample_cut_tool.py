@@ -188,11 +188,8 @@ class SampleCutter:
             if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
                 continue
             print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
-            print("Part length: " + str(len(self.audio[start_low:start_low + self.length])))
             print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
-            print("Part length: " + str(len(self.audio[start_mid:start_mid + self.length])))
             print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
-            print("Part length: " + str(len(self.audio[start_high:start_high + self.length])))
             mix = mix.append(
                 pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300).overlay(
                     pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 900)
@@ -201,7 +198,7 @@ class SampleCutter:
                         pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
                     )
                 ), crossfade=0)
-            print(len(mix))
+            print("Mix length: " + str(len(mix)))
             start_cut += self.length
         return mix
 
