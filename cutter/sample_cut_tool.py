@@ -74,7 +74,7 @@ class SampleCutter:
             elif command.startswith("autocut"):
                 self.autocut(command)
             elif command.startswith("automix"):
-                self.automix()
+                self.automix(command)
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
@@ -167,9 +167,43 @@ class SampleCutter:
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.length, adjust_cut_position)
 
-    def automix(self):
-        start_cut = 0
+    def automix(self, command):
         mix = AudioSegment.empty()
+        if len(command.split(" ")) < 2:
+            mix = self._random_automix(mix)
+        elif command.split(" ")[1] == "3chan":
+            mix = self._3chan_automix(mix)
+        mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
+        print("Saved mix.wav to " + self.destination_path)
+
+    def _3chan_automix(self, mix):
+        start_cut = 0
+        while start_cut + self.length < len(self.audio):
+            start_low = random.choice(self.beats)
+            start_mid = random.choice(self.beats)
+            start_high = random.choice(self.beats)
+            if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
+                continue
+            print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
+            print("Part length: " + str(len(self.audio[start_low:start_low + self.length])))
+            print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
+            print("Part length: " + str(len(self.audio[start_mid:start_mid + self.length])))
+            print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
+            print("Part length: " + str(len(self.audio[start_high:start_high + self.length])))
+            mix = mix.append(
+                pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300).overlay(
+                    pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 900)
+                ).overlay(
+                    pydub.effects.low_pass_filter(self.audio[start_mid: start_mid + self.length], 900).overlay(
+                        pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
+                    )
+                ), crossfade=0)
+            print(len(mix))
+            start_cut += self.length
+        return mix
+
+    def _random_automix(self, mix):
+        start_cut = 0
         while start_cut + self.length < len(self.audio):
             start = random.choice(self.beats)
             if start + self.length > len(self.audio):
@@ -179,9 +213,7 @@ class SampleCutter:
             mix = mix.append(self.audio[start: start + self.length], crossfade=0)
             print(len(mix))
             start_cut += self.length
-        mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
-        print("Saved mix.wav to " + self.destination_path)
-
+        return mix
 
     def autocut(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
