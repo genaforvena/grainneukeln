@@ -13,7 +13,7 @@ if __name__ == '__main__':
     if not os.path.isdir(args.destination_path):
         print("Destination path doesn't exist")
         exit()
-    args.desination_path = os.path.abspath(args.destination_path)
+    args.destination_path = os.path.abspath(args.destination_path)
     if args.source_path.startswith("https://www.youtube.com/"):
         print("Downloading audio from youtube")
         import youtube.downloader as downloader

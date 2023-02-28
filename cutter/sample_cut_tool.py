@@ -1,3 +1,5 @@
+import random
+
 import pydub.playback
 import pydub.effects
 import pydub.utils
@@ -70,7 +72,7 @@ class SampleCutter:
             elif command.startswith("info"):
                 self.show_info()
             elif command.startswith("autocut"):
-                self.autocut()
+                self.autocut(command)
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
@@ -120,7 +122,7 @@ class SampleCutter:
         print("load <filepath> - change the track to cut")
         print("cut - cut the track")
         print("cut -a - cut the track and adjust the cut position")
-        print("autocut - cut the whole track from the beginning to the end with the given step")
+        print("autocut [number of samples] - cut the whole track from the beginning to the end with the given step, number of samples is optional parameter how many samples will be cut")
         print("q - quit")
 
     def load_file(self, command):
@@ -151,11 +153,19 @@ class SampleCutter:
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.length, adjust_cut_position)
 
-    def autocut(self):
-        start_cut = 0
-        while start_cut + self.length < len(self.audio):
-            self._cut_track(start_cut, self.length)
-            start_cut += self.step
+    def autocut(self, command):
+        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
+            samples_to_cut = int(command.split(" ")[1])
+            for i in range(samples_to_cut):
+                start = random.choice(self.beats)
+                if start + self.step > len(self.audio):
+                    continue
+                self._cut_track(start, self.length)
+        else:
+            start_cut = 0
+            while start_cut + self.length < len(self.audio):
+                self._cut_track(start_cut, self.length)
+                start_cut += self.step
 
     def _cut_track(self, start_cut, length, adjust_cut_position=False):
         # Cut the track using the selected cut points
