@@ -1,13 +1,11 @@
-import controller
-
-# /Users/ilyamozerov/Downloads/daddy.mp3
-# /Users/ilyamozerov/Downloads/devil.mp3
-# /Users/ilyamozerov/Downloads/krug.mp3
+import cutter.sample_cut_tool as sample_cut_tool
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # Parse command line arguments
-    controller = controller.Controller()
-    controller.pick_command()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filepath", help="Path to mp3 file to cut")
+    args = parser.parse_args()
+    sample_cut_tool.main(args.filepath)
 

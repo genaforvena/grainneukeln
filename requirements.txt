@@ -1,8 +1,2 @@
 pydub
-pyaudio
-numpy
 matplotlib
-scipy
-pandas
-mido
-pygame

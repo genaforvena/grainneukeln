@@ -1,7 +1,6 @@
 import pydub.playback
 import pydub.effects
 import pydub.utils
-import mixer.mixer
 from pydub import AudioSegment
 import matplotlib.pyplot as plt
 import os
@@ -11,129 +10,114 @@ class MP3SampleCutTool:
     def __init__(self, audio_file_path):
         self.audio_file_path = audio_file_path
         self.audio = AudioSegment.from_mp3(audio_file_path)
+        self.current_position = 0
+        self.length = 5000
+        self.step = 1000
+        self.show_help()
 
-    def select_cut_points(self):
-        # Create a variable to keep track of the current playback position
-        current_position = 0
-
-        # Create a variable to keep track of the status of the playback (running or stopped)
+    def run(self):
         picking = True
-        length = 5000 # 5 seconds
-        step = 1000 # 1 second
-
-        # Create a loop to continuously check for user commands
         while picking:
-            # Make sure that the current position in not out of bounds
-            if current_position < 0:
-                current_position = 0
-            if current_position > len(self.audio):
-                current_position = len(self.audio) - length
-            print("Current position: " + str(current_position / 1000))
-            # Get the user command
             command = input(">>>")
-
-            # Start the playback
             if command.startswith("p") and command != "plot":
-                pydub.playback.play(self.audio[current_position:current_position + length])
-
-            # Set the beginning of the playback
+                self.play_audio()
             elif command.startswith("b"):
-                # Ensure that the beginning is a number
-                if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-                    current_position = int(command.split(" ")[1]) * 1000
-
-            # Set the length of the playback
-            elif command.split(" ")[0] == "l":
-                # Ensure that the length is a number
-                if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-                    length = int(command.split(" ")[1]) * 1000
-                    # If the length is longer than 15 seconds, set it to 15 seconds
-                    if length > 15000:
-                        length = 15000
-                    # If the length is shorter than 1 second, set it to 1 second
-                    if length < 1000:
-                        length = 1000
-                    # If the current position + length is longer than the audio, set the length to the end of the audio
-                    if current_position + length > len(self.audio):
-                        length = len(self.audio) - current_position
-                print("Length: " + str(length / 1000))
-
-            # Set the step of the playback
+                self.set_beginning(command)
+            elif command.startswith("l"):
+                self.set_length(command)
             elif command.startswith("s"):
-                # Ensure that the length is a number
-                if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-                    step = int(command.split(" ")[1]) * 1000
-                print("Step: " + str(step / 1000))
-
-            # Forward the playback
+                self.set_step(command)
             elif command.startswith("f"):
-                # If every letter in command is "f", count the number of "f"s
-                if len(command) == command.count("f"):
-                    current_position += step * len(command)
-
-            # Rewind the playback
+                self.fast_forward(command)
             elif command.startswith("r"):
-                # If every letter in command is "r", count the number of "r"s
-                if len(command) == command.count("r"):
-                    current_position -= step * len(command)
-
+                self.rewind(command)
             elif command.startswith("help"):
-                print("p - play selected to cut part of the track")
-                print("b (seconds) - set beginning of the sample")
-                print("l (seconds) - set length of the sample")
-                print("s (seconds) - set step for forward and rewind")
-                print("f - forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)")
-                print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
-                print("plot - plot amplitude of the selected part of the track")
-                print("info - print information about cutting the track")
-                print("load (filepath) - change the track to cut")
-                print("cut - cut the track")
-                print("cut -a - cut the track and adjust the cut position")
-                print("q - quit")
-
+                self.show_help()
             elif command.startswith("load"):
-                # Get file path
-                audio_file_path = command.split(" ")[1]
-                # Check if the file exists
-                if not os.path.isfile(audio_file_path):
-                    print("File doesn't exist")
-                    continue
-                # Update the audio file path
-                self.audio_file_path = audio_file_path
-                # Load the audio file
-                self.audio = AudioSegment.from_mp3(audio_file_path)
-                self.select_cut_points()
-                print("File loaded from " + audio_file_path)
-
+                self.load_file(command)
             elif command.startswith("plot"):
-                # Extract the samples for the selected part of the track
-                selected_samples = self.audio[current_position:current_position+length].get_array_of_samples()
-
-                # Plot the amplitude of each sample as a function of time
-                time = [i / self.audio.frame_rate for i in range(len(selected_samples))]
-                plt.plot(time, selected_samples)
-                plt.xlabel("Time (s)")
-                plt.ylabel("Amplitude")
-                plt.show()
-
-            # Print the information about the audio file
+                self.plot_amplitude()
             elif command.startswith("info"):
-                print("File path: " + self.audio_file_path)
-                print("Current position: " + str(current_position / 1000))
-                print("Length: " + str(length))
-                print("Step: " + str(step))
-
-            # Quit the cut tool
+                self.show_info()
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
-
-            # Cut the track
             elif command.startswith("cut"):
-                if " -a" in command:
-                    self._cut_track(current_position, length, adjust_cut_position=True)
-                else:
-                    self._cut_track(current_position, length, adjust_cut_position=False)
+                self.cut_track(command)
+
+    def play_audio(self):
+        pydub.playback.play(self.audio[self.current_position:self.current_position + self.length])
+
+    def set_beginning(self, command):
+        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
+            self.current_position = int(command.split(" ")[1]) * 1000
+
+    def set_length(self, command):
+        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
+            length = int(command.split(" ")[1]) * 1000
+            if length > 15000:
+                length = 15000
+            if length < 1000:
+                length = 1000
+            if self.current_position + length > len(self.audio):
+                length = len(self.audio) - self.current_position
+            self.length = length
+            print("Length: " + str(self.length / 1000))
+
+    def set_step(self, command):
+        if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
+            self.step = int(command.split(" ")[1]) * 1000
+            print("Step: " + str(self.step / 1000))
+
+    def fast_forward(self, command):
+        if len(command) == command.count("f"):
+            self.current_position += self.step * len(command)
+
+    def rewind(self, command):
+        if len(command) == command.count("r"):
+            self.current_position -= self.step * len(command)
+
+    def show_help(self):
+        print("p - play selected to cut part of the track")
+        print("b <seconds> - set beginning of the sample")
+        print("l <seconds> - set length of the sample")
+        print("s <seconds> - set step for forward and rewind")
+        print("f - forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)")
+        print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
+        print("plot - plot amplitude of the selected part of the track")
+        print("info - print information about cutting the track")
+        print("load <filepath> - change the track to cut")
+        print("cut - cut the track")
+        print("cut -a - cut the track and adjust the cut position")
+        print("q - quit")
+
+    def load_file(self, command):
+        audio_file_path = command.split(" ")[1]
+        if not os.path.isfile(audio_file_path):
+            print("File doesn't exist")
+            return
+        self.audio_file_path = audio_file_path
+        self.audio = AudioSegment.from_mp3(audio_file_path)
+        self.select_cut_points()
+        print("File loaded from " + audio_file_path)
+
+    def plot_amplitude(self):
+        selected_samples = self.audio[self.current_position:self.current_position + self.length].get_array_of_samples()
+        time = [i / self.audio.frame_rate for i in range(len(selected_samples))]
+        plt.plot(time, selected_samples)
+        plt.xlabel("Time (s)")
+        plt.ylabel("Amplitude")
+        plt.show()
+
+    def show_info(self):
+        print("File path: " + self.audio_file_path)
+        print("Current position: " + str(self.current_position / 1000))
+        print("Length: " + str(self.length))
+        print("Step: " + str(self.step))
+
+    def cut_track(self, command):
+        adjust_cut_position = " -a" in command
+        self._cut_track(self.current_position, self.length, adjust_cut_position)
 
     def _cut_track(self, start_cut, length, adjust_cut_position=False):
         # Cut the track using the selected cut points
@@ -182,3 +166,13 @@ class MP3SampleCutTool:
             print("Cut position not adjusted")
             return current_position
 
+
+def main(filepath=None):
+    if not os.path.isfile(filepath):
+        filepath = input("Path to mp3 file to cut\n>>>>")
+        # Check if the file exists
+        if not os.path.isfile(filepath):
+            print("File doesn't exist")
+            return
+    cut_tool = MP3SampleCutTool(filepath)
+    cut_tool.run()
