@@ -13,7 +13,7 @@ pip install requirements.txt
 
 To use the tool, run the `main.py` script and provide the path to the audio file or youtube link you want to cut:
 ```
-python main.py <path_to_audio_file_or_youtube_url>
+python main.py <path_to_audio_file_or_youtube_url> <desired_output_path_directory>
 ```
 
 Once the tool is running, you can use the following commands:

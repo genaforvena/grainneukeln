@@ -8,7 +8,7 @@ import madmom
 
 
 class SampleCutter:
-    def __init__(self, audio_file_path):
+    def __init__(self, audio_file_path, destination_path):
         self.audio_file_path = audio_file_path
         # Check if file exists is wav or mp3 or webm or m4a
         if not os.path.isfile(audio_file_path):
@@ -28,6 +28,7 @@ class SampleCutter:
         self.step = self._calculate_step()
         self.length = self.step * 4
         self.show_help()
+        self.destination_path = destination_path
 
     def _detect_beats(self):
         import numpy as np
@@ -165,8 +166,8 @@ class SampleCutter:
         cut_audio = self.audio[start_cut:end_cut]
         original_name = os.path.basename(self.audio_file_path).split(".")[0]
         sample_file_name = original_name + "_" + str(start_cut) + "_" + str(length) + ".wav"
-        cut_audio.export("samples/" + sample_file_name, format="wav")
-        print("Saved " + sample_file_name)
+        cut_audio.export(os.path.join(self.destination_path, sample_file_name), format="wav")
+        print("Saved " + sample_file_name + " to " + self.destination_path)
 
     def _adjust_cut_position(self, current_position, length, threshold=0.05):
         # Extract the samples for the selected part of the track
@@ -204,12 +205,12 @@ class SampleCutter:
             return current_position
 
 
-def main(filepath=None):
+def main(filepath=None, destination="samples"):
     if not os.path.isfile(filepath):
         filepath = input("Path to mp3 file to cut\n>>>>")
         # Check if the file exists
         if not os.path.isfile(filepath):
             print("File doesn't exist")
             return
-    cut_tool = SampleCutter(filepath)
+    cut_tool = SampleCutter(filepath, destination)
     cut_tool.run()
