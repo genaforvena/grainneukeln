@@ -6,12 +6,24 @@ import matplotlib.pyplot as plt
 import os
 
 
-class MP3SampleCutTool:
+class SampleCutter:
     def __init__(self, audio_file_path):
         self.audio_file_path = audio_file_path
-        self.audio = AudioSegment.from_mp3(audio_file_path)
+        # Check if file exists is wav or mp3 or webm or m4a
+        if not os.path.isfile(audio_file_path):
+            raise Exception("File does not exist")
+        if audio_file_path.endswith(".wav"):
+            self.audio = AudioSegment.from_wav(audio_file_path)
+        elif audio_file_path.endswith(".mp3"):
+            self.audio = AudioSegment.from_mp3(audio_file_path)
+        elif audio_file_path.endswith(".webm"):
+            self.audio = AudioSegment.from_file(audio_file_path, "webm")
+        elif audio_file_path.endswith(".m4a"):
+            self.audio = AudioSegment.from_file(audio_file_path, "m4a")
+        else:
+            raise Exception("File is not wav or mp3")
         self.current_position = 0
-        self.length = 5000
+        self.length = self.audio.duration_seconds * 1000 / 12
         self.step = 1000
         self.show_help()
 
@@ -174,5 +186,5 @@ def main(filepath=None):
         if not os.path.isfile(filepath):
             print("File doesn't exist")
             return
-    cut_tool = MP3SampleCutTool(filepath)
+    cut_tool = SampleCutter(filepath)
     cut_tool.run()
