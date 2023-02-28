@@ -1,30 +1,33 @@
-# Script to cut an MP3  file into samples.
+# Sample Cut Tool
 
-For now the script only works with MP3 files and outputs the samples in the same directory as the original file.
-But the goal is to make it upload freshly cut samples directly to Digitakt (or other devices, but they are not my business).
+This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
 
-# Usage
-The user can run the script by typing the following command in the terminal:
+## Installation
+
+First, install the required libraries by running:
 ```
-python3 main.py <filepath or youtube url>
-```
-
-or 
-
-```
-python3 main.py
+pip install requirements.txt
 ```
 
-# Commands
-* `p` to play the selected portion
-* `b (seconds)` to set the beginning of the selection
-* `l (seconds)` to set the length of the selection
-* `s (seconds)` to set the step for forward and rewind
-* `f` to forward the playback. `fff` to fast forward 3 times, etc.
-* `r` to rewind the playback. `rrrrr` to rewind 5 times, etc.
-* `plot` to plot the amplitude of the selected portion
-* `cut` to cut the selected portion
-* `load (filepath)` to load a new file
-* `info` to display the information about the selected portion
-* `help` to display the available commands
-* `q` to quit
+## Usage
+
+To use the tool, run the `main.py` script and provide the path to the audio file or youtube link you want to cut:
+```
+python main.py <path_to_audio_file_or_youtube_url>
+```
+
+Once the tool is running, you can use the following commands:
+
+- `p` - play selected to cut part of the track
+- `b <ms>` - set beginning of the sample
+- `l <ms>` - set length of the sample
+- `s <ms>` - set step for forward and rewind
+- `f` - fast forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)
+- `r` - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)
+- `plot` - plot amplitude of the selected part of the track
+- `info` - print information about cutting the track
+- `load <filepath>` - change the track to cut
+- `cut` - cut the track
+- `cut -a` - cut the track and adjust the cut position
+- `autocut` - cut the whole track from the beginning to the end with the given step
+- `q` - quit
