@@ -4,6 +4,7 @@ import pydub.utils
 from pydub import AudioSegment
 import matplotlib.pyplot as plt
 import os
+import madmom
 
 
 class SampleCutter:
@@ -23,9 +24,25 @@ class SampleCutter:
         else:
             raise Exception("File is not wav or mp3")
         self.current_position = 0
-        self.length = self.audio.duration_seconds * 1000 / 12
-        self.step = 1000
+        self.beats = self._detect_beats()
+        self.step = self._calculate_step()
+        self.length = self.step * 4
         self.show_help()
+
+    def _detect_beats(self):
+        import numpy as np
+        beat_probabilities = madmom.features.beats.RNNBeatProcessor()(self.audio_file_path)
+        beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(beat_probabilities)
+        beat_positions = np.vectorize(lambda x: int(x * 1000))(beat_positions)
+        return beat_positions
+
+    def _calculate_step(self):
+        # Calculate the step size as the average distance between the beats
+        step = 0
+        for i in range(1, len(self.beats)):
+            step += self.beats[i] - self.beats[i - 1]
+        step /= len(self.beats) - 1
+        return step
 
     def run(self):
         picking = True
@@ -51,6 +68,8 @@ class SampleCutter:
                 self.plot_amplitude()
             elif command.startswith("info"):
                 self.show_info()
+            elif command.startswith("autocut"):
+                self.autocut()
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
@@ -62,24 +81,20 @@ class SampleCutter:
 
     def set_beginning(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-            self.current_position = int(command.split(" ")[1]) * 1000
+            self.current_position = int(command.split(" ")[1])
 
     def set_length(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-            length = int(command.split(" ")[1]) * 1000
-            if length > 15000:
-                length = 15000
-            if length < 1000:
-                length = 1000
+            length = int(command.split(" ")[1])
             if self.current_position + length > len(self.audio):
                 length = len(self.audio) - self.current_position
             self.length = length
-            print("Length: " + str(self.length / 1000))
+            print("Length: " + str(self.length))
 
     def set_step(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
-            self.step = int(command.split(" ")[1]) * 1000
-            print("Step: " + str(self.step / 1000))
+            self.step = int(command.split(" ")[1])
+            print("Step: " + str(self.step))
 
     def fast_forward(self, command):
         if len(command) == command.count("f"):
@@ -91,9 +106,9 @@ class SampleCutter:
 
     def show_help(self):
         print("p - play selected to cut part of the track")
-        print("b <seconds> - set beginning of the sample")
-        print("l <seconds> - set length of the sample")
-        print("s <seconds> - set step for forward and rewind")
+        print("b <ms> - set beginning of the sample")
+        print("l <ms> - set length of the sample")
+        print("s <ms> - set step for forward and rewind")
         print("f - forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)")
         print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
         print("plot - plot amplitude of the selected part of the track")
@@ -101,6 +116,7 @@ class SampleCutter:
         print("load <filepath> - change the track to cut")
         print("cut - cut the track")
         print("cut -a - cut the track and adjust the cut position")
+        print("autocut - cut the whole track from the beginning to the end with the given step")
         print("q - quit")
 
     def load_file(self, command):
@@ -110,7 +126,7 @@ class SampleCutter:
             return
         self.audio_file_path = audio_file_path
         self.audio = AudioSegment.from_mp3(audio_file_path)
-        self.select_cut_points()
+        self.beats = self._detect_beats()
         print("File loaded from " + audio_file_path)
 
     def plot_amplitude(self):
@@ -123,13 +139,19 @@ class SampleCutter:
 
     def show_info(self):
         print("File path: " + self.audio_file_path)
-        print("Current position: " + str(self.current_position / 1000))
+        print("Current position: " + str(self.current_position) + " ms")
         print("Length: " + str(self.length))
         print("Step: " + str(self.step))
 
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.length, adjust_cut_position)
+
+    def autocut(self):
+        start_cut = 0
+        while start_cut + self.length < len(self.audio):
+            self._cut_track(start_cut, self.length)
+            start_cut += self.step
 
     def _cut_track(self, start_cut, length, adjust_cut_position=False):
         # Cut the track using the selected cut points

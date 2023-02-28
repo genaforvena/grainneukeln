@@ -4,3 +4,4 @@ myvenv/
 *.mp3
 samples/
 downloads/
+*.pyc
