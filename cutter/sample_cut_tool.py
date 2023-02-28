@@ -177,6 +177,7 @@ class SampleCutter:
         elif command.split(" ")[1] == "3chan":
             mix = self._3chan_automix(mix)
         mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
+        mix.export(os.path.join(self.destination_path, "mix.mp3"), format="mp3")
         print("Saved mix.wav to " + self.destination_path)
 
     def _3chan_automix(self, mix):
