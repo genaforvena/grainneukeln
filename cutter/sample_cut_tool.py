@@ -98,7 +98,10 @@ class SampleCutter:
 
     def fast_forward(self, command):
         if len(command) == command.count("f"):
-            self.current_position += self.step * len(command)
+            for i in range(len(command)):
+                if self.current_position + self.step > len(self.audio):
+                    break
+                self.current_position += self.step
 
     def rewind(self, command):
         if len(command) == command.count("r"):
