@@ -185,8 +185,8 @@ class SampleCutter:
         index = 0
         tries = 0
         while start_cut + self.length < len(self.audio) and index < len(self.beats):
-            start_low = random.choice(self.beats[index:])
-            start_mid = random.choice(self.beats[index:])
+            start_low = random.choice(self.beats)
+            start_mid = random.choice(self.beats)
             start_high = random.choice(self.beats[index:])
             if tries > 100:
                 return mix
