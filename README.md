@@ -4,9 +4,8 @@ This tool allows you to select and cut parts of an audio file based on beats det
 
 ## Installation
 
-First, install the required libraries by running:
 ```
-pip install requirements.txt
+make install
 ```
 
 ## Usage
