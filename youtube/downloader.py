@@ -12,6 +12,15 @@ def download_video(url, output_path):
     audio_stream = youtube.streams.filter(only_audio=True).first()
 
     audio_file_name = youtube.title + ".m4a"
+    # Escape the characters in the title that are not allowed in file names
+    audio_file_name = audio_file_name.replace("/", "-")
+    audio_file_name = audio_file_name.replace(":", "-")
+    audio_file_name = audio_file_name.replace("?", "-")
+    audio_file_name = audio_file_name.replace("*", "-")
+    audio_file_name = audio_file_name.replace('"', "-")
+    audio_file_name = audio_file_name.replace("<", "-")
+    audio_file_name = audio_file_name.replace(">", "-")
+    audio_file_name = audio_file_name.replace("|", "-")
     # Download the audio
     audio_stream.download(output_path=os.path.join(output_path, "downloads"), filename=audio_file_name)
 
