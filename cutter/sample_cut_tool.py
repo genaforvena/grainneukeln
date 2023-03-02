@@ -4,6 +4,8 @@ import pydub.playback
 import pydub.effects
 import pydub.utils
 from pydub import AudioSegment
+import pyrubberband as pyrb
+import numpy as np
 import matplotlib.pyplot as plt
 import os
 import madmom
@@ -177,7 +179,10 @@ class SampleCutter:
         elif command.split(" ")[1] == "3chan":
             mix = self._3chan_automix(mix)
         elif command.split(" ")[1] == "3chan_window":
-            mix = self._3chan_window_automix(mix)
+            speed = 1.0
+            if len(command.split(" ")) == 3:
+                speed = float(command.split(" ")[2])
+            mix = self._3chan_window_automix(mix, speed)
         mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
         mix.export(os.path.join(self.destination_path, "mix.mp3"), format="mp3")
         print("Saved mix.wav to " + self.destination_path)
@@ -213,7 +218,8 @@ class SampleCutter:
             index += 1
         return mix
 
-    def _3chan_window_automix(self, mix):
+    def _3chan_window_automix(self, mix, speed):
+        print("Speed: " + str(speed))
         start_cut = 0
         index = 0
         window_size = len(self.beats) / 9
@@ -225,7 +231,7 @@ class SampleCutter:
             if start >= len(self.beats):
                 print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
                 if tries > 100:
-                    return mix
+                    break
                 tries += 1
                 continue
 
@@ -241,9 +247,10 @@ class SampleCutter:
             start_high = random.choice(self.beats[start:end])
             if tries > 100000:
                 print("Tries exceeded")
-                return mix
+                break
             if start_low + self.length >= len(self.audio) or start_high + self.length >= len(
                     self.audio) or start_mid + self.length >= len(self.audio):
+                print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
                 tries += 1
                 continue
             print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
@@ -258,7 +265,29 @@ class SampleCutter:
             print("Mix length: " + str(len(mix)))
             start_cut += self.length
             index += 1
+        print("Mix length: " + str(len(mix)) + " Speed: " + str(speed))
+        if speed != 1.0:
+            mix = self._change_audioseg_tempo(mix, speed)
         return mix
+
+    def _change_audioseg_tempo(self, audiosegment, speed):
+        print("Changing playback speed to " + str(speed))
+        print("Audio length: " + str(len(audiosegment)))
+        y = np.array(audiosegment.get_array_of_samples())
+        if audiosegment.channels == 2:
+            y = y.reshape((-1, 2))
+
+        sample_rate = audiosegment.frame_rate
+
+        y_fast = pyrb.time_stretch(y, sample_rate, speed)
+
+        channels = 2 if (y_fast.ndim == 2 and y_fast.shape[1] == 2) else 1
+        y = np.int16(y_fast * 2 ** 15)
+
+        new_seg = pydub.AudioSegment(y.tobytes(), frame_rate=sample_rate, sample_width=2, channels=channels)
+
+        print("New audio length: " + str(len(new_seg)))
+        return new_seg
 
     def _random_automix(self, mix):
         start_cut = 0
