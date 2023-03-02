@@ -176,6 +176,8 @@ class SampleCutter:
             mix = self._random_automix(mix)
         elif command.split(" ")[1] == "3chan":
             mix = self._3chan_automix(mix)
+        elif command.split(" ")[1] == "3chan_window":
+            mix = self._3chan_window_automix(mix)
         mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
         mix.export(os.path.join(self.destination_path, "mix.mp3"), format="mp3")
         print("Saved mix.wav to " + self.destination_path)
@@ -193,6 +195,55 @@ class SampleCutter:
             if start_low + self.length == len(self.audio) or start_high + self.length == len(self.audio) or start_mid + self.length == len(self.audio):
                 return mix
             if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
+                tries += 1
+                continue
+            print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
+            print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
+            print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
+            mix = mix.append(
+                pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300).overlay(
+                    pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 900)
+                ).overlay(
+                    pydub.effects.low_pass_filter(self.audio[start_mid: start_mid + self.length], 900).overlay(
+                        pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
+                    )
+                ), crossfade=0)
+            print("Mix length: " + str(len(mix)))
+            start_cut += self.length
+            index += 1
+        return mix
+
+    def _3chan_window_automix(self, mix):
+        start_cut = 0
+        index = 0
+        window_size = len(self.beats) / 9
+        tries = 0
+        while start_cut < len(self.audio):
+            start = int(index)
+            end = int(index * window_size)
+
+            if start >= len(self.beats):
+                print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
+                if tries > 100:
+                    return mix
+                tries += 1
+                continue
+
+            if end >= len(self.beats):
+                end = len(self.beats) - 1
+
+            if start == end:
+                start = 0
+                end = len(self.beats) - 1
+
+            start_low = random.choice(self.beats[start:end])
+            start_mid = random.choice(self.beats[start:end])
+            start_high = random.choice(self.beats[start:end])
+            if tries > 100000:
+                print("Tries exceeded")
+                return mix
+            if start_low + self.length >= len(self.audio) or start_high + self.length >= len(
+                    self.audio) or start_mid + self.length >= len(self.audio):
                 tries += 1
                 continue
             print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
