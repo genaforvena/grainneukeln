@@ -1,4 +1,5 @@
 import random
+import time
 
 import pydub.playback
 import pydub.effects
@@ -183,8 +184,11 @@ class SampleCutter:
             if len(command.split(" ")) == 3:
                 speed = float(command.split(" ")[2])
             mix = self._3chan_window_automix(mix, speed)
-        mix.export(os.path.join(self.destination_path, "mix.wav"), format="wav")
-        mix.export(os.path.join(self.destination_path, "mix.mp3"), format="mp3")
+
+        # Extract file name from path
+        file_name = self.audio_file_path.split("/")[-1].split(".")[0] + "-vtgmix" + str(time.time())
+        mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
+        mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
         print("Saved mix.wav to " + self.destination_path)
 
     def _3chan_automix(self, mix):
