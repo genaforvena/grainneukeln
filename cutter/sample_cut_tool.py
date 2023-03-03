@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import madmom
-
+from tqdm import tqdm
 
 
 class SampleCutter:
@@ -37,6 +37,7 @@ class SampleCutter:
         self.show_help()
         self.destination_path = destination_path
         self.isWavExportEnabled = False
+        self.isVerboseModeEnabled = False
         try:
             import readline
             # Set the completer function
@@ -84,6 +85,12 @@ class SampleCutter:
             elif command.startswith("set_wav_disabled"):
                 self.isWavExportEnabled = False
                 print("Wav export disabled")
+            elif command.startswith("set_verbose_enabled"):
+                self.isVerboseModeEnabled = True
+                print("Verbose enabled")
+            elif command.startswith("set_verbose_disabled"):
+                self.isVerboseModeEnabled = False
+                print("Verbose disabled")
             elif command.startswith("b"):
                 self.set_beginning(command)
             elif command.startswith("l"):
@@ -170,6 +177,8 @@ class SampleCutter:
         print("am <mode> <playback_speed> - cut the whole track from the beginning to the end with the given step and mix it into one track")
         print("set_wav_enabled - enable wav export")
         print("set_wav_disabled - disable wav export")
+        print("set_verbose_enabled - enable verbose mode")
+        print("set_verbose_disabled - disable verbose mode")
         print("q - quit")
 
     def load_file(self, command):
@@ -196,6 +205,7 @@ class SampleCutter:
         print("Length: " + str(self.length))
         print("Step: " + str(self.step))
         print("Wav export enabled: " + str(self.isWavExportEnabled))
+        print("Verbose mode enabled: " + str(self.isVerboseModeEnabled))
 
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
@@ -225,6 +235,7 @@ class SampleCutter:
         start_cut = 0
         index = 0
         tries = 0
+        pbar = tqdm(total=len(self.beats))
         while start_cut + self.length < len(self.audio) and index < len(self.beats):
             start_low = random.choice(self.beats)
             start_mid = random.choice(self.beats)
@@ -236,9 +247,10 @@ class SampleCutter:
             if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
                 tries += 1
                 continue
-            print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
-            print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
-            print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
+            if self.isVerboseModeEnabled:
+                print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
+                print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
+                print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
             mix = mix.append(
                 pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300).overlay(
                     pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 900)
@@ -247,9 +259,12 @@ class SampleCutter:
                         pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
                     )
                 ), crossfade=0)
-            print("Mix length: " + str(len(mix)))
+            if self.isVerboseModeEnabled:
+                print("Mix length: " + str(len(mix)))
             start_cut += self.length
+            pbar.update(index)
             index += 1
+        pbar.close()
         return mix
 
     def _3chan_window_automix(self, mix, speed):
@@ -258,6 +273,7 @@ class SampleCutter:
         index = 0
         window_size = len(self.beats) / 9
         tries = 0
+        pbar = tqdm(total=len(self.audio))
         while start_cut < len(self.audio):
             start = int(index)
             end = int(index * window_size)
@@ -287,19 +303,23 @@ class SampleCutter:
                 print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
                 tries += 1
                 continue
-            print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
-            print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
-            print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
+            if self.isVerboseModeEnabled:
+                print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
+                print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
+                print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
             highs = pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 300)
             lows_for_mids = pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
             mids = pydub.effects.low_pass_filter(lows_for_mids, 900)
             lows = pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300)
 
             mix = mix.append(highs.overlay(mids).overlay(lows), crossfade=0)
-            print("Mix length: " + str(len(mix)))
+            if self.isVerboseModeEnabled:
+                print("Mix length: " + str(len(mix)))
             start_cut += self.length
+            pbar.update(index)
             index += 1
         print("Mix length: " + str(len(mix)) + " Speed: " + str(speed))
+        pbar.close()
         if speed != 1.0:
             mix = self._change_audioseg_tempo(mix, speed)
         return mix
@@ -329,8 +349,8 @@ class SampleCutter:
             start = random.choice(self.beats)
             if start + self.length > len(self.audio):
                 continue
-            print("Cutting from " + str(start) + " to " + str(start + self.length))
-            print("Part length: " + str(len(self.audio[start:start + self.length])))
+            if self.isVerboseModeEnabled:
+                print("Cutting from " + str(start) + " to " + str(start + self.length))
             mix = mix.append(self.audio[start: start + self.length], crossfade=0)
             print(len(mix))
             start_cut += self.length
