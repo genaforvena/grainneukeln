@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import os
 import madmom
 from tqdm import tqdm
+from datetime import datetime
 
 
 class SampleCutter:
@@ -224,7 +225,11 @@ class SampleCutter:
             mix = self._3chan_window_automix(mix, speed)
 
         # Extract file name from path
-        file_name = self.audio_file_path.split("/")[-1].split(".")[0] + "-vtgmix" + str(time.time())
+        original_file_name = self.audio_file_path.split("/")[-1].split(".")[0]
+        now = datetime.now()
+        timestamp = now.strftime("%Y_%m_%d_%H%M")
+
+        file_name = original_file_name + "___mix_cut" + str(int(self.length)) + f"-vtgsmlpr____{timestamp}"
         if self.isWavExportEnabled:
             mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
             print("Saved " + file_name + ".wav to " + self.destination_path)
@@ -271,19 +276,16 @@ class SampleCutter:
         print("Speed: " + str(speed))
         start_cut = 0
         index = 0
-        window_size = len(self.beats) / 9
+        window_size = len(self.beats) / 6
         tries = 0
-        pbar = tqdm(total=len(self.audio))
+        pbar = tqdm(total=len(self.beats))
         while start_cut < len(self.audio):
             start = int(index)
             end = int(index * window_size)
 
             if start >= len(self.beats):
-                print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
-                if tries > 100:
-                    break
-                tries += 1
-                continue
+                print("Reached the end of track. Cut start: " + str(start) + " End: " + str(len(self.beats)))
+                break
 
             if end >= len(self.beats):
                 end = len(self.beats) - 1
