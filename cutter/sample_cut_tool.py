@@ -79,7 +79,7 @@ class SampleCutter:
                 self.show_info()
             elif command.startswith("autocut"):
                 self.autocut(command)
-            elif command.startswith("automix"):
+            elif command.startswith("automix") or command.startswith("am"):
                 self.automix(command)
             elif command.startswith("q"):
                 picking = False
@@ -143,6 +143,7 @@ class SampleCutter:
         print("cut -a - cut the track and adjust the cut position")
         print("autocut [number of samples] - cut the whole track from the beginning to the end with the given step, number of samples is optional parameter how many samples will be cut")
         print("automix - cut the whole track from the beginning to the end with the given step and mix it into one track")
+        print("am <mode> - cut the whole track from the beginning to the end with the given step and mix it into one track")
         print("q - quit")
 
     def load_file(self, command):
@@ -177,9 +178,9 @@ class SampleCutter:
         mix = AudioSegment.empty()
         if len(command.split(" ")) < 2:
             mix = self._random_automix(mix)
-        elif command.split(" ")[1] == "3chan":
+        elif command.split(" ")[1] == "3":
             mix = self._3chan_automix(mix)
-        elif command.split(" ")[1] == "3chan_window":
+        elif command.split(" ")[1] == "3w":
             speed = 1.0
             if len(command.split(" ")) == 3:
                 speed = float(command.split(" ")[2])
