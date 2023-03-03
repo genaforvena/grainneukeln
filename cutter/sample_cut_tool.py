@@ -10,6 +10,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import madmom
+import readline
+
 
 
 class SampleCutter:
@@ -35,6 +37,10 @@ class SampleCutter:
         self.length = self.step * 4
         self.show_help()
         self.destination_path = destination_path
+        # Set the completer function
+        readline.set_completer(self.__completer)
+        # Enable tab completion
+        readline.parse_and_bind('tab: complete')
         print("Ready to cut samples")
 
     def _detect_beats(self):
@@ -52,6 +58,14 @@ class SampleCutter:
             step += self.beats[i] - self.beats[i - 1]
         step /= len(self.beats) - 1
         return step
+
+    # Define a completer function that returns a list of all previous input
+    def __completer(self, text, state):
+        history = readline.get_current_history_length()
+        if state < history:
+            return readline.get_history_item(state)
+        else:
+            return None
 
     def run(self):
         picking = True
