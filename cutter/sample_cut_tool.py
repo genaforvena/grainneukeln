@@ -37,6 +37,7 @@ class SampleCutter:
         self.length = self.step * 4
         self.show_help()
         self.destination_path = destination_path
+        self.isWavExportEnabled = False
         # Set the completer function
         readline.set_completer(self.__completer)
         # Enable tab completion
@@ -73,6 +74,12 @@ class SampleCutter:
             command = input(">>>")
             if command.startswith("p") and command != "plot":
                 self.play_audio()
+            elif command.startswith("set_wav_enabled"):
+                self.isWavExportEnabled = True
+                print("Wav export enabled")
+            elif command.startswith("set_wav_disabled"):
+                self.isWavExportEnabled = False
+                print("Wav export disabled")
             elif command.startswith("b"):
                 self.set_beginning(command)
             elif command.startswith("l"):
@@ -156,8 +163,9 @@ class SampleCutter:
         print("cut - cut the track")
         print("cut -a - cut the track and adjust the cut position")
         print("autocut [number of samples] - cut the whole track from the beginning to the end with the given step, number of samples is optional parameter how many samples will be cut")
-        print("automix - cut the whole track from the beginning to the end with the given step and mix it into one track")
-        print("am <mode> - cut the whole track from the beginning to the end with the given step and mix it into one track")
+        print("am <mode> <playback_speed> - cut the whole track from the beginning to the end with the given step and mix it into one track")
+        print("set_wav_enabled - enable wav export")
+        print("set_wav_disabled - disable wav export")
         print("q - quit")
 
     def load_file(self, command):
@@ -183,6 +191,7 @@ class SampleCutter:
         print("Current position: " + str(self.current_position) + " ms")
         print("Length: " + str(self.length))
         print("Step: " + str(self.step))
+        print("Wav export enabled: " + str(self.isWavExportEnabled))
 
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
@@ -202,9 +211,11 @@ class SampleCutter:
 
         # Extract file name from path
         file_name = self.audio_file_path.split("/")[-1].split(".")[0] + "-vtgmix" + str(time.time())
-        mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
+        if self.isWavExportEnabled:
+            mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
+            print("Saved " + file_name + ".wav to " + self.destination_path)
         mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
-        print("Saved mix.wav to " + self.destination_path)
+        print("Saved " + file_name + ".mp3 to " + self.destination_path)
 
     def _3chan_automix(self, mix):
         start_cut = 0
