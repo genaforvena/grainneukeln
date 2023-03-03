@@ -10,7 +10,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import madmom
-import readline
 
 
 
@@ -38,10 +37,14 @@ class SampleCutter:
         self.show_help()
         self.destination_path = destination_path
         self.isWavExportEnabled = False
-        # Set the completer function
-        readline.set_completer(self.__completer)
-        # Enable tab completion
-        readline.parse_and_bind('tab: complete')
+        try:
+            import readline
+            # Set the completer function
+            readline.set_completer(self.__completer)
+            # Enable tab completion
+            readline.parse_and_bind('tab: complete')
+        except ImportError:
+            print("Readline not available. You're probably using Windows.")
         print("Ready to cut samples")
 
     def _detect_beats(self):
@@ -62,6 +65,7 @@ class SampleCutter:
 
     # Define a completer function that returns a list of all previous input
     def __completer(self, text, state):
+        import readline
         history = readline.get_current_history_length()
         if state < history:
             return readline.get_history_item(state)
