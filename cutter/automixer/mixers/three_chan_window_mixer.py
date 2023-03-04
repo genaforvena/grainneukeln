@@ -32,9 +32,12 @@ class ThreeChannelWindowAutoMixer:
                 start = 0
                 end = len(self.beats) - 1
 
-            start_low = random.choice(self.beats[start:end])
-            start_mid = random.choice(self.beats[start:end])
-            start_high = random.choice(self.beats[start:end])
+            if end < start:
+                start_low = start_mid = start_high = self.beats[start]
+            else:
+                start_low = random.choice(self.beats[start:end])
+                start_mid = random.choice(self.beats[start:end])
+                start_high = random.choice(self.beats[start:end])
             if tries > 100000:
                 print("Tries exceeded")
                 break

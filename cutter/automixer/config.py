@@ -1,6 +1,6 @@
-from cutter.automixer.mixers.random import RandomAutoMixer
-from cutter.automixer.mixers.three_chan import ThreeChannelAutoMixer
-from cutter.automixer.mixers.three_chan_window import ThreeChannelWindowAutoMixer
+from cutter.automixer.mixers.random_mixer import RandomAutoMixer
+from cutter.automixer.mixers.three_chan_mixer import ThreeChannelAutoMixer
+from cutter.automixer.mixers.three_chan_window_mixer import ThreeChannelWindowAutoMixer
 
 
 class AutoMixerConfig:
