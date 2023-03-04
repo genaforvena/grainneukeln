@@ -1,7 +1,4 @@
 myvenv/
 .idea/
 .DS_Store
-*.mp3
-samples/
-downloads/
 *.pyc
