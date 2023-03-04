@@ -27,6 +27,8 @@ if [[ $PYTHON_VERSION != "(3, 8)" && $PYTHON_VERSION != "(3, 9)" && $PYTHON_VERS
 fi
 
 # Install dependencies
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install portaudio
 pip install cython
 pip install matplotlib
 pip install numpy

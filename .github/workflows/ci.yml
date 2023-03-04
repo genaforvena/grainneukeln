@@ -16,6 +16,7 @@ jobs:
       with:
         python-version: 3.8
     - name: Install dependencies
-      run: make install
+      run:
+        make install
     - name: Run tests
       run: pytest
