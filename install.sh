@@ -36,7 +36,7 @@ brew install swig
 pip install cython
 pip install matplotlib
 pip install numpy
-pip install M2Crypto
+CPPFLAGS=-I/usr/bin/openssl/include pip install M2Crypto
 pip install pydub
 pip install pyliblo
 pip install PyAudio
