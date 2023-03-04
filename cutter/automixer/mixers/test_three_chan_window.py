@@ -1,6 +1,6 @@
 import unittest
 import pydub
-from three_chan_window_mixer import ThreeChannelWindowAutoMixer
+from cutter.automixer.mixers.three_chan_window_mixer import ThreeChannelWindowAutoMixer
 
 
 class TestThreeChannelWindowAutoMixer(unittest.TestCase):

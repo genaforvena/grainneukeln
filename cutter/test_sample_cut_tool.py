@@ -1,5 +1,5 @@
 import unittest
-from sample_cut_tool import SampleCutter
+from cutter.sample_cut_tool import SampleCutter
 
 
 class TestSampleCutter(unittest.TestCase):

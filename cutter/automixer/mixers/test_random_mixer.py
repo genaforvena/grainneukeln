@@ -1,6 +1,6 @@
 import unittest
 import pydub
-from random_mixer import RandomAutoMixer
+from cutter.automixer.mixers.random_mixer import RandomAutoMixer
 
 
 class TestRandomAutoMixer(unittest.TestCase):
