@@ -1,3 +1,5 @@
+[![CI](https://github.com/genaforvena/vtgsmplr/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/genaforvena/vtgsmplr/actions/workflows/ci.yml)
+
 # Sample Cut Tool
 
 This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
