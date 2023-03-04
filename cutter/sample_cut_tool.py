@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 
 import madmom
+import traceback
 import matplotlib.pyplot as plt
 import pydub.effects
 import pydub.playback
@@ -11,7 +12,6 @@ from pydub import AudioSegment
 
 from cutter.automixer.config import AutoMixerConfig
 from cutter.automixer.runner import AutoMixerRunner
-from helper import print_help
 
 
 class SampleCutter:
@@ -34,10 +34,12 @@ class SampleCutter:
             "autocut": self.autocut,
             "am": self.automix,
             "amc": self.config_automix,
+            "aminf": self.automix_loop_flig,
             "q": self.quit,
             "cut": self.cut_track,
         }
         self.destination_path = destination_path
+        self._self_feed = False
         self._load_audio(audio_file_path)
         try:
             import readline
@@ -103,18 +105,27 @@ class SampleCutter:
             return None
 
     def run(self):
-        picking = True
-        while picking:
-            command = input(">>>")
-            first = command.split(" ")[0]
-            # Check if first commmand contains only fs or rs and no other characters
-            if (first.startswith("f") and first.endswith("f")) or (first.startswith("r") and first.endswith("r")):
-                first = first[0]
-            if first in self.commands:
-                self.commands[first](command)
+        try:
+            picking = True
+            while picking:
+                command = input(">>>")
+                first = command.split(" ")[0]
+                # Check if first commmand contains only fs or rs and no other characters
+                if (first.startswith("f") and first.endswith("f")) or (first.startswith("r") and first.endswith("r")):
+                    first = first[0]
+                if first in self.commands:
+                    self.commands[first](command)
+        except Exception:
+            #Print exception and continue
+            print(traceback.format_exc())
+
 
     def play_audio(self, command):
         pydub.playback.play(self.audio[self.current_position:self.current_position + self.sample_length])
+
+    def automix_loop_flig(self, command):
+        self._self_feed = not self._self_feed
+        print("Self feed: " + str(self._self_feed))
 
     def set_beginning(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
@@ -136,17 +147,21 @@ class SampleCutter:
 
     def set_wav_enabled(self, command):
         self.is_wav_export_enabled = True
+        print("Wav export enabled")
 
     def set_verbose_enabled(self, command):
         self.is_verbose_mode_enabled = True
         self.auto_mixer_config.is_verbose_mode_enabled = True
+        print("Verbose mode enabled")
 
     def set_wav_disabled(self, command):
         self.is_wav_export_enabled = False
+        print("Wav export disabled")
 
     def set_verbose_disabled(self, command):
         self.is_verbose_mode_enabled = False
         self.auto_mixer_config.is_verbose_mode_enabled = False
+        print("Verbose mode disabled")
 
     def quit(self, command):
         print("Bye!")
@@ -201,6 +216,7 @@ class SampleCutter:
         print("Step: " + str(self.step))
         print("Wav export enabled: " + str(self.is_wav_export_enabled))
         print("Verbose mode enabled: " + str(self.is_verbose_mode_enabled))
+        print("Self feed enabled: " + str(self._self_feed))
 
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
@@ -257,7 +273,10 @@ class SampleCutter:
         if self.is_wav_export_enabled:
             mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
             print("Saved " + file_name + ".wav to " + self.destination_path)
+        mp3_automix_path = os.path.join(self.destination_path, file_name + ".mp3")
         mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
+        if self._self_feed:
+            self._load_audio(mp3_automix_path)
         print("Saved " + file_name + ".mp3 to " + self.destination_path)
 
     def autocut(self, command):
@@ -331,3 +350,27 @@ def main(filepath=None, destination="samples"):
             return
     cut_tool = SampleCutter(filepath, destination)
     cut_tool.run()
+
+
+def print_help():
+    print("Commands:")
+    print("p - play selected to cut part of the track")
+    print("b <ms> - set beginning of the sample")
+    print("l <ms> - set length of the sample")
+    print("s <ms> - set step for forward and rewind")
+    print("f - forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)")
+    print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
+    print("plot - plot amplitude of the selected part of the track")
+    print("info - print information about cutting the track")
+    print("load <filepath> - change the track to cut")
+    print("cut - cut the track")
+    print("cut -a - cut the track and adjust the cut position")
+    print("am - automix the whole track from the beginning to the end with the current sample length and algorithm")
+    print("amc info - show information about automix configuration")
+    print("amc m <algorithm> s <playback_speed> l </ or *number> - set automix params")
+    print("set_wav_enabled - enable wav export")
+    print("set_wav_disabled - disable wav export")
+    print("set_verbose_enabled - enable verbose mode")
+    print("set_verbose_disabled - disable verbose mode")
+    print("help - print this help message")
+    print("q - quit")
