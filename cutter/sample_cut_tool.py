@@ -10,12 +10,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import madmom
-from tqdm import tqdm
+from cutter.automixer.runner import AutoMixerRunner
+from cutter.automixer.config import AutoMixerConfig
+
 from datetime import datetime
 
 
 class SampleCutter:
     def __init__(self, audio_file_path, destination_path):
+        self.destination_path = destination_path
+        self._load_audio(audio_file_path)
+        try:
+            import readline
+            # Set the completer function
+            readline.set_completer(self.__completer)
+            # Enable tab completion
+            readline.parse_and_bind('tab: complete')
+        except ImportError:
+            print("Readline not available. You're probably using Windows.")
+        print("Ready to cut samples")
+
+    def _load_audio(self, audio_file_path):
         self.audio_file_path = audio_file_path
         # Check if file exists is wav or mp3 or webm or m4a
         if not os.path.isfile(audio_file_path):
@@ -34,20 +49,14 @@ class SampleCutter:
         self.current_position = 0
         self.beats = self._detect_beats()
         self.step = self._calculate_step()
-        self.length = self.step * 4
+        self.sample_length = self.step * 4
         self.show_help()
-        self.destination_path = destination_path
-        self.isWavExportEnabled = False
-        self.isVerboseModeEnabled = False
-        try:
-            import readline
-            # Set the completer function
-            readline.set_completer(self.__completer)
-            # Enable tab completion
-            readline.parse_and_bind('tab: complete')
-        except ImportError:
-            print("Readline not available. You're probably using Windows.")
-        print("Ready to cut samples")
+        self.is_wav_export_enabled = False
+        self.is_verbose_mode_enabled = False
+        self.auto_mixer_config = AutoMixerConfig(audio=self.audio,
+                                                 beats=self.beats,
+                                                 sample_length=self.sample_length,
+                                                 is_verbose_mode_enabled=self.is_verbose_mode_enabled)
 
     def _detect_beats(self):
         print("Detecting beats...")
@@ -81,16 +90,16 @@ class SampleCutter:
             if command.startswith("p") and command != "plot":
                 self.play_audio()
             elif command.startswith("set_wav_enabled"):
-                self.isWavExportEnabled = True
+                self.is_wav_export_enabled = True
                 print("Wav export enabled")
             elif command.startswith("set_wav_disabled"):
-                self.isWavExportEnabled = False
+                self.is_wav_export_enabled = False
                 print("Wav export disabled")
             elif command.startswith("set_verbose_enabled"):
-                self.isVerboseModeEnabled = True
+                self.is_verbose_mode_enabled = True
                 print("Verbose enabled")
             elif command.startswith("set_verbose_disabled"):
-                self.isVerboseModeEnabled = False
+                self.is_verbose_mode_enabled = False
                 print("Verbose disabled")
             elif command.startswith("b"):
                 self.set_beginning(command)
@@ -112,8 +121,10 @@ class SampleCutter:
                 self.show_info()
             elif command.startswith("autocut"):
                 self.autocut(command)
-            elif command.startswith("automix") or command.startswith("am"):
-                self.automix(command)
+            elif command == "am":
+                self.automix()
+            elif command.startswith("am"):
+                self.config_automix(command)
             elif command.startswith("q"):
                 picking = False
                 print("Quitting the cut tool")
@@ -121,7 +132,7 @@ class SampleCutter:
                 self.cut_track(command)
 
     def play_audio(self):
-        pydub.playback.play(self.audio[self.current_position:self.current_position + self.length])
+        pydub.playback.play(self.audio[self.current_position:self.current_position + self.sample_length])
 
     def set_beginning(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
@@ -129,15 +140,17 @@ class SampleCutter:
 
     def set_length(self, command):
         if "*" in command:
-            self.length = int(command.split("*")[1]) * self.length
+            self.sample_length = int(command.split("*")[1]) * self.sample_length
         if "/" in command:
-            self.length = self.length / int(command.split("/")[1])
+            self.sample_length = self.sample_length / int(command.split("/")[1])
 
         if len(command.split(" ")) == 2:
             arg = command.split(" ")[1]
             if arg.isdigit():
-                self.length = float(arg)
-        print("Length: " + str(self.length))
+                self.sample_length = float(arg)
+
+        self.auto_mixer_config.sample_length = self.sample_length
+        print("Sample length: " + str(self.sample_length))
 
     def set_step(self, command):
         if "*" in command:
@@ -174,8 +187,10 @@ class SampleCutter:
         print("load <filepath> - change the track to cut")
         print("cut - cut the track")
         print("cut -a - cut the track and adjust the cut position")
-        print("autocut [number of samples] - cut the whole track from the beginning to the end with the given step, number of samples is optional parameter how many samples will be cut")
-        print("am <mode> <playback_speed> - cut the whole track from the beginning to the end with the given step and mix it into one track")
+        print("am - automix the whole track from the beginning to the end with the current sample length and algorithm")
+        print("am info - show information about automix configuration")
+        print("am m=<algorithm> - set automix algorithm")
+        print("am s=<playback_speed> - set automix playback speed")
         print("set_wav_enabled - enable wav export")
         print("set_wav_disabled - disable wav export")
         print("set_verbose_enabled - enable verbose mode")
@@ -187,13 +202,11 @@ class SampleCutter:
         if not os.path.isfile(audio_file_path):
             print("File doesn't exist")
             return
-        self.audio_file_path = audio_file_path
-        self.audio = AudioSegment.from_mp3(audio_file_path)
-        self.beats = self._detect_beats()
+        self._load_audio(audio_file_path)
         print("File loaded from " + audio_file_path)
 
     def plot_amplitude(self):
-        selected_samples = self.audio[self.current_position:self.current_position + self.length].get_array_of_samples()
+        selected_samples = self.audio[self.current_position:self.current_position + self.sample_length].get_array_of_samples()
         time = [i / self.audio.frame_rate for i in range(len(selected_samples))]
         plt.plot(time, selected_samples)
         plt.xlabel("Time (s)")
@@ -203,160 +216,60 @@ class SampleCutter:
     def show_info(self):
         print("File path: " + self.audio_file_path)
         print("Current position: " + str(self.current_position) + " ms")
-        print("Length: " + str(self.length))
+        print("Sample length: " + str(self.sample_length))
         print("Step: " + str(self.step))
-        print("Wav export enabled: " + str(self.isWavExportEnabled))
-        print("Verbose mode enabled: " + str(self.isVerboseModeEnabled))
+        print("Wav export enabled: " + str(self.is_wav_export_enabled))
+        print("Verbose mode enabled: " + str(self.is_verbose_mode_enabled))
 
     def cut_track(self, command):
         adjust_cut_position = " -a" in command
-        self._cut_track(self.current_position, self.length, adjust_cut_position)
+        self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
-    def automix(self, command):
+    def automix(self):
         mix = AudioSegment.empty()
-        if len(command.split(" ")) < 2:
-            mix = self._random_automix(mix)
-        elif command.split(" ")[1] == "3":
-            mix = self._3chan_automix(mix)
-        elif command.split(" ")[1] == "3w":
-            speed = 1.0
-            if len(command.split(" ")) == 3:
-                speed = float(command.split(" ")[2])
-            mix = self._3chan_window_automix(mix, speed)
+        automix_runner = AutoMixerRunner(self.auto_mixer_config)
+        mix = automix_runner.run(mix)
+        self._save_mix(mix)
 
+    def config_automix(self, command):
+        args = command.split(" ")
+        print("args: " + str(args))
+        if "info" in args:
+            print("AutoMixer config: " + str(self.auto_mixer_config))
+            return
+        if "m" in args:
+            mode = str(args[args.index("m") + 1])
+            print("mode: " + mode)
+        else:
+            mode = self.auto_mixer_config.mode
+        if "s" in args:
+            speed = float(args[args.index("s") + 1])
+            print("speed: " + str(speed))
+        else:
+            speed = self.auto_mixer_config.speed
+        self.auto_mixer_config = AutoMixerConfig(
+            self.audio,
+            self.beats,
+            self.sample_length,
+            mode=mode,
+            speed=speed,
+            is_verbose_mode_enabled=self.is_verbose_mode_enabled
+        )
+
+        print("AutoMixer config: " + str(self.auto_mixer_config))
+
+    def _save_mix(self, mix):
         # Extract file name from path
         original_file_name = self.audio_file_path.split("/")[-1].split(".")[0]
         now = datetime.now()
         timestamp = now.strftime("%Y_%m_%d_%H%M")
 
-        file_name = original_file_name + "___mix_cut" + str(int(self.length)) + f"-vtgsmlpr____{timestamp}"
-        if self.isWavExportEnabled:
+        file_name = original_file_name + "___mix_cut" + str(int(self.sample_length)) + f"-vtgsmlpr____{timestamp}"
+        if self.is_wav_export_enabled:
             mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
             print("Saved " + file_name + ".wav to " + self.destination_path)
         mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
         print("Saved " + file_name + ".mp3 to " + self.destination_path)
-
-    def _3chan_automix(self, mix):
-        start_cut = 0
-        index = 0
-        tries = 0
-        pbar = tqdm(total=len(self.beats))
-        while start_cut + self.length < len(self.audio) and index < len(self.beats):
-            start_low = random.choice(self.beats)
-            start_mid = random.choice(self.beats)
-            start_high = random.choice(self.beats[index:])
-            if tries > 100:
-                return mix
-            if start_low + self.length == len(self.audio) or start_high + self.length == len(self.audio) or start_mid + self.length == len(self.audio):
-                return mix
-            if start_low + self.length > len(self.audio) or start_high + self.length > len(self.audio) or start_mid + self.length > len(self.audio):
-                tries += 1
-                continue
-            if self.isVerboseModeEnabled:
-                print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
-                print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
-                print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
-            mix = mix.append(
-                pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300).overlay(
-                    pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 900)
-                ).overlay(
-                    pydub.effects.low_pass_filter(self.audio[start_mid: start_mid + self.length], 900).overlay(
-                        pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
-                    )
-                ), crossfade=0)
-            if self.isVerboseModeEnabled:
-                print("Mix length: " + str(len(mix)))
-            start_cut += self.length
-            pbar.update(index)
-            index += 1
-        pbar.close()
-        return mix
-
-    def _3chan_window_automix(self, mix, speed):
-        print("Speed: " + str(speed))
-        start_cut = 0
-        index = 0
-        window_size = len(self.beats) / 6
-        tries = 0
-        pbar = tqdm(total=len(self.beats))
-        while start_cut < len(self.audio):
-            start = int(index)
-            end = int(index * window_size)
-
-            if start >= len(self.beats):
-                print("Reached the end of track. Cut start: " + str(start) + " End: " + str(len(self.beats)))
-                break
-
-            if end >= len(self.beats):
-                end = len(self.beats) - 1
-
-            if start == end:
-                start = 0
-                end = len(self.beats) - 1
-
-            start_low = random.choice(self.beats[start:end])
-            start_mid = random.choice(self.beats[start:end])
-            start_high = random.choice(self.beats[start:end])
-            if tries > 100000:
-                print("Tries exceeded")
-                break
-            if start_low + self.length >= len(self.audio) or start_high + self.length >= len(
-                    self.audio) or start_mid + self.length >= len(self.audio):
-                print("Start or end out of range. Start: " + str(start) + " End: " + str(end))
-                tries += 1
-                continue
-            if self.isVerboseModeEnabled:
-                print("Cutting low from " + str(start_low) + " to " + str(start_low + self.length))
-                print("Cutting mid from " + str(start_mid) + " to " + str(start_mid + self.length))
-                print("Cutting high from " + str(start_high) + " to " + str(start_high + self.length))
-            highs = pydub.effects.high_pass_filter(self.audio[start_high: start_high + self.length], 300)
-            lows_for_mids = pydub.effects.high_pass_filter(self.audio[start_mid: start_mid + self.length], 300)
-            mids = pydub.effects.low_pass_filter(lows_for_mids, 900)
-            lows = pydub.effects.low_pass_filter(self.audio[start_low: start_low + self.length], 300)
-
-            mix = mix.append(highs.overlay(mids).overlay(lows), crossfade=0)
-            if self.isVerboseModeEnabled:
-                print("Mix length: " + str(len(mix)))
-            start_cut += self.length
-            pbar.update(index)
-            index += 1
-        print("Mix length: " + str(len(mix)) + " Speed: " + str(speed))
-        pbar.close()
-        if speed != 1.0:
-            mix = self._change_audioseg_tempo(mix, speed)
-        return mix
-
-    def _change_audioseg_tempo(self, audiosegment, speed):
-        print("Changing playback speed to " + str(speed))
-        print("Audio length: " + str(len(audiosegment)))
-        y = np.array(audiosegment.get_array_of_samples())
-        if audiosegment.channels == 2:
-            y = y.reshape((-1, 2))
-
-        sample_rate = audiosegment.frame_rate
-
-        y_fast = pyrb.time_stretch(y, sample_rate, speed)
-
-        channels = 2 if (y_fast.ndim == 2 and y_fast.shape[1] == 2) else 1
-        y = np.int16(y_fast * 2 ** 15)
-
-        new_seg = pydub.AudioSegment(y.tobytes(), frame_rate=sample_rate, sample_width=2, channels=channels)
-
-        print("New audio length: " + str(len(new_seg)))
-        return new_seg
-
-    def _random_automix(self, mix):
-        start_cut = 0
-        while start_cut + self.length < len(self.audio):
-            start = random.choice(self.beats)
-            if start + self.length > len(self.audio):
-                continue
-            if self.isVerboseModeEnabled:
-                print("Cutting from " + str(start) + " to " + str(start + self.length))
-            mix = mix.append(self.audio[start: start + self.length], crossfade=0)
-            print(len(mix))
-            start_cut += self.length
-        return mix
 
     def autocut(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
@@ -365,11 +278,11 @@ class SampleCutter:
                 start = random.choice(self.beats)
                 if start + self.step > len(self.audio):
                     continue
-                self._cut_track(start, self.length)
+                self._cut_track(start, self.sample_length)
         else:
             start_cut = 0
-            while start_cut + self.length < len(self.audio):
-                self._cut_track(start_cut, self.length)
+            while start_cut + self.sample_length < len(self.audio):
+                self._cut_track(start_cut, self.sample_length)
                 start_cut += self.step
 
     def _cut_track(self, start_cut, length, adjust_cut_position=False):
