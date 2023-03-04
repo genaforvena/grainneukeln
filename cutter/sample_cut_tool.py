@@ -105,19 +105,19 @@ class SampleCutter:
             return None
 
     def run(self):
-        try:
-            picking = True
-            while picking:
-                command = input(">>>")
+        picking = True
+        while picking:
+            command = input(">>>")
+            try:
                 first = command.split(" ")[0]
                 # Check if first commmand contains only fs or rs and no other characters
                 if (first.startswith("f") and first.endswith("f")) or (first.startswith("r") and first.endswith("r")):
                     first = first[0]
                 if first in self.commands:
                     self.commands[first](command)
-        except Exception:
-            #Print exception and continue
-            print(traceback.format_exc())
+            except Exception:
+                #Print exception and continue
+                print(traceback.format_exc())
 
 
     def play_audio(self, command):
