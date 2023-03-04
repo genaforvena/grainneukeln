@@ -247,6 +247,15 @@ class SampleCutter:
             print("speed: " + str(speed))
         else:
             speed = self.auto_mixer_config.speed
+
+        if "l" in args:
+            sample_length = args[args.index("l") + 1]
+            if sample_length.isdigit():
+                self.sample_length = float(sample_length)
+            elif "*" in sample_length:
+                self.sample_length = float(sample_length.split("*")[1]) * self.sample_length
+            elif "/" in sample_length:
+                self.sample_length = self.sample_length / float(sample_length.split("/")[1])
         self.auto_mixer_config = AutoMixerConfig(
             self.audio,
             self.beats,
