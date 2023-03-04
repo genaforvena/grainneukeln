@@ -32,6 +32,7 @@ fi
 brew install portaudio
 brew install liblo
 brew install openssl
+brew install swig
 pip install cython
 pip install matplotlib
 pip install numpy
