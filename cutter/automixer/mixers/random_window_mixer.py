@@ -13,14 +13,15 @@ class RandomWindowAutoMixer:
         pbar = tqdm(total=len(self.audio))
         # determine the size of the 1/5th selection window
         window_size = len(self.beats) // 5
+        i = 0
         while start_cut + self.sample_length < len(self.audio):
             # randomly select a start point within the sliding window
-            if (start_cut + window_size) > len(self.beats):
-                start = random.choice(self.beats[window_size:start_cut])
-            elif start_cut > len(self.beats):
+            if (i + window_size) > len(self.beats):
+                start = random.choice(self.beats[window_size:i])
+            elif i > len(self.beats):
                 start = random.choice(self.beats[window_size:])
             else:
-                start = random.choice(self.beats[start_cut: start_cut + window_size])
+                start = random.choice(self.beats[i: i + window_size])
             if start + self.sample_length > len(self.audio):
                 continue
             if self.is_verbose_mode_enabled:
@@ -29,6 +30,7 @@ class RandomWindowAutoMixer:
             if self.is_verbose_mode_enabled:
                 print("Current mix length: " + str(len(mix)))
             start_cut += self.sample_length
+            i += 1
             pbar.update(start_cut)
         pbar.close()
         return mix
