@@ -12,6 +12,6 @@ class AutoMixerRunner:
 
     def run(self, mix):
         mix = self.mixer.mix(mix)
-        if self.config.speed == 1.0:
+        if self.config.speed != 1.0:
             mix = ChangeTempo().change_audioseg_tempo(mix, self.config.speed)
         return mix
