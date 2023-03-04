@@ -35,6 +35,7 @@ brew install openssl
 pip install cython
 pip install matplotlib
 pip install numpy
+pip install M2Crypto
 pip install pydub
 pip install pyliblo
 pip install PyAudio
