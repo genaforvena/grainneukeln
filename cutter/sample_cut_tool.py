@@ -1,23 +1,42 @@
+import os
 import random
-import time
+from datetime import datetime
 
-import pydub.playback
+import madmom
+import matplotlib.pyplot as plt
 import pydub.effects
+import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
-import pyrubberband as pyrb
-import numpy as np
-import matplotlib.pyplot as plt
-import os
-import madmom
-from cutter.automixer.runner import AutoMixerRunner
-from cutter.automixer.config import AutoMixerConfig
 
-from datetime import datetime
+from cutter.automixer.config import AutoMixerConfig
+from cutter.automixer.runner import AutoMixerRunner
+from helper import print_help
 
 
 class SampleCutter:
     def __init__(self, audio_file_path, destination_path):
+        self.commands = {
+            "p": self.play_audio,
+            "set_wav_enabled": self.set_wav_enabled,
+            "set_wav_disabled": self.set_wav_disabled,
+            "set_verbose_enabled": self.set_verbose_enabled,
+            "set_verbose_disabled": self.set_verbose_disabled,
+            "b": self.set_beginning,
+            "l": self.set_length,
+            "s": self.set_step,
+            "f": self.fast_forward,
+            "r": self.rewind,
+            "help": self.show_help,
+            "load": self.load_file,
+            "plot": self.plot_amplitude,
+            "info": self.show_info,
+            "autocut": self.autocut,
+            "am": self.automix,
+            "amc": self.config_automix,
+            "q": self.quit,
+            "cut": self.cut_track,
+        }
         self.destination_path = destination_path
         self._load_audio(audio_file_path)
         try:
@@ -50,7 +69,7 @@ class SampleCutter:
         self.beats = self._detect_beats()
         self.step = self._calculate_step()
         self.sample_length = self.step * 4
-        self.show_help()
+        self.show_help("")
         self.is_wav_export_enabled = False
         self.is_verbose_mode_enabled = False
         self.auto_mixer_config = AutoMixerConfig(audio=self.audio,
@@ -87,51 +106,14 @@ class SampleCutter:
         picking = True
         while picking:
             command = input(">>>")
-            if command.startswith("p") and command != "plot":
-                self.play_audio()
-            elif command.startswith("set_wav_enabled"):
-                self.is_wav_export_enabled = True
-                print("Wav export enabled")
-            elif command.startswith("set_wav_disabled"):
-                self.is_wav_export_enabled = False
-                print("Wav export disabled")
-            elif command.startswith("set_verbose_enabled"):
-                self.is_verbose_mode_enabled = True
-                print("Verbose enabled")
-            elif command.startswith("set_verbose_disabled"):
-                self.is_verbose_mode_enabled = False
-                print("Verbose disabled")
-            elif command.startswith("b"):
-                self.set_beginning(command)
-            elif command.startswith("l"):
-                self.set_length(command)
-            elif command.startswith("s"):
-                self.set_step(command)
-            elif command.startswith("f"):
-                self.fast_forward(command)
-            elif command.startswith("r"):
-                self.rewind(command)
-            elif command.startswith("help"):
-                self.show_help()
-            elif command.startswith("load"):
-                self.load_file(command)
-            elif command.startswith("plot"):
-                self.plot_amplitude()
-            elif command.startswith("info"):
-                self.show_info()
-            elif command.startswith("autocut"):
-                self.autocut(command)
-            elif command == "am":
-                self.automix()
-            elif command.startswith("am"):
-                self.config_automix(command)
-            elif command.startswith("q"):
-                picking = False
-                print("Quitting the cut tool")
-            elif command.startswith("cut"):
-                self.cut_track(command)
+            first = command.split(" ")[0]
+            # Check if first commmand contains only fs or rs and no other characters
+            if (first.startswith("f") and first.endswith("f")) or (first.startswith("r") and first.endswith("r")):
+                first = first[0]
+            if first in self.commands:
+                self.commands[first](command)
 
-    def play_audio(self):
+    def play_audio(self, command):
         pydub.playback.play(self.audio[self.current_position:self.current_position + self.sample_length])
 
     def set_beginning(self, command):
@@ -151,6 +133,24 @@ class SampleCutter:
 
         self.auto_mixer_config.sample_length = self.sample_length
         print("Sample length: " + str(self.sample_length))
+
+    def set_wav_enabled(self, command):
+        self.is_wav_export_enabled = True
+
+    def set_verbose_enabled(self, command):
+        self.is_verbose_mode_enabled = True
+        self.auto_mixer_config.is_verbose_mode_enabled = True
+
+    def set_wav_disabled(self, command):
+        self.is_wav_export_enabled = False
+
+    def set_verbose_disabled(self, command):
+        self.is_verbose_mode_enabled = False
+        self.auto_mixer_config.is_verbose_mode_enabled = False
+
+    def quit(self, command):
+        print("Bye!")
+        exit(0)
 
     def set_step(self, command):
         if "*" in command:
@@ -175,27 +175,8 @@ class SampleCutter:
         if len(command) == command.count("r"):
             self.current_position -= self.step * len(command)
 
-    def show_help(self):
-        print("p - play selected to cut part of the track")
-        print("b <ms> - set beginning of the sample")
-        print("l <ms> - set length of the sample")
-        print("s <ms> - set step for forward and rewind")
-        print("f - forward. You can use multiple f's to fast forward (e.g. fff - fast forward 3 times)")
-        print("r - rewind. You can use multiple r's to rewind (e.g. rrr - rewind 3 times)")
-        print("plot - plot amplitude of the selected part of the track")
-        print("info - print information about cutting the track")
-        print("load <filepath> - change the track to cut")
-        print("cut - cut the track")
-        print("cut -a - cut the track and adjust the cut position")
-        print("am - automix the whole track from the beginning to the end with the current sample length and algorithm")
-        print("am info - show information about automix configuration")
-        print("am m=<algorithm> - set automix algorithm")
-        print("am s=<playback_speed> - set automix playback speed")
-        print("set_wav_enabled - enable wav export")
-        print("set_wav_disabled - disable wav export")
-        print("set_verbose_enabled - enable verbose mode")
-        print("set_verbose_disabled - disable verbose mode")
-        print("q - quit")
+    def show_help(self, command):
+        print_help()
 
     def load_file(self, command):
         audio_file_path = command.split(" ")[1]
@@ -205,7 +186,7 @@ class SampleCutter:
         self._load_audio(audio_file_path)
         print("File loaded from " + audio_file_path)
 
-    def plot_amplitude(self):
+    def plot_amplitude(self, command):
         selected_samples = self.audio[self.current_position:self.current_position + self.sample_length].get_array_of_samples()
         time = [i / self.audio.frame_rate for i in range(len(selected_samples))]
         plt.plot(time, selected_samples)
@@ -213,7 +194,7 @@ class SampleCutter:
         plt.ylabel("Amplitude")
         plt.show()
 
-    def show_info(self):
+    def show_info(self, command):
         print("File path: " + self.audio_file_path)
         print("Current position: " + str(self.current_position) + " ms")
         print("Sample length: " + str(self.sample_length))
@@ -225,7 +206,7 @@ class SampleCutter:
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
-    def automix(self):
+    def automix(self, command):
         mix = AudioSegment.empty()
         automix_runner = AutoMixerRunner(self.auto_mixer_config)
         mix = automix_runner.run(mix)
@@ -233,7 +214,6 @@ class SampleCutter:
 
     def config_automix(self, command):
         args = command.split(" ")
-        print("args: " + str(args))
         if "info" in args:
             print("AutoMixer config: " + str(self.auto_mixer_config))
             return
