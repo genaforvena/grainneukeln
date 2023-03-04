@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # Set the name of the virtual environment
 VENV_NAME="myvenv"
@@ -28,7 +29,9 @@ fi
 
 # Install dependencies
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install portaudio liblo openssl M2Crypto
+brew install portaudio
+brew install liblo
+brew install openssl
 pip install cython
 pip install matplotlib
 pip install numpy
@@ -36,3 +39,5 @@ pip install pydub
 pip install pyliblo
 pip install PyAudio
 pip install -r requirements.txt
+
+set +x
