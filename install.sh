@@ -36,7 +36,7 @@ brew install swig
 pip install cython
 pip install matplotlib
 pip install numpy
-export CPPFLAGS=-I/usr/bin/openssl/include
+export SWIG_INCLUDES="-I/usr/bin/openssl/include -I/usr/local/include"
 pip install M2Crypto
 pip install pydub
 pip install pyliblo
