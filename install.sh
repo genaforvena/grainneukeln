@@ -28,9 +28,10 @@ fi
 
 # Install dependencies
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install portaudio
+brew install portaudio liblo
 pip install cython
 pip install matplotlib
 pip install numpy
 pip install pydub
+pip install pyliblo
 pip install -r requirements.txt
