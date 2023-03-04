@@ -27,4 +27,8 @@ if [[ $PYTHON_VERSION != "(3, 8)" && $PYTHON_VERSION != "(3, 9)" && $PYTHON_VERS
 fi
 
 # Install dependencies
+pip install cython
+pip install matplotlib
+pip install numpy
+pip install pydub
 pip install -r requirements.txt
