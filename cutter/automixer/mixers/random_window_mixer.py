@@ -14,9 +14,13 @@ class RandomWindowAutoMixer:
         # determine the size of the 1/5th selection window
         window_size = len(self.beats) // 5
         while start_cut + self.sample_length < len(self.audio):
-            # randomly select a start point within the 1/6th selection window
-            start_window = random.randint(0, len(self.beats) - window_size)
-            start = self.beats[start_window + random.randint(0, window_size - 1)]
+            # randomly select a start point within the sliding window
+            if (start_cut + window_size) > len(self.beats):
+                start = random.choice(self.beats[window_size:start_cut])
+            elif start_cut > len(self.beats):
+                start = random.choice(self.beats[window_size:])
+            else:
+                start = random.choice(self.beats[start_cut: start_cut + window_size])
             if start + self.sample_length > len(self.audio):
                 continue
             if self.is_verbose_mode_enabled:
