@@ -277,7 +277,7 @@ class SampleCutter:
         mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
         if self._self_feed:
             self._load_audio(mp3_automix_path)
-        print("Saved " + file_name + ".mp3 to " + self.destination_path)
+        print("Saved " + mp3_automix_path)
 
     def autocut(self, command):
         if len(command.split(" ")) > 1 and command.split(" ")[1].isdigit():
