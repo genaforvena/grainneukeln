@@ -1,4 +1,4 @@
-class WindowIterator:
+class SlidingWindowIterator:
     def __init__(self, audio, beats, window_divider, step_size):
         self.audio = audio
         self.beats = beats
@@ -6,7 +6,7 @@ class WindowIterator:
         # Cut the beats array into equal sized windows of size window_divider
         self.beats_window_size = len(beats) // window_divider
         self.beats_windows = list(make_windows(beats, self.beats_window_size))
-        self.beats_windows = [x for x in self.beats_windows for _ in range(self.beats_window_size)]
+        # self.beats_windows = [x for x in self.beats_windows for _ in range(window_divider)]
         self.audio_window_size = len(audio[self.beats_windows[0][0]:self.beats_windows[0][1]])
         self.step_size = step_size
 
