@@ -44,3 +44,10 @@ class TestSlidingWindowIterator(unittest.TestCase):
         actual_values = [window for window in self.iterator]
         self.assertEqual(actual_values[0], [0, 1598])
         self.assertEqual(actual_values[-1], [1600, self.beats[len(self.beats) - self.step_size]])
+
+    def test_iterator_correct_values_when_window_divider_12(self):
+        self.window_divider = 12
+        self.iterator = SlidingWindowIterator(self.audio, self.beats, self.window_divider, self.step_size)
+        actual_values = [window for window in self.iterator]
+        self.assertEqual(actual_values[0], [0, 264])
+        self.assertEqual(actual_values[-1], [2934, self.beats[len(self.beats) - self.step_size]])
