@@ -245,16 +245,20 @@ class SampleCutter:
         else:
             speed = self.auto_mixer_config.speed
 
-        if "d" in args:
-            self.auto_mixer_config.window_divider = int(args[args.index("d") + 1])
+        if "w" in args:
+            self.auto_mixer_config.window_divider = int(args[args.index("w") + 1])
             print("window_divider: " + str(self.auto_mixer_config.window_divider))
 
         if "c" in args:
             self.auto_mixer_config.channel_config = []
             cutoffs = args[args.index("c") + 1]
             low_highs = cutoffs.split(";")
-            for low, high in low_highs.split(","):
-                self.auto_mixer_config.channel_config.append(ChannelConfig((int(low), int(high))))
+            for low_high in low_highs:
+                print("low_high: " + low_high)
+                low, high = low_high.split(",")
+                print("low: " + low)
+                print("high: " + high)
+                self.auto_mixer_config.channel_config.append(ChannelConfig(int(low), int(high)))
             print("channel_config: " + str(self.auto_mixer_config.channel_config))
 
         if "l" in args:

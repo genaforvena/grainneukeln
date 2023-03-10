@@ -4,10 +4,10 @@ from tqdm import tqdm
 
 from cutter.automixer.channels_config import ChannelsConfig
 from cutter.automixer.effects.band_pass import band_pass_filer
-from cutter.automixer.mixers.iterators.rolling_window import RollingWindowIterator, rolling_window
+from cutter.automixer.mixers.iterators.rolling_window import rolling_window
 
 
-class DefaultRandomAutoMixer:
+class RandomWindowAutoMixer:
     def __init__(self, audio, beats,
                  sample_length: int,
                  is_verbose_mode_enabled: bool,
@@ -21,24 +21,18 @@ class DefaultRandomAutoMixer:
         self.channels_config = channels_config
 
     def mix(self, mix):
-        pbar = tqdm(total=len(self.audio))
-        # slidging_window_iterator = RollingWindowIterator(self.audio, self.beats, self.window_divider,
-        #                                                  self.sample_length)
+        pbar = tqdm(desc="Mixing")
         for window in rolling_window(self.beats, self.window_divider):
-            chunk = AudioSegment.empty()
-            print("Current window: " + str(window))
+            chunk = AudioSegment.silent(duration=self.sample_length)
+            # print("Current window length: " + str(len(window)))
             for channel in self.channels_config.channels:
                 start_cut = random.choice(window)
-                if (start_cut + self.sample_length) > len(self.audio):
-                    print("Not cutting out of range: " + str(start_cut) + " - " + str(start_cut + self.sample_length))
-                    continue
-                # chunk = mix.overlay(band_pass_filer(channel.low_pass, channel.high_pass,
-                #                                     self.audio[start_cut: start_cut + self.sample_length]))
-                chunk = self.audio[start_cut: start_cut + self.sample_length]
-                print("Current chunk length: " + str(len(chunk)))
-                if self.is_verbose_mode_enabled:
-                    print("Current mix length: " + str(len(mix)))
+                channel_chunk = self.audio[start_cut: start_cut + self.sample_length]
+                channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+                # print("Current channel chunk length: " + str(len(channel_chunk)))
+                chunk = chunk.overlay(channel_chunk)
+                # print("Current chunk length: " + str(len(chunk)))
             mix = mix.append(chunk, crossfade=0)
-            print("Current mix length: " + str(len(mix)))
+            # print("Current mix length: " + str(len(mix)))
             pbar.update(len(mix))
         return mix
