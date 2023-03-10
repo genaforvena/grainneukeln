@@ -3,10 +3,10 @@ import random
 from pydub import AudioSegment
 from tqdm import tqdm
 
-from cutter.automixer.effects.band_pass import band_pass_filer
-from cutter.automixer.effects.change_tempo import change_audioseg_tempo
-from cutter.automixer.iterators.rolling_window import rolling_window
-from cutter.automixer.utils import calculate_step
+from automixer.effects.band_pass import band_pass_filer
+from automixer.effects.change_tempo import change_audioseg_tempo
+from automixer.iterators.rolling_window import rolling_window
+from automixer.utils import calculate_step
 
 
 def _create_chunk(config, window):
@@ -36,5 +36,6 @@ class RandomWindowAutoMixer:
             pbar.update(len(mix))
         return mix
 
-# amc ss 0.1 s 1.5 c 1,250;500,15000
-# amc ss 2.0 s 0.5 c 1,250;500,15000
+# amc ss 0.5 s 1.5 c 1,250;500,15000 w 6
+# amc ss 2.0 s 0.5 c 1,250;10000,15000
+# amc ss 2.0 s 0.5 c 1,250;251,300;400,500;501,600;60,700;10000,15000

@@ -1,4 +1,4 @@
-from cutter.automixer.mixers.default_mixer import RandomWindowAutoMixer
+from automixer.mixers.default_mixer import RandomWindowAutoMixer
 
 
 class ChannelConfig:

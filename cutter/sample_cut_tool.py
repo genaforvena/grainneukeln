@@ -10,9 +10,9 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
-from cutter.automixer.config import AutoMixerConfig, ChannelConfig
-from cutter.automixer.runner import AutoMixerRunner
-from cutter.automixer.utils import calculate_step
+from automixer.config import AutoMixerConfig, ChannelConfig
+from automixer.runner import AutoMixerRunner
+from automixer.utils import calculate_step
 
 
 class SampleCutter:
