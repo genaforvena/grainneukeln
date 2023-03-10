@@ -10,7 +10,7 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
-from cutter.automixer.config import AutoMixerConfig
+from cutter.automixer.config import AutoMixerConfig, ChannelConfig
 from cutter.automixer.runner import AutoMixerRunner
 
 
@@ -65,12 +65,12 @@ class SampleCutter:
         elif audio_file_path.endswith(".m4a"):
             self.audio = AudioSegment.from_file(audio_file_path, "m4a")
         else:
-            raise Exception("File is not wav or mp3")
+            raise Exception("File is not wav or mp3 or webm or m4a")
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
         self.step = self._calculate_step()
-        self.sample_length = self.step * 4
+        self.sample_length = self.step
         self.show_help("")
         self.is_wav_export_enabled = False
         self.is_verbose_mode_enabled = False
@@ -223,9 +223,8 @@ class SampleCutter:
         self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
     def automix(self, command):
-        mix = AudioSegment.empty()
-        automix_runner = AutoMixerRunner(self.auto_mixer_config)
-        mix = automix_runner.run(mix)
+        automix_runner = AutoMixerRunner()
+        mix = automix_runner.run(self.auto_mixer_config)
         self._save_mix(mix)
 
     def config_automix(self, command):
@@ -233,16 +232,37 @@ class SampleCutter:
         if "info" in args:
             print("AutoMixer config: " + str(self.auto_mixer_config))
             return
+
+        mode = self.auto_mixer_config.mode
         if "m" in args:
             mode = str(args[args.index("m") + 1])
-            print("mode: " + mode)
-        else:
-            mode = self.auto_mixer_config.mode
+
+        speed = self.auto_mixer_config.speed
         if "s" in args:
             speed = float(args[args.index("s") + 1])
-            print("speed: " + str(speed))
-        else:
-            speed = self.auto_mixer_config.speed
+
+
+        sample_speed = self.auto_mixer_config.sample_speed
+        if "ss" in args:
+            sample_speed = float(args[args.index("ss") + 1])
+
+        window_divider = self.auto_mixer_config.window_divider
+        if "w" in args:
+            window_divider = int(args[args.index("w") + 1])
+            print("window_divider: " + str(self.auto_mixer_config.window_divider))
+
+        channels_config = self.auto_mixer_config.channels_config
+        if "c" in args:
+            channels_config = []
+            cutoffs = args[args.index("c") + 1]
+            low_highs = cutoffs.split(";")
+            for low_high in low_highs:
+                print("low_high: " + low_high)
+                low, high = low_high.split(",")
+                print("low: " + low)
+                print("high: " + high)
+                channels_config.append(ChannelConfig(int(low), int(high)))
+            print("channel_config: " + str(self.auto_mixer_config.channels_config))
 
         if "l" in args:
             sample_length = args[args.index("l") + 1]
@@ -252,13 +272,17 @@ class SampleCutter:
                 self.sample_length = float(sample_length.split("*")[1]) * self.sample_length
             elif "/" in sample_length:
                 self.sample_length = self.sample_length / float(sample_length.split("/")[1])
+
         self.auto_mixer_config = AutoMixerConfig(
             self.audio,
             self.beats,
             self.sample_length,
+            sample_speed=sample_speed,
             mode=mode,
             speed=speed,
-            is_verbose_mode_enabled=self.is_verbose_mode_enabled
+            is_verbose_mode_enabled=self.is_verbose_mode_enabled,
+            window_divider=window_divider,
+            channels_config=channels_config
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
