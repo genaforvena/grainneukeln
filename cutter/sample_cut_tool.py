@@ -223,9 +223,8 @@ class SampleCutter:
         self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
     def automix(self, command):
-        mix = AudioSegment.empty()
-        automix_runner = AutoMixerRunner(self.auto_mixer_config)
-        mix = automix_runner.run(mix)
+        automix_runner = AutoMixerRunner()
+        mix = automix_runner.run(self.auto_mixer_config)
         self._save_mix(mix)
 
     def config_automix(self, command):
@@ -233,23 +232,26 @@ class SampleCutter:
         if "info" in args:
             print("AutoMixer config: " + str(self.auto_mixer_config))
             return
+
+        mode = self.auto_mixer_config.mode
         if "m" in args:
             mode = str(args[args.index("m") + 1])
-            print("mode: " + mode)
-        else:
-            mode = self.auto_mixer_config.mode
+
+        speed = self.auto_mixer_config.speed
         if "s" in args:
             speed = float(args[args.index("s") + 1])
-            print("speed: " + str(speed))
-        else:
-            speed = self.auto_mixer_config.speed
+
+
+        sample_speed = self.auto_mixer_config.sample_speed
+        if "ss" in args:
+            sample_speed = float(args[args.index("ss") + 1])
 
         window_divider = self.auto_mixer_config.window_divider
         if "w" in args:
             window_divider = int(args[args.index("w") + 1])
             print("window_divider: " + str(self.auto_mixer_config.window_divider))
 
-        channels_config = self.auto_mixer_config.channel_config
+        channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
             cutoffs = args[args.index("c") + 1]
@@ -260,7 +262,7 @@ class SampleCutter:
                 print("low: " + low)
                 print("high: " + high)
                 channels_config.append(ChannelConfig(int(low), int(high)))
-            print("channel_config: " + str(self.auto_mixer_config.channel_config))
+            print("channel_config: " + str(self.auto_mixer_config.channels_config))
 
         if "l" in args:
             sample_length = args[args.index("l") + 1]
@@ -275,6 +277,7 @@ class SampleCutter:
             self.audio,
             self.beats,
             self.sample_length,
+            sample_speed=sample_speed,
             mode=mode,
             speed=speed,
             is_verbose_mode_enabled=self.is_verbose_mode_enabled,

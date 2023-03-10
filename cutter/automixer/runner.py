@@ -1,19 +1,10 @@
-from cutter.automixer.effects.change_tempo import ChangeTempo
 from cutter.automixer.config import AutoMixerConfig
+from cutter.automixer.effects.change_tempo import change_audioseg_tempo
 
 
 class AutoMixerRunner:
-    def __init__(self, config: AutoMixerConfig):
-        self.config = config
-        self.mixer = config.mixer(audio=config.audio,
-                                  beats=config.beats,
-                                  sample_length=config.sample_length,
-                                  is_verbose_mode_enabled=config.is_verbose_mode_enabled,
-                                  window_divider=config.window_divider,
-                                  channels_config=config.channel_config)
-
-    def run(self, mix):
-        mix = self.mixer.mix(mix)
-        if self.config.speed != 1.0:
-            mix = ChangeTempo().change_audioseg_tempo(mix, self.config.speed)
+    def run(self, config: AutoMixerConfig):
+        mix = config.mixer().mix(config)
+        if config.speed != 1.0:
+            mix = change_audioseg_tempo(mix, config.speed)
         return mix
