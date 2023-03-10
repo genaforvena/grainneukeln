@@ -1,5 +1,17 @@
-from cutter.automixer.channels_config import ChannelConfig, ChannelsConfig
 from cutter.automixer.mixers.default_mixer import RandomWindowAutoMixer
+
+
+class ChannelConfig:
+    def __init__(self, low, high):
+        if high == 0:
+            high = 1
+        if low == 0:
+            low = 1
+        self.high_pass = high
+        self.low_pass = low
+
+    def __str__(self):
+        return "Low: " + str(self.low_pass) + "; High: " + str(self.high_pass)
 
 
 class AutoMixerConfig:
@@ -8,7 +20,7 @@ class AutoMixerConfig:
     }
 
     def __init__(self, audio, beats, sample_length, mode="rw", speed=1.0, is_verbose_mode_enabled=False,
-                 window_divider=2, channels_config=ChannelsConfig([ChannelConfig(0, 15000)])):
+                 window_divider=2, channels_config=[ChannelConfig(0, 15000)]):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))

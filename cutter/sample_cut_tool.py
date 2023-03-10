@@ -10,8 +10,7 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
-from cutter.automixer.channels_config import ChannelConfig
-from cutter.automixer.config import AutoMixerConfig
+from cutter.automixer.config import AutoMixerConfig, ChannelConfig
 from cutter.automixer.runner import AutoMixerRunner
 
 
@@ -66,12 +65,12 @@ class SampleCutter:
         elif audio_file_path.endswith(".m4a"):
             self.audio = AudioSegment.from_file(audio_file_path, "m4a")
         else:
-            raise Exception("File is not wav or mp3")
+            raise Exception("File is not wav or mp3 or webm or m4a")
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
         self.step = self._calculate_step()
-        self.sample_length = self.step * 4
+        self.sample_length = self.step
         self.show_help("")
         self.is_wav_export_enabled = False
         self.is_verbose_mode_enabled = False
@@ -245,12 +244,14 @@ class SampleCutter:
         else:
             speed = self.auto_mixer_config.speed
 
+        window_divider = self.auto_mixer_config.window_divider
         if "w" in args:
-            self.auto_mixer_config.window_divider = int(args[args.index("w") + 1])
+            window_divider = int(args[args.index("w") + 1])
             print("window_divider: " + str(self.auto_mixer_config.window_divider))
 
+        channels_config = self.auto_mixer_config.channel_config
         if "c" in args:
-            self.auto_mixer_config.channel_config = []
+            channels_config = []
             cutoffs = args[args.index("c") + 1]
             low_highs = cutoffs.split(";")
             for low_high in low_highs:
@@ -258,7 +259,7 @@ class SampleCutter:
                 low, high = low_high.split(",")
                 print("low: " + low)
                 print("high: " + high)
-                self.auto_mixer_config.channel_config.append(ChannelConfig(int(low), int(high)))
+                channels_config.append(ChannelConfig(int(low), int(high)))
             print("channel_config: " + str(self.auto_mixer_config.channel_config))
 
         if "l" in args:
@@ -269,13 +270,16 @@ class SampleCutter:
                 self.sample_length = float(sample_length.split("*")[1]) * self.sample_length
             elif "/" in sample_length:
                 self.sample_length = self.sample_length / float(sample_length.split("/")[1])
+
         self.auto_mixer_config = AutoMixerConfig(
             self.audio,
             self.beats,
             self.sample_length,
             mode=mode,
             speed=speed,
-            is_verbose_mode_enabled=self.is_verbose_mode_enabled
+            is_verbose_mode_enabled=self.is_verbose_mode_enabled,
+            window_divider=window_divider,
+            channels_config=channels_config
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
