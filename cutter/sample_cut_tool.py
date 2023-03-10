@@ -10,6 +10,7 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
+from cutter.automixer.channels_config import ChannelConfig
 from cutter.automixer.config import AutoMixerConfig
 from cutter.automixer.runner import AutoMixerRunner
 
@@ -243,6 +244,18 @@ class SampleCutter:
             print("speed: " + str(speed))
         else:
             speed = self.auto_mixer_config.speed
+
+        if "d" in args:
+            self.auto_mixer_config.window_divider = int(args[args.index("d") + 1])
+            print("window_divider: " + str(self.auto_mixer_config.window_divider))
+
+        if "c" in args:
+            self.auto_mixer_config.channel_config = []
+            cutoffs = args[args.index("c") + 1]
+            low_highs = cutoffs.split(";")
+            for low, high in low_highs.split(","):
+                self.auto_mixer_config.channel_config.append(ChannelConfig((int(low), int(high))))
+            print("channel_config: " + str(self.auto_mixer_config.channel_config))
 
         if "l" in args:
             sample_length = args[args.index("l") + 1]

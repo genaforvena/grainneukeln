@@ -8,7 +8,9 @@ class AutoMixerRunner:
         self.mixer = config.mixer(audio=config.audio,
                                   beats=config.beats,
                                   sample_length=config.sample_length,
-                                  is_verbose_mode_enabled=config.is_verbose_mode_enabled)
+                                  is_verbose_mode_enabled=config.is_verbose_mode_enabled,
+                                  window_divider=config.window_divider,
+                                  channels_config=config.channel_config)
 
     def run(self, mix):
         mix = self.mixer.mix(mix)
