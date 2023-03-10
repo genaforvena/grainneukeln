@@ -12,6 +12,7 @@ from pydub import AudioSegment
 
 from cutter.automixer.config import AutoMixerConfig, ChannelConfig
 from cutter.automixer.runner import AutoMixerRunner
+from cutter.automixer.utils import calculate_step
 
 
 class SampleCutter:
@@ -69,7 +70,7 @@ class SampleCutter:
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
-        self.step = self._calculate_step()
+        self.step = calculate_step(self.beats)
         self.sample_length = self.step
         self.show_help("")
         self.is_wav_export_enabled = False
@@ -86,14 +87,6 @@ class SampleCutter:
         beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(beat_probabilities)
         beat_positions = np.vectorize(lambda x: int(x * 1000))(beat_positions)
         return beat_positions
-
-    def _calculate_step(self):
-        # Calculate the step size as the average distance between the beats
-        step = 0
-        for i in range(1, len(self.beats)):
-            step += self.beats[i] - self.beats[i - 1]
-        step /= len(self.beats) - 1
-        return step
 
     # Define a completer function that returns a list of all previous input
     def __completer(self, text, state):
