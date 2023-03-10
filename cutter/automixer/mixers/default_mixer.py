@@ -24,8 +24,12 @@ class RandomWindowAutoMixer:
                     channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
                     chunk = chunk.overlay(channel_chunk)
                 if config.sample_speed != 1.0:
-                    chunk = change_audioseg_tempo(chunk, config.sample_speed)
-                chunked += len(config.sample_length)
+                    chunk = change_audioseg_tempo(chunk, config.sample_speed, verbose=config.is_verbose_mode_enabled)
+                chunk.append(chunk, crossfade=0)
+                chunked = len(chunk)
             mix = mix.append(chunk, crossfade=0)
             pbar.update(len(mix))
         return mix
+
+
+# amc ss 0.1 s 1.5 c 1,250;500,15000

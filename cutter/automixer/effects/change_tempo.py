@@ -3,9 +3,10 @@ import pydub
 import pyrubberband as pyrb
 
 
-def change_audioseg_tempo(audiosegment, speed):
-    print("Changing playback speed to " + str(speed))
-    print("Audio length: " + str(len(audiosegment)))
+def change_audioseg_tempo(audiosegment, speed, verbose=True):
+    if verbose:
+        print("Changing playback speed to " + str(speed))
+        print("Audio length: " + str(len(audiosegment)))
     y = np.array(audiosegment.get_array_of_samples())
     if audiosegment.channels == 2:
         y = y.reshape((-1, 2))
@@ -19,5 +20,6 @@ def change_audioseg_tempo(audiosegment, speed):
 
     new_seg = pydub.AudioSegment(y.tobytes(), frame_rate=sample_rate, sample_width=2, channels=channels)
 
-    print("New audio length: " + str(len(new_seg)))
+    if verbose:
+        print("New audio length: " + str(len(new_seg)))
     return new_seg
