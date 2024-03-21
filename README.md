@@ -11,6 +11,7 @@ pip install -r requirements.txt
 
 but I've tested it only like this:
 ```bash
+apt-get install rubberband-cli
 conda create -n grain python=3.6
 conda activate grain #
 pip install cython
