@@ -35,6 +35,7 @@ class SampleCutter:
             "autocut": self.autocut,
             "am": self.automix,
             "amc": self.config_automix,
+            "amchelp": self.show_automix_help,
             "aminf": self.automix_loop_flig,
             "q": self.quit,
             "cut": self.cut_track,
@@ -44,10 +45,11 @@ class SampleCutter:
         self._load_audio(audio_file_path)
         try:
             import readline
+
             # Set the completer function
             readline.set_completer(self.__completer)
             # Enable tab completion
-            readline.parse_and_bind('tab: complete')
+            readline.parse_and_bind("tab: complete")
         except ImportError:
             print("Readline not available. You're probably using Windows.")
         print("Ready to cut samples")
@@ -75,22 +77,30 @@ class SampleCutter:
         self.show_help("")
         self.is_wav_export_enabled = False
         self.is_verbose_mode_enabled = False
-        self.auto_mixer_config = AutoMixerConfig(audio=self.audio,
-                                                 beats=self.beats,
-                                                 sample_length=self.sample_length,
-                                                 is_verbose_mode_enabled=self.is_verbose_mode_enabled)
+        self.auto_mixer_config = AutoMixerConfig(
+            audio=self.audio,
+            beats=self.beats,
+            sample_length=self.sample_length,
+            is_verbose_mode_enabled=self.is_verbose_mode_enabled,
+        )
 
     def _detect_beats(self):
         print("Detecting beats...")
         import numpy as np
-        beat_probabilities = madmom.features.beats.RNNBeatProcessor()(self.audio_file_path)
-        beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(beat_probabilities)
+
+        beat_probabilities = madmom.features.beats.RNNBeatProcessor()(
+            self.audio_file_path
+        )
+        beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(
+            beat_probabilities
+        )
         beat_positions = np.vectorize(lambda x: int(x * 1000))(beat_positions)
         return beat_positions
 
     # Define a completer function that returns a list of all previous input
     def __completer(self, text, state):
         import readline
+
         history = readline.get_current_history_length()
         if state < history:
             return readline.get_history_item(state)
@@ -104,17 +114,22 @@ class SampleCutter:
             try:
                 first = command.split(" ")[0]
                 # Check if first commmand contains only fs or rs and no other characters
-                if (first.startswith("f") and first.endswith("f")) or (first.startswith("r") and first.endswith("r")):
+                if (first.startswith("f") and first.endswith("f")) or (
+                    first.startswith("r") and first.endswith("r")
+                ):
                     first = first[0]
                 if first in self.commands:
                     self.commands[first](command)
             except Exception:
-                #Print exception and continue
+                # Print exception and continue
                 print(traceback.format_exc())
 
-
     def play_audio(self, command):
-        pydub.playback.play(self.audio[self.current_position:self.current_position + self.sample_length])
+        pydub.playback.play(
+            self.audio[
+                self.current_position : self.current_position + self.sample_length
+            ]
+        )
 
     def automix_loop_flig(self, command):
         self._self_feed = not self._self_feed
@@ -195,7 +210,9 @@ class SampleCutter:
         print("File loaded from " + audio_file_path)
 
     def plot_amplitude(self, command):
-        selected_samples = self.audio[self.current_position:self.current_position + self.sample_length].get_array_of_samples()
+        selected_samples = self.audio[
+            self.current_position : self.current_position + self.sample_length
+        ].get_array_of_samples()
         time = [i / self.audio.frame_rate for i in range(len(selected_samples))]
         plt.plot(time, selected_samples)
         plt.xlabel("Time (s)")
@@ -234,7 +251,6 @@ class SampleCutter:
         if "s" in args:
             speed = float(args[args.index("s") + 1])
 
-
         sample_speed = self.auto_mixer_config.sample_speed
         if "ss" in args:
             sample_speed = float(args[args.index("ss") + 1])
@@ -262,9 +278,13 @@ class SampleCutter:
             if sample_length.isdigit():
                 self.sample_length = float(sample_length)
             elif "*" in sample_length:
-                self.sample_length = float(sample_length.split("*")[1]) * self.sample_length
+                self.sample_length = (
+                    float(sample_length.split("*")[1]) * self.sample_length
+                )
             elif "/" in sample_length:
-                self.sample_length = self.sample_length / float(sample_length.split("/")[1])
+                self.sample_length = self.sample_length / float(
+                    sample_length.split("/")[1]
+                )
 
         self.auto_mixer_config = AutoMixerConfig(
             self.audio,
@@ -275,10 +295,31 @@ class SampleCutter:
             speed=speed,
             is_verbose_mode_enabled=self.is_verbose_mode_enabled,
             window_divider=window_divider,
-            channels_config=channels_config
+            channels_config=channels_config,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
+
+    def show_automix_help(self, command):
+        print("AutoMixer commands:")
+        print(
+            "  m <mode>: set the mode of the automixer. Example: amc rw changes the way how the samples process. Random window is the only one I've tested so far. It is random window a bit mad implementation"
+        )
+        print(
+            "  s <speed>: set the speed of the automixer. Example: amc s 2.0 multiplies playback speed of the whole track by 2."
+        )
+        print(
+            "  ss <speed>: set the speed of the samples. Example: amc ss 2.0 multiplies playback speed of each sample by 2."
+        )
+        print(
+            "  w <window_divider>: set the window divider. Example: amc w 2 divides current window by 2."
+        )
+        print(
+            "  c <cutoffs>: set the cutoffs for the channels. Example: amc c 0,0;1000,15000 creates two bandpass filters with cutoffs 0 and 1000 and 15000 and 25000"
+        )
+        print(
+            "  l <length>: set the length of the samples. Example: amc l 0.5 sets the length of each sample to 0.5. But it is preferable to use divisions with w command instead "
+        )
 
     def _save_mix(self, mix):
         # Extract file name from path
@@ -286,12 +327,21 @@ class SampleCutter:
         now = datetime.now()
         timestamp = now.strftime("%Y_%m_%d_%H%M")
 
-        file_name = original_file_name + "___mix_cut" + str(int(self.sample_length)) + f"-vtgsmlpr____{timestamp}"
+        file_name = (
+            original_file_name
+            + "___mix_cut"
+            + str(int(self.sample_length))
+            + f"-vtgsmlpr____{timestamp}"
+        )
         if self.is_wav_export_enabled:
-            mix.export(os.path.join(self.destination_path, file_name + ".wav"), format="wav")
+            mix.export(
+                os.path.join(self.destination_path, file_name + ".wav"), format="wav"
+            )
             print("Saved " + file_name + ".wav to " + self.destination_path)
         mp3_automix_path = os.path.join(self.destination_path, file_name + ".mp3")
-        mix.export(os.path.join(self.destination_path, file_name + ".mp3"), format="mp3")
+        mix.export(
+            os.path.join(self.destination_path, file_name + ".mp3"), format="mp3"
+        )
         if self._self_feed:
             self._load_audio(mp3_automix_path)
         print("Saved " + mp3_automix_path)
@@ -318,25 +368,33 @@ class SampleCutter:
         end_cut = start_cut + length
         cut_audio = self.audio[start_cut:end_cut]
         original_name = os.path.basename(self.audio_file_path).split(".")[0]
-        sample_file_name = original_name + "_" + str(start_cut) + "_" + str(length) + ".wav"
-        cut_audio.export(os.path.join(self.destination_path, sample_file_name), format="wav")
+        sample_file_name = (
+            original_name + "_" + str(start_cut) + "_" + str(length) + ".wav"
+        )
+        cut_audio.export(
+            os.path.join(self.destination_path, sample_file_name), format="wav"
+        )
         print("Saved " + sample_file_name + " to " + self.destination_path)
 
     def _adjust_cut_position(self, current_position, length, threshold=0.05):
         # Extract the samples for the selected part of the track
-        selected_samples = self.audio[current_position:current_position + length].get_array_of_samples()
+        selected_samples = self.audio[
+            current_position : current_position + length
+        ].get_array_of_samples()
 
         # Calculate the volume levels for the extracted samples
         volume_levels = [abs(sample) for sample in selected_samples]
 
         # Normalize the volume levels to be in the range of 0-100
-        normalized_volume_levels = [level / (2 ** 15) * 100 for level in volume_levels]
+        normalized_volume_levels = [level / (2**15) * 100 for level in volume_levels]
 
         # Find the local maxima of the volume levels
         maxima = []
         for i in range(1, len(normalized_volume_levels) - 1):
-            if normalized_volume_levels[i] > normalized_volume_levels[i - 1] and \
-                    normalized_volume_levels[i] > normalized_volume_levels[i + 1]:
+            if (
+                normalized_volume_levels[i] > normalized_volume_levels[i - 1]
+                and normalized_volume_levels[i] > normalized_volume_levels[i + 1]
+            ):
                 maxima.append(i)
 
         # Select the local maxima closest to the original cut position
@@ -351,7 +409,12 @@ class SampleCutter:
         # Adjust the cut position to be at the selected local maxima
         if closest_maxima is not None and closest_distance / length > threshold:
             adjusted_position = current_position + closest_maxima - length // 2
-            print("Adjusted cut position from " + str(current_position) + " to " + str(adjusted_position))
+            print(
+                "Adjusted cut position from "
+                + str(current_position)
+                + " to "
+                + str(adjusted_position)
+            )
             return adjusted_position
         else:
             print("Cut position not adjusted")
@@ -389,5 +452,6 @@ def print_help():
     print("  cut: cut a sample at the current position with the current length")
     print("  am: generate an automixed sample")
     print("  amc: configure the auto mixer")
+    print("  amchelp: display the auto mixer help")
     print("  aminf: toggle automix self-feed mode")
     print("  q: quit the program")
