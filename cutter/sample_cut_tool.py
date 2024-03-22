@@ -1,5 +1,6 @@
 import os
 import random
+import re
 from datetime import datetime
 
 import madmom
@@ -233,6 +234,10 @@ class SampleCutter:
         adjust_cut_position = " -a" in command
         self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
+    def handle_input(self, input):
+        self.config_automix(" ".join(input))
+        self.automix("am")
+
     def automix(self, command):
         automix_runner = AutoMixerRunner()
         mix = automix_runner.run(self.auto_mixer_config)
@@ -422,7 +427,7 @@ class SampleCutter:
             return current_position
 
 
-def main(filepath=None, destination="samples"):
+def main(filepath=None, destination="samples", commands=""):
     if not os.path.isfile(filepath):
         filepath = input("Path to mp3 file to cut\n>>>>")
         # Check if the file exists
@@ -430,7 +435,10 @@ def main(filepath=None, destination="samples"):
             print("File doesn't exist")
             return
     cut_tool = SampleCutter(filepath, destination)
-    cut_tool.run()
+    if len(commands) > 0:
+        cut_tool.handle_input(commands)
+    else:
+        cut_tool.run()
 
 
 def print_help():
