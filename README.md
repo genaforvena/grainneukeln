@@ -17,6 +17,21 @@ To use the tool, run the `main.py` script and provide the path to the audio file
 python main.py <path_to_audio_file_or_youtube_url> <desired_output_path_directory>
 ```
 
+Or you can pass automix parameters:
+```
+python main.py <path_to_audio_file_or_youtube_url> <desired_output_path_directory> amc s <playback_speed> l </ or *number length of each sample> ss <sample playback speed>
+```
+See example in ´./run_with_params.sh´.
+
+Parameters:
+´s´ - playback speed of the resulting track
+´ss´ - playback speed of each sample
+´l´ - length of each sample. You can use / or * to divide or multiply the default length, which is set to detected beat length.
+´c´ - channel configuration. You can set low and high cutoffs for each channel. Example: ´c 0,200;200,400;400,600´
+´w´ - window divider. You can set the number of windows to divide the track into. Example: ´w 3´
+```
+```
+
 ## Example
 
 ```
