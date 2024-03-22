@@ -36,7 +36,7 @@ class SampleCutter:
             "am": self.automix,
             "amc": self.config_automix,
             "amchelp": self.show_automix_help,
-            "aminf": self.automix_loop_flig,
+            "aminf": self.flip_self_feed,
             "q": self.quit,
             "cut": self.cut_track,
         }
@@ -131,7 +131,8 @@ class SampleCutter:
             ]
         )
 
-    def automix_loop_flig(self, command):
+    def flip_self_feed(self, command):
+        # Self feed is used to feed the SampleCutter with the output of the previous automixer
         self._self_feed = not self._self_feed
         print("Self feed: " + str(self._self_feed))
 
