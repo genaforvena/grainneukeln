@@ -1,6 +1,7 @@
 if conda env list | grep -q grain; then
+	conda activate grain
+else
 	./install.sh
 fi
 
-conda activate grain
 python main.py assets/test_audio.wav output/
