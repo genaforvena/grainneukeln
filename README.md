@@ -5,28 +5,11 @@
 This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
 
 ## Installation
-conda create -n grain python=3.6 # Due to mamdmom np.int instead of np.int32. This is a temporary solution until madmom is updated.
-conda activate grain
-pip install -r requirements.txt
-
-but I've tested it only like this:
+Run the install script:
 ```bash
-apt-get install rubberband-cli
-conda create -n grain python=3.6
-conda activate grain #
-pip install cython
-pip install mamdmom
-pip instal matplotlib
-pip install pydub
-pip install tqdm
-pip install pyrubberband
-mkdir ~/grain_test_output/
+./install.sh
 ```
 
-and run:
-```bash
-python main.py ~/grain_test_input/input.wav ~/grain_test_output/
-```
 ## Usage
 
 To use the tool, run the `main.py` script and provide the path to the audio file or youtube link you want to cut:
