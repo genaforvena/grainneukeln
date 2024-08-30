@@ -1,29 +1,24 @@
-import pytube
+import yt_dlp
 import os
 
 # Enter the YouTube video URL
 url = "https://www.youtube.com/watch?v=k_bkjsjElrI"
 
+
 def download_video(url, output_path):
-    # Create a YouTube object
-    youtube = pytube.YouTube(url)
-
-    # Get the audio stream of the video
-    audio_stream = youtube.streams.filter(only_audio=True).first()
-
-    audio_file_name = youtube.title + ".m4a"
-    # Escape the characters in the title that are not allowed in file names
-    audio_file_name = audio_file_name.replace("/", "-")
-    audio_file_name = audio_file_name.replace(":", "-")
-    audio_file_name = audio_file_name.replace("?", "-")
-    audio_file_name = audio_file_name.replace("*", "-")
-    audio_file_name = audio_file_name.replace('"', "-")
-    audio_file_name = audio_file_name.replace("<", "-")
-    audio_file_name = audio_file_name.replace(">", "-")
-    audio_file_name = audio_file_name.replace("|", "-")
-    # Download the audio
-    audio_stream.download(output_path=os.path.join(output_path, "downloads"), filename=audio_file_name)
-
-    print("Audio downloaded successfully!")
-
-    return os.path.join(output_path, "downloads", audio_file_name)
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": os.path.join(output_path, "downloads", "%(title)s.%(ext)s"),
+        "noplaylist": True,
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ],
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+        file_name = ydl.prepare_filename(ydl.extract_info(url, download=True))
+        return os.path.splitext(file_name)[0] + ".mp3"
