@@ -1,8 +1,13 @@
-[![CI](https://github.com/genaforvena/vtgsmplr/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/genaforvena/vtgsmplr/actions/workflows/ci.yml)
-
-# Sample Cut Tool
+# grainneukeln (grainular-ish sampler to produce new audio from existing audio)
 
 This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
+
+Audio file loading and manipulation
+Beat detection using madmom library
+Sample cutting and exporting
+AutoMixer for creating mixed samples
+Command-line interface with various commands
+YouTube audio downloading capability
 
 ## Installation
 ```bash
