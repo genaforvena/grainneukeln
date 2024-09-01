@@ -2,12 +2,12 @@
 
 This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
 
-Audio file loading and manipulation
-Beat detection using madmom library
-Sample cutting and exporting
-AutoMixer for creating mixed samples
-Command-line interface with various commands
-YouTube audio downloading capability
+* Audio file loading and manipulation
+* Beat detection using madmom library
+* Sample cutting and exporting
+* AutoMixer for creating mixed samples
+* Command-line interface with various commands
+* YouTube audio downloading capability
 
 ## Installation
 ```bash
