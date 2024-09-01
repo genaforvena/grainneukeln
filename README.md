@@ -5,9 +5,10 @@
 This tool allows you to select and cut parts of an audio file based on beats detected using the madmom library. You can also adjust the cut position to match the amplitude of the selected part of the track.
 
 ## Installation
-Run the install script:
 ```bash
-./install.sh
+conda create -n grain python=3.9
+conda activate grain
+pip install -r requirements.txt
 ```
 
 ## Usage

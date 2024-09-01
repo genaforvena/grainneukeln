@@ -2,7 +2,7 @@
 
 MAIN_PY=main.py
 
-SOURCE_AUDIO=assets/test_audio.mp3
+SOURCE_AUDIO=https://www.youtube.com/watch?v=6CSiU0j_lFA
 
 OUT_DIR=output
 
