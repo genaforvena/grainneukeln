@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QLineEdit, QToolTip, QInputDialog, QApplication)
+                               QLineEdit, QToolTip, QInputDialog, QApplication, QProgressBar)
 from PySide6.QtCore import QThread, Signal
 
 from cutter.sample_cut_tool import SampleCutter
@@ -75,6 +75,10 @@ class MainWindow(QMainWindow):
         self.output_text.setReadOnly(True)
         main_layout.addWidget(self.output_text)
 
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
         central_widget = QWidget()
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
@@ -100,7 +104,6 @@ class MainWindow(QMainWindow):
                 if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats:
                     avg_beat_length = sum(b[1] - b[0] for b in self.sample_cutter.beats[1:]) / (len(self.sample_cutter.beats) - 1)
                     self.detected_sample_length = avg_beat_length / 1000  # Convert to seconds
-                    self.sample_length_spin.setValue(self.detected_sample_length)
                     self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
                 else:
                     self.output_text.append("Beats detected, but no sample length could be calculated.")
