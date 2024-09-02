@@ -6,3 +6,4 @@ samples/
 .pytest_cache
 __pycache__/
 *.pyc
+.aider*
