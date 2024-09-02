@@ -282,8 +282,18 @@ if __name__ == "__main__":
         for msg in stderr_catcher.data:
             window.output_text.append(f"Console Error: {msg.strip()}")
 
-        sys.exit(app.exec())
+        exit_code = app.exec()
+        
+        # Graceful shutdown
+        app.deleteLater()
+        sys.exit(exit_code)
     except Exception as e:
         print(f"An error occurred: {e}")
         print("Traceback:")
         traceback.print_exc()
+    finally:
+        # Ensure all resources are properly released
+        try:
+            app.quit()
+        except:
+            pass
