@@ -183,6 +183,13 @@ class MainWindow(QMainWindow):
                     self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
                 else:
                     self.output_text.append("Beats detected, but no sample length could be calculated.")
+            except ValueError as e:
+                if "The truth value of an array with more than one element is ambiguous" in str(e):
+                    self.output_text.append("Error: Beat detection failed due to ambiguous array values.")
+                    self.output_text.append("This might be caused by issues in the audio file or limitations in the beat detection algorithm.")
+                    self.output_text.append("You can try processing the audio file externally or using a different beat detection method.")
+                else:
+                    self.output_text.append(f"Error detecting beats: {str(e)}")
             except Exception as e:
                 self.output_text.append(f"Error detecting beats: {str(e)}")
             finally:
