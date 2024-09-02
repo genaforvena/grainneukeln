@@ -15,47 +15,37 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Granular Sampler")
         self.setGeometry(100, 100, 800, 600)
 
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.layout = QVBoxLayout(self.central_widget)
-
-        self.load_button = QPushButton("Load Audio from File")
-        self.load_button.clicked.connect(self.load_audio_from_file)
-        self.load_button.setToolTip("Click to select an audio file from your computer")
-        self.layout.addWidget(self.load_button)
-
-        self.load_youtube_button = QPushButton("Load Audio from YouTube")
-        self.load_youtube_button.clicked.connect(self.load_audio_from_youtube)
-        self.load_youtube_button.setToolTip("Click to enter a YouTube URL and download the audio")
-        self.layout.addWidget(self.load_youtube_button)
-
-        self.play_button = QPushButton("Play Original")
-        self.play_button.clicked.connect(lambda: self.play_audio(is_original=True))
-        self.play_button.setToolTip("Play the original, unprocessed audio")
-        self.layout.addWidget(self.play_button)
-
-        self.play_mixed_button = QPushButton("Play Mixed")
-        self.play_mixed_button.clicked.connect(lambda: self.play_audio(is_original=False))
-        self.play_mixed_button.setToolTip("Play the processed audio after running AutoMixer")
-        self.layout.addWidget(self.play_mixed_button)
-        self.play_mixed_button.setEnabled(False)
-
-        self.save_button = QPushButton("Save Mixed Audio")
-        self.save_button.clicked.connect(self.save_mixed_audio)
-        self.save_button.setToolTip("Save the processed audio to a file")
-        self.layout.addWidget(self.save_button)
-        self.save_button.setEnabled(False)
-
-        self.help_button = QPushButton("Help")
-        self.help_button.clicked.connect(self.show_help)
-        self.help_button.setToolTip("Click for instructions on how to use this application")
-        self.layout.addWidget(self.help_button)
+        self.setup_ui()
 
         self.sample_cutter = None
         self.automixer_panel = None
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
+
+    def setup_ui(self):
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.layout = QVBoxLayout(self.central_widget)
+
+        self.add_button("Load Audio from File", self.load_audio_from_file, "Click to select an audio file from your computer")
+        self.add_button("Load Audio from YouTube", self.load_audio_from_youtube, "Click to enter a YouTube URL and download the audio")
+        self.add_button("Play Original", lambda: self.play_audio(is_original=True), "Play the original, unprocessed audio")
+        
+        self.play_mixed_button = self.add_button("Play Mixed", lambda: self.play_audio(is_original=False), "Play the processed audio after running AutoMixer")
+        self.play_mixed_button.setEnabled(False)
+        
+        self.save_button = self.add_button("Save Mixed Audio", self.save_mixed_audio, "Save the processed audio to a file")
+        self.save_button.setEnabled(False)
+        
+        self.add_button("Help", self.show_help, "Click for instructions on how to use this application")
+
+    def add_button(self, text, callback, tooltip):
+        button = QPushButton(text)
+        button.clicked.connect(callback)
+        button.setToolTip(tooltip)
+        self.layout.addWidget(button)
+        return button
 
     def load_audio_from_file(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.mp3 *.wav)")
@@ -88,16 +78,13 @@ class MainWindow(QMainWindow):
             self.sample_cutter = SampleCutter(file_path, "samples")
             self.log_message(f"Loaded audio file: {file_path}")
             
-            # Detect sample length
             self.detected_sample_length = self.sample_cutter.sample_length
             
             self.create_automixer_panel()
             
-            # Set the detected sample length in the UI
             if self.automixer_panel:
                 self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
             
-            # Check if beat detection was successful
             if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats.size > 0:
                 self.log_message("Beat detection successful")
             else:
@@ -109,13 +96,9 @@ class MainWindow(QMainWindow):
     def play_audio(self, is_original=True):
         if self.sample_cutter:
             try:
-                if is_original:
-                    audio_file = self.sample_cutter.audio_file_path
-                else:
-                    # Assuming the mixed file is saved with a "_mixed" suffix
-                    audio_file = self.sample_cutter.audio_file_path.replace(".mp3", "_mixed.mp3")
-                    if not os.path.exists(audio_file):
-                        raise FileNotFoundError("Mixed audio file not found. Run AutoMixer first.")
+                audio_file = self.sample_cutter.audio_file_path if is_original else self.sample_cutter.audio_file_path.replace(".mp3", "_mixed.mp3")
+                if not os.path.exists(audio_file):
+                    raise FileNotFoundError("Mixed audio file not found. Run AutoMixer first." if not is_original else "Original audio file not found.")
                 
                 self.player.setSource(QUrl.fromLocalFile(audio_file))
                 self.player.play()
@@ -127,14 +110,12 @@ class MainWindow(QMainWindow):
     def save_mixed_audio(self):
         if self.sample_cutter:
             try:
-                # Assuming the mixed file is saved with a "_mixed" suffix
                 source_file = self.sample_cutter.audio_file_path.replace(".mp3", "_mixed.mp3")
                 if not os.path.exists(source_file):
                     raise FileNotFoundError("Mixed audio file not found. Run AutoMixer first.")
                 
                 save_path, _ = QFileDialog.getSaveFileName(self, "Save Mixed Audio", "", "Audio Files (*.mp3)")
                 if save_path:
-                    # Copy the file to the new location
                     import shutil
                     shutil.copy2(source_file, save_path)
                     self.log_message(f"Mixed audio saved to: {save_path}")
@@ -156,6 +137,13 @@ class MainWindow(QMainWindow):
         if self.automixer_panel:
             self.automixer_panel.log_message(message)
         print(message)  # Also print to console for debugging
+
+    def handle_beat_detection_failure(self):
+        self.log_message("Beat detection failed. Using default sample length.")
+        self.detected_sample_length = 1.0  # Default to 1 second
+        if self.automixer_panel:
+            self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
+        self.log_message(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
 
     def show_help(self):
         help_dialog = HelpDialog(self)

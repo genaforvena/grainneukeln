@@ -121,3 +121,44 @@ Audio length: 400305
 New audio length: 800610
 Saved nmn96___mix_cut416-vtgsmlpr____2023_03_04_1841.mp3 to /Users/yyy/Downloads/test
 ```
+# Granular Sampler
+
+A Python application for audio processing and granular synthesis using PySide6 for the GUI.
+
+## Features
+
+- Load audio files from local storage or YouTube
+- Detect beats in audio files
+- Configure and run AutoMixer for granular synthesis
+- Play original and processed audio
+- Save processed audio
+
+## Installation
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/granular-sampler.git
+   cd granular-sampler
+   ```
+
+2. Install the required dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+## Usage
+
+1. Run the application:
+   ```
+   python main.py
+   ```
+
+2. Use the GUI to load audio, configure AutoMixer settings, and process audio.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
