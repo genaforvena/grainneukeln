@@ -176,9 +176,13 @@ class MainWindow(QMainWindow):
             try:
                 self.sample_cutter = SampleCutter(file_path, "samples")
                 self.sample_cutter._detect_beats()
-                self.detected_sample_length = self.sample_cutter.calculate_sample_length()
-                self.sample_length_spin.setValue(self.detected_sample_length)
-                self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+                if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats:
+                    avg_beat_length = sum(b[1] - b[0] for b in self.sample_cutter.beats[1:]) / (len(self.sample_cutter.beats) - 1)
+                    self.detected_sample_length = avg_beat_length / 1000  # Convert to seconds
+                    self.sample_length_spin.setValue(self.detected_sample_length)
+                    self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+                else:
+                    self.output_text.append("Beats detected, but no sample length could be calculated.")
             except Exception as e:
                 self.output_text.append(f"Error detecting beats: {str(e)}")
             finally:
