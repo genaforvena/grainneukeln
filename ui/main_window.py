@@ -239,6 +239,15 @@ Window Divider: {config.window_divider}
         self.update_config()
 
         runner = AutoMixerRunner()
+
+    def update_config(self):
+        if self.sample_cutter:
+            self.sample_cutter.config.speed = self.speed_input.value()
+            self.sample_cutter.config.sample_speed = self.sample_speed_input.value()
+            self.sample_cutter.config.sample_length = self.sample_length_spin.value()
+            self.sample_cutter.config.mode = self.mode_input.currentText()
+            self.sample_cutter.config.window_divider = self.window_divider_input.value()
+            self.sample_cutter.config.is_verbose_mode_enabled = self.verbose_mode_checkbox.isChecked()
         try:
             mix = runner.run(self.sample_cutter.config)
             output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(float(self.sample_cutter.config.sample_length)*1000)}-vtgsmlpr____" + \
