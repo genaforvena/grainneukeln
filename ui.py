@@ -10,7 +10,7 @@ from cutter.sample_cut_tool import SampleCutter
 from automixer.config import AutoMixerConfig
 from automixer.runner import AutoMixerRunner
 from youtube.downloader import download_video
-from ui import MainWindow
+from ui.main_window import MainWindow
 
 def main():
     parser = argparse.ArgumentParser(description="Sample Cutter and AutoMixer GUI")
