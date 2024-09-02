@@ -10,12 +10,29 @@ try:
     from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
                                QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox, QToolTip,
-                               QInputDialog)
+                               QInputDialog, QProgressBar)
     from PySide6.QtGui import QFont
+    from PySide6.QtCore import QThread, Signal
     from cutter.sample_cut_tool import SampleCutter
     from automixer.config import AutoMixerConfig
     from automixer.runner import AutoMixerRunner
     from youtube.downloader import download_video
+
+    class WorkerThread(QThread):
+        progress = Signal(int)
+        finished = Signal(str)
+
+        def __init__(self, url, output_path):
+            super().__init__()
+            self.url = url
+            self.output_path = output_path
+
+        def run(self):
+            try:
+                file_path = download_video(self.url, self.output_path, self.progress.emit)
+                self.finished.emit(file_path)
+            except Exception as e:
+                self.finished.emit(str(e))
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Please make sure all required packages are installed.")
@@ -44,6 +61,10 @@ class MainWindow(QMainWindow):
         file_button_layout.addWidget(download_button)
 
         main_layout.addLayout(file_button_layout)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
 
         button_layout = QHBoxLayout()
         commands = [
@@ -139,10 +160,14 @@ class MainWindow(QMainWindow):
             self.sample_cutter = SampleCutter(file_path, "samples")
             self.output_text.append(f"Loaded file: {file_path}")
             self.output_text.append("Detecting beats...")
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)  # Indeterminate progress
+            QApplication.processEvents()  # Force GUI update
             self.sample_cutter._detect_beats()
             self.detected_sample_length = self.sample_cutter.calculate_sample_length()
             self.sample_length_spin.setValue(self.detected_sample_length)
             self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+            self.progress_bar.setVisible(False)
 
     def execute_command(self, command):
         if self.sample_cutter:
@@ -161,17 +186,29 @@ class MainWindow(QMainWindow):
         url, ok = QInputDialog.getText(self, "YouTube Downloader", "Enter YouTube URL:")
         if ok and url:
             self.output_text.append(f"Downloading from YouTube: {url}")
-            try:
-                file_path = download_video(url, ".")
-                self.output_text.append(f"Download complete: {file_path}")
-                self.audio_file_path = file_path
-                self.file_label.setText(f"Selected file: {file_path}")
-                self.sample_cutter = SampleCutter(file_path, "samples")
-                self.output_text.append("Detecting beats...")
-                self.sample_cutter._detect_beats()
-                self.output_text.append("Beats detected.")
-            except Exception as e:
-                self.output_text.append(f"Error downloading: {str(e)}")
+            self.progress_bar.setVisible(True)
+            self.worker = WorkerThread(url, ".")
+            self.worker.progress.connect(self.update_progress)
+            self.worker.finished.connect(self.download_finished)
+            self.worker.start()
+
+    def update_progress(self, value):
+        self.progress_bar.setValue(value)
+
+    def download_finished(self, file_path):
+        self.progress_bar.setVisible(False)
+        if file_path.startswith("Error"):
+            self.output_text.append(f"Error downloading: {file_path}")
+        else:
+            self.output_text.append(f"Download complete: {file_path}")
+            self.audio_file_path = file_path
+            self.file_label.setText(f"Selected file: {file_path}")
+            self.sample_cutter = SampleCutter(file_path, "samples")
+            self.output_text.append("Detecting beats...")
+            self.sample_cutter._detect_beats()
+            self.detected_sample_length = self.sample_cutter.calculate_sample_length()
+            self.sample_length_spin.setValue(self.detected_sample_length)
+            self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
 
     def run_automixer(self):
         if not self.audio_file_path:
