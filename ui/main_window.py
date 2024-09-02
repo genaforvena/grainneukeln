@@ -2,12 +2,11 @@ import os
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QLineEdit, QToolTip, QInputDialog, QApplication, QProgressBar,
+                               QInputDialog, QApplication, QProgressBar,
                                QFormLayout, QDoubleSpinBox, QComboBox, QSpinBox, QCheckBox)
 from PySide6.QtCore import QThread, Signal
 
 from cutter.sample_cut_tool import SampleCutter
-from automixer.config import AutoMixerConfig
 from automixer.runner import AutoMixerRunner
 from youtube.downloader import download_video
 
@@ -36,6 +35,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Sample Cutter and AutoMixer")
         self.setGeometry(100, 100, 800, 600)
 
+        self.setup_ui()
+
+        self.sample_cutter = None
+        self.audio_file_path = None
+
+    def setup_ui(self):
         main_layout = QVBoxLayout()
 
         self.file_label = QLabel("No file selected")
@@ -54,8 +59,26 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(file_button_layout)
 
-        # Custom parameter input
-        # AutoMixer parameters
+        main_layout.addLayout(self.create_parameter_layout())
+
+        automix_button = QPushButton("Run AutoMixer")
+        automix_button.clicked.connect(self.run_automixer)
+        automix_button.setToolTip("Start the AutoMixer process with the current parameters")
+        main_layout.addWidget(automix_button)
+
+        self.output_text = QTextEdit()
+        self.output_text.setReadOnly(True)
+        main_layout.addWidget(self.output_text)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
+
+    def create_parameter_layout(self):
         param_layout = QFormLayout()
         
         self.speed_input = QDoubleSpinBox()
@@ -74,7 +97,7 @@ class MainWindow(QMainWindow):
         self.sample_length_spin.setRange(0.1, 10.0)
         self.sample_length_spin.setSingleStep(0.1)
         self.sample_length_spin.setDecimals(2)
-        self.sample_length_spin.setValue(1.0)  # Default value
+        self.sample_length_spin.setValue(1.0)
         param_layout.addRow("Sample Length (l):", self.sample_length_spin)
         
         self.mode_input = QComboBox()
@@ -89,37 +112,15 @@ class MainWindow(QMainWindow):
         self.verbose_mode_checkbox = QCheckBox("Verbose Mode")
         param_layout.addRow(self.verbose_mode_checkbox)
 
-        main_layout.addLayout(param_layout)
-
-        # AutoMixer button
-        automix_button = QPushButton("Run AutoMixer")
-        automix_button.clicked.connect(self.run_automixer)
-        automix_button.setToolTip("Start the AutoMixer process with the current parameters")
-        main_layout.addWidget(automix_button)
-
-        self.output_text = QTextEdit()
-        self.output_text.setReadOnly(True)
-        main_layout.addWidget(self.output_text)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
-
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
-
-        self.sample_cutter = None
-        self.audio_file_path = None
+        return param_layout
 
     def select_file(self):
-        if not self.audio_file_path:
-            self.audio_file_path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", "Audio Files (*.mp3 *.wav *.webm *.m4a)")
+        self.audio_file_path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", "Audio Files (*.mp3 *.wav *.webm *.m4a)")
         
         if self.audio_file_path:
             self.file_label.setText(f"Selected file: {self.audio_file_path}")
-            self.output_text.append(f"Loaded file: {self.audio_file_path}")
-            self.output_text.append("Detecting beats...")
+            self.log_message(f"Loaded file: {self.audio_file_path}")
+            self.log_message("Detecting beats...")
             self.progress_bar.setVisible(True)
             self.progress_bar.setRange(0, 0)  # Indeterminate progress
             QApplication.processEvents()  # Force GUI update
@@ -130,48 +131,27 @@ class MainWindow(QMainWindow):
                 if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats:
                     avg_beat_length = sum(b[1] - b[0] for b in self.sample_cutter.beats[1:]) / (len(self.sample_cutter.beats) - 1)
                     self.detected_sample_length = avg_beat_length / 1000  # Convert to seconds
-                    self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+                    self.log_message(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
                     self.sample_length_spin.setValue(self.detected_sample_length)
                 else:
-                    self.output_text.append("Beats detected, but no sample length could be calculated.")
-                    self.handle_beat_detection_failure()
-            except ValueError as e:
-                if "The truth value of an array with more than one element is ambiguous" in str(e):
-                    self.output_text.append("Error: Beat detection failed due to ambiguous array values.")
-                    self.output_text.append("This might be caused by issues in the audio file or limitations in the beat detection algorithm.")
-                    self.handle_beat_detection_failure()
-                else:
-                    self.output_text.append(f"Error detecting beats: {str(e)}")
+                    self.log_message("Beats detected, but no sample length could be calculated.")
                     self.handle_beat_detection_failure()
             except Exception as e:
-                self.output_text.append(f"Error detecting beats: {str(e)}")
+                self.log_message(f"Error detecting beats: {str(e)}")
                 self.handle_beat_detection_failure()
             finally:
                 self.progress_bar.setVisible(False)
 
     def handle_beat_detection_failure(self):
-        self.output_text.append("Beat detection failed. Using default sample length.")
+        self.log_message("Beat detection failed. Using default sample length.")
         self.detected_sample_length = 1.0  # Default to 1 second
         self.sample_length_spin.setValue(self.detected_sample_length)
-        self.output_text.append(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
-
-    def execute_command(self, command):
-        if self.sample_cutter:
-            output = self.sample_cutter.handle_input(command)
-            self.output_text.append(f"Command: {command}\nOutput: {output}")
-        else:
-            self.output_text.append("Please select an audio file first")
-
-    def execute_custom_command(self):
-        command = self.command_input.text()
-        if command:
-            self.execute_command(command)
-            self.command_input.clear()
+        self.log_message(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
 
     def download_from_youtube(self):
         url, ok = QInputDialog.getText(self, "YouTube Downloader", "Enter YouTube URL:")
         if ok and url:
-            self.output_text.append(f"Downloading from YouTube: {url}")
+            self.log_message(f"Downloading from YouTube: {url}")
             self.progress_bar.setVisible(True)
             self.worker = WorkerThread(url, ".")
             self.worker.progress.connect(self.update_progress)
@@ -184,29 +164,15 @@ class MainWindow(QMainWindow):
     def download_finished(self, result):
         self.progress_bar.setVisible(False)
         if isinstance(result, str) and result.startswith("Error"):
-            self.output_text.append(f"Error downloading: {result}")
+            self.log_message(f"Error downloading: {result}")
         elif isinstance(result, str) and os.path.exists(result):
-            self.output_text.append(f"Download complete: {result}")
+            self.log_message(f"Download complete: {result}")
             self.audio_file_path = result
             self.file_label.setText(f"Selected file: {result}")
-            self.output_text.append("File downloaded successfully. You can now select it to detect beats.")
+            self.log_message("File downloaded successfully. You can now select it to detect beats.")
             self.select_file()  # Automatically start beat detection
         else:
-            self.output_text.append(f"Error: Invalid download result. Expected file path, got: {result}")
-
-    def set_parameter(self):
-        param = self.param_input.text().strip()
-        if not param:
-            self.output_text.append("Please enter a parameter")
-            return
-
-        if self.sample_cutter:
-            output = self.sample_cutter.handle_input(param)
-            self.output_text.append(f"Parameter set: {param}")
-            self.output_text.append(f"Output: {output}")
-            self.update_config_display()
-        else:
-            self.output_text.append("Please select an audio file first")
+            self.log_message(f"Error: Invalid download result. Expected file path, got: {result}")
 
     def update_config_display(self):
         if self.sample_cutter:
@@ -222,9 +188,9 @@ Sample Speed: {config.sample_speed}
 Verbose Mode Enabled: {config.is_verbose_mode_enabled}
 Window Divider: {config.window_divider}
 """
-            self.output_text.append(config_text)
+            self.log_message(config_text)
         else:
-            self.output_text.append("No configuration available. Please select an audio file first.")
+            self.log_message("No configuration available. Please select an audio file first.")
 
     def run_automixer(self):
         if not self.audio_file_path:
@@ -235,7 +201,6 @@ Window Divider: {config.window_divider}
             self.log_message("Beats not detected. Please load the audio file and detect beats first.")
             return
 
-        # Update AutoMixer configuration
         self.update_config()
 
         runner = AutoMixerRunner()
@@ -256,3 +221,6 @@ Window Divider: {config.window_divider}
             self.sample_cutter.config.mode = self.mode_input.currentText()
             self.sample_cutter.config.window_divider = self.window_divider_input.value()
             self.sample_cutter.config.is_verbose_mode_enabled = self.verbose_mode_checkbox.isChecked()
+
+    def log_message(self, message):
+        self.output_text.append(message)
