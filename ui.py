@@ -1,6 +1,6 @@
 import sys
 import os
-import traceback
+import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QPushButton, QFileDialog, QWidget, QLabel, QComboBox, 
                                QDoubleSpinBox, QSpinBox, QGroupBox, QLineEdit, QMessageBox,
@@ -10,8 +10,30 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QFont
 
-from cutter.sample_cut_tool import SampleCutter
-import youtube.downloader as youtube_downloader
+# Mock-up of youtube.downloader module
+class YoutubeDownloader:
+    @staticmethod
+    def download_video(url, destination_path):
+        # Simulate download
+        time.sleep(2)
+        return os.path.join(destination_path, "downloaded_audio.mp3")
+
+# Mock-up of sample_cut_tool module
+class SampleCutter:
+    def __init__(self, audio_file_path, destination_path):
+        self.audio_file_path = audio_file_path
+        self.destination_path = destination_path
+
+    def config_automix(self, command):
+        print(f"Configuring automix with command: {command}")
+
+    def automix(self, command):
+        print(f"Running automix with command: {command}")
+        time.sleep(2)  # Simulate processing
+        return "mixed_audio.mp3"
+
+    def play_audio(self, command):
+        print(f"Playing audio with command: {command}")
 
 class HelpDialog(QMessageBox):
     def __init__(self, parent=None):
@@ -41,7 +63,7 @@ class YouTubeDownloaderWorker(QThread):
     def run(self):
         try:
             # Download video
-            downloaded_file = youtube_downloader.download_video(self.url, self.destination_path)
+            downloaded_file = YoutubeDownloader.download_video(self.url, self.destination_path)
             self.finished.emit(True, downloaded_file)
         except Exception as e:
             self.finished.emit(False, str(e))
@@ -160,6 +182,38 @@ class AutoMixerConfigPanel(QGroupBox):
 
         self.setLayout(layout)
 
+    def apply_config(self):
+        config_command = f"amc m {self.mode_combo.currentText()} "
+        config_command += f"s {self.speed_spin.value()} "
+        config_command += f"ss {self.sample_speed_spin.value()} "
+        config_command += f"w {self.window_spin.value()} "
+        config_command += f"c {self.channel_edit.text()} "
+        if self.length_edit.text():
+            config_command += f"l {self.length_edit.text()}"
+        
+        self.sample_cutter.config_automix(config_command)
+        self.log_message(f"AutoMixer configuration applied: {config_command}")
+
+    def run_automixer(self):
+        self.worker = AutoMixerWorker(self.sample_cutter)
+        self.worker.finished.connect(self.on_automixer_finished)
+        self.worker.progress.connect(self.progress_bar.setValue)
+        self.worker.start()
+        self.run_button.setEnabled(False)
+        self.log_message("AutoMixer process started...")
+
+    def on_automixer_finished(self, success, message):
+        self.run_button.setEnabled(True)
+        if success:
+            self.log_message(message)
+            QMessageBox.information(self, "AutoMixer Complete", message)
+        else:
+            self.log_message(f"Error: {message}")
+            QMessageBox.critical(self, "Error", f"An error occurred while running AutoMixer: {message}")
+
+    def log_message(self, message):
+        self.log_display.appendPlainText(message)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -255,23 +309,23 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", f"Failed to play audio: {str(e)}")
 
     def save_mixed_audio(self):
-        if self.sample_cutter:
-            try:
-                # Assuming the mixed file is saved with a "_mixed" suffix
-                source_file = self.sample_cutter.audio_file_path.replace(".mp3", "_mixed.mp3")
-                if not os.path.exists(source_file):
-                    raise FileNotFoundError("Mixed audio file not found. Run AutoMixer first.")
-                
-                save_path, _ = QFileDialog.getSaveFileName(self, "Save Mixed Audio", "", "Audio Files (*.mp3)")
-                if save_path:
-                    # Copy the file to the new location
-                    import shutil
-                    shutil.copy2(source_file, save_path)
-                    self.log_message(f"Mixed audio saved to: {save_path}")
-                    QMessageBox.information(self, "Save Successful", f"Mixed audio saved to: {save_path}")
-            except Exception as e:
-                self.log_message(f"Error saving mixed audio: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to save mixed audio: {str(e)}")
+            if self.sample_cutter:
+                try:
+                    # Assuming the mixed file is saved with a "_mixed" suffix
+                    source_file = self.sample_cutter.audio_file_path.replace(".mp3", "_mixed.mp3")
+                    if not os.path.exists(source_file):
+                        raise FileNotFoundError("Mixed audio file not found. Run AutoMixer first.")
+                    
+                    save_path, _ = QFileDialog.getSaveFileName(self, "Save Mixed Audio", "", "Audio Files (*.mp3)")
+                    if save_path:
+                        # Copy the file to the new location
+                        import shutil
+                        shutil.copy2(source_file, save_path)
+                        self.log_message(f"Mixed audio saved to: {save_path}")
+                        QMessageBox.information(self, "Save Successful", f"Mixed audio saved to: {save_path}")
+                except Exception as e:
+                    self.log_message(f"Error saving mixed audio: {str(e)}")
+                    QMessageBox.critical(self, "Error", f"Failed to save mixed audio: {str(e)}")
 
     def create_automixer_panel(self):
         if self.automixer_panel:
