@@ -256,11 +256,3 @@ Window Divider: {config.window_divider}
             self.sample_cutter.config.mode = self.mode_input.currentText()
             self.sample_cutter.config.window_divider = self.window_divider_input.value()
             self.sample_cutter.config.is_verbose_mode_enabled = self.verbose_mode_checkbox.isChecked()
-        try:
-            mix = runner.run(self.sample_cutter.config)
-            output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(float(self.sample_cutter.config.sample_length)*1000)}-vtgsmlpr____" + \
-                          f"{datetime.now().strftime('%Y_%m_%d_%H%M')}.mp3"
-            mix.export(output_file, format="mp3")
-            self.log_message(f"AutoMixer completed. Output saved as {output_file}")
-        except Exception as e:
-            self.log_message(f"Error running AutoMixer: {str(e)}")
