@@ -2,7 +2,8 @@ import os
 from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QLineEdit, QToolTip, QInputDialog, QApplication, QProgressBar)
+                               QLineEdit, QToolTip, QInputDialog, QApplication, QProgressBar,
+                               QFormLayout, QDoubleSpinBox, QComboBox)
 from PySide6.QtCore import QThread, Signal
 
 from cutter.sample_cut_tool import SampleCutter
@@ -54,21 +55,35 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(file_button_layout)
 
         # Custom parameter input
-        param_layout = QHBoxLayout()
-        self.param_input = QLineEdit()
-        self.param_input.setPlaceholderText("Enter parameter (e.g., s 0.8)")
-        param_layout.addWidget(self.param_input)
-
-        param_button = QPushButton("Set Parameter")
-        param_button.clicked.connect(self.set_parameter)
-        param_layout.addWidget(param_button)
+        # AutoMixer parameters
+        param_layout = QFormLayout()
+        
+        self.speed_input = QDoubleSpinBox()
+        self.speed_input.setRange(0.1, 2.0)
+        self.speed_input.setSingleStep(0.1)
+        self.speed_input.setValue(1.0)
+        param_layout.addRow("Playback Speed (s):", self.speed_input)
+        
+        self.sample_speed_input = QDoubleSpinBox()
+        self.sample_speed_input.setRange(0.1, 2.0)
+        self.sample_speed_input.setSingleStep(0.1)
+        self.sample_speed_input.setValue(1.0)
+        param_layout.addRow("Sample Speed (ss):", self.sample_speed_input)
+        
+        self.length_input = QLineEdit()
+        self.length_input.setPlaceholderText("e.g., /3 or *2")
+        param_layout.addRow("Sample Length (l):", self.length_input)
+        
+        self.mode_input = QComboBox()
+        self.mode_input.addItems(["r", "3", "3w"])
+        param_layout.addRow("Mode (m):", self.mode_input)
 
         main_layout.addLayout(param_layout)
 
         # AutoMixer button
         automix_button = QPushButton("Run AutoMixer")
         automix_button.clicked.connect(self.run_automixer)
-        automix_button.setToolTip("Start the AutoMixer process")
+        automix_button.setToolTip("Start the AutoMixer process with the current parameters")
         main_layout.addWidget(automix_button)
 
         self.output_text = QTextEdit()
@@ -233,6 +248,15 @@ Window Divider: {config.window_divider}
         if not self.sample_cutter or not hasattr(self.sample_cutter, 'beats'):
             self.output_text.append("Beats not detected. Please load the audio file and detect beats first.")
             return
+
+        # Prepare AutoMixer parameters
+        speed = self.speed_input.value()
+        sample_speed = self.sample_speed_input.value()
+        length = self.length_input.text()
+        mode = self.mode_input.currentText()
+
+        # Update AutoMixer configuration
+        self.sample_cutter.handle_input(f"amc m {mode} s {speed} ss {sample_speed} l {length}")
 
         runner = AutoMixerRunner()
         try:
