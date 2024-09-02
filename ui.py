@@ -1,10 +1,13 @@
 import sys
 import os
+import traceback
 
-# Disable Qt platform plugin
-os.environ['QT_QPA_PLATFORM'] = 'minimal'
+# Remove any existing QT_QPA_PLATFORM setting
+if 'QT_QPA_PLATFORM' in os.environ:
+    del os.environ['QT_QPA_PLATFORM']
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
+try:
+    from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
                                QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox)
 from PySide6.QtGui import QFont
@@ -152,11 +155,16 @@ class MainWindow(QMainWindow):
             self.output_text.append(f"Error running AutoMixer: {str(e)}")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    
-    # Set global tooltip style
-    QToolTip.setFont(QFont('SansSerif', 10))
-    
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        
+        # Set global tooltip style
+        QToolTip.setFont(QFont('SansSerif', 10))
+        
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        print("Traceback:")
+        traceback.print_exc()
