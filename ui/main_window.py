@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QLineEdit, QToolTip)
+                               QLineEdit, QToolTip, QInputDialog, QApplication)
 from PySide6.QtCore import QThread, Signal
 
 from cutter.sample_cut_tool import SampleCutter
