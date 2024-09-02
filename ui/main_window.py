@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
                                QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox, QToolTip,
@@ -63,7 +64,12 @@ class MainWindow(QMainWindow):
             ("b", "Set Beginning"),
             ("l", "Set Length"),
             ("s", "Set Step"),
-            ("cut", "Cut Sample")
+            ("cut", "Cut Sample"),
+            ("f", "Forward"),
+            ("r", "Rewind"),
+            ("plot", "Plot Amplitude"),
+            ("info", "Sample Info"),
+            ("am", "AutoMix")
         ]
         for command, description in commands:
             button = QPushButton(command)
@@ -87,7 +93,7 @@ class MainWindow(QMainWindow):
         automixer_layout.addWidget(QLabel("AutoMixer Parameters:"))
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["rw"])  # Add more modes if available
+        self.mode_combo.addItems(["r", "3", "3w"])  # Add modes from README
         self.mode_combo.setToolTip("Select the AutoMixer mode")
         automixer_layout.addWidget(QLabel("Mode:"))
         automixer_layout.addWidget(self.mode_combo)
@@ -274,7 +280,8 @@ class MainWindow(QMainWindow):
         runner = AutoMixerRunner()
         try:
             mix = runner.run(config)
-            output_file = "output_mix.mp3"
+            output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(self.sample_length_spin.value()*1000)}-vtgsmlpr____" + \
+                          f"{datetime.now().strftime('%Y_%m_%d_%H%M')}.mp3"
             mix.export(output_file, format="mp3")
             self.output_text.append(f"AutoMixer completed. Output saved as {output_file}")
         except Exception as e:
