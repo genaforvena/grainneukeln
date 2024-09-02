@@ -164,17 +164,22 @@ class MainWindow(QMainWindow):
         if file_path:
             self.audio_file_path = file_path
             self.file_label.setText(f"Selected file: {file_path}")
-            self.sample_cutter = SampleCutter(file_path, "samples")
             self.output_text.append(f"Loaded file: {file_path}")
             self.output_text.append("Detecting beats...")
             self.progress_bar.setVisible(True)
             self.progress_bar.setRange(0, 0)  # Indeterminate progress
             QApplication.processEvents()  # Force GUI update
-            self.sample_cutter._detect_beats()
-            self.detected_sample_length = self.sample_cutter.calculate_sample_length()
-            self.sample_length_spin.setValue(self.detected_sample_length)
-            self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
-            self.progress_bar.setVisible(False)
+            
+            try:
+                self.sample_cutter = SampleCutter(file_path, "samples")
+                self.sample_cutter._detect_beats()
+                self.detected_sample_length = self.sample_cutter.calculate_sample_length()
+                self.sample_length_spin.setValue(self.detected_sample_length)
+                self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+            except Exception as e:
+                self.output_text.append(f"Error detecting beats: {str(e)}")
+            finally:
+                self.progress_bar.setVisible(False)
 
     def execute_command(self, command):
         if self.sample_cutter:
@@ -211,15 +216,7 @@ class MainWindow(QMainWindow):
                 self.output_text.append(f"Download complete: {file_path}")
                 self.audio_file_path = file_path
                 self.file_label.setText(f"Selected file: {file_path}")
-                try:
-                    self.sample_cutter = SampleCutter(file_path, "samples")
-                    self.output_text.append("Detecting beats...")
-                    self.sample_cutter._detect_beats()
-                    self.detected_sample_length = self.sample_cutter.calculate_sample_length()
-                    self.sample_length_spin.setValue(self.detected_sample_length)
-                    self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
-                except Exception as e:
-                    self.output_text.append(f"Error processing file: {str(e)}")
+                self.output_text.append("File downloaded successfully. You can now select it to detect beats.")
             else:
                 self.output_text.append(f"Error: Downloaded file not found at {file_path}")
 
