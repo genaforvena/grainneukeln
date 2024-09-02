@@ -9,12 +9,15 @@ if 'QT_QPA_PLATFORM' in os.environ:
 try:
     from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox)
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QToolTip
-from cutter.sample_cut_tool import SampleCutter
-from automixer.config import AutoMixerConfig
-from automixer.runner import AutoMixerRunner
+                               QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox, QToolTip)
+    from PySide6.QtGui import QFont
+    from cutter.sample_cut_tool import SampleCutter
+    from automixer.config import AutoMixerConfig
+    from automixer.runner import AutoMixerRunner
+except ImportError as e:
+    print(f"Error importing required modules: {e}")
+    print("Please make sure all required packages are installed.")
+    sys.exit(1)
 
 class MainWindow(QMainWindow):
     def __init__(self):
