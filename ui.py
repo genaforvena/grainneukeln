@@ -30,9 +30,16 @@ class MainWindow(QMainWindow):
         self.file_label = QLabel("No file selected")
         main_layout.addWidget(self.file_label)
 
+        file_button_layout = QHBoxLayout()
         select_file_button = QPushButton("Select Audio File")
         select_file_button.clicked.connect(self.select_file)
-        main_layout.addWidget(select_file_button)
+        file_button_layout.addWidget(select_file_button)
+
+        download_button = QPushButton("Download from YouTube")
+        download_button.clicked.connect(self.download_from_youtube)
+        file_button_layout.addWidget(download_button)
+
+        main_layout.addLayout(file_button_layout)
 
         button_layout = QHBoxLayout()
         commands = ["p", "b", "l", "s", "cut"]
@@ -127,6 +134,22 @@ class MainWindow(QMainWindow):
         if command:
             self.execute_command(command)
             self.command_input.clear()
+
+    def download_from_youtube(self):
+        url, ok = QInputDialog.getText(self, "YouTube Downloader", "Enter YouTube URL:")
+        if ok and url:
+            self.output_text.append(f"Downloading from YouTube: {url}")
+            try:
+                file_path = download_video(url, ".")
+                self.output_text.append(f"Download complete: {file_path}")
+                self.audio_file_path = file_path
+                self.file_label.setText(f"Selected file: {file_path}")
+                self.sample_cutter = SampleCutter(file_path, "samples")
+                self.output_text.append("Detecting beats...")
+                self.sample_cutter._detect_beats()
+                self.output_text.append("Beats detected.")
+            except Exception as e:
+                self.output_text.append(f"Error downloading: {str(e)}")
 
     def run_automixer(self):
         if not self.audio_file_path:
