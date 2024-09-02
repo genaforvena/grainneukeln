@@ -242,28 +242,22 @@ Window Divider: {config.window_divider}
 
     def run_automixer(self):
         if not self.audio_file_path:
-            self.output_text.append("Please select an audio file first")
+            self.log_message("Please select an audio file first")
             return
 
         if not self.sample_cutter or not hasattr(self.sample_cutter, 'beats'):
-            self.output_text.append("Beats not detected. Please load the audio file and detect beats first.")
+            self.log_message("Beats not detected. Please load the audio file and detect beats first.")
             return
 
-        # Prepare AutoMixer parameters
-        speed = self.speed_input.value()
-        sample_speed = self.sample_speed_input.value()
-        length = self.length_input.text()
-        mode = self.mode_input.currentText()
-
         # Update AutoMixer configuration
-        self.sample_cutter.handle_input(f"amc m {mode} s {speed} ss {sample_speed} l {length}")
+        self.update_config()
 
         runner = AutoMixerRunner()
         try:
             mix = runner.run(self.sample_cutter.config)
-            output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(self.sample_cutter.config.sample_length*1000)}-vtgsmlpr____" + \
+            output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(float(self.sample_cutter.config.sample_length)*1000)}-vtgsmlpr____" + \
                           f"{datetime.now().strftime('%Y_%m_%d_%H%M')}.mp3"
             mix.export(output_file, format="mp3")
-            self.output_text.append(f"AutoMixer completed. Output saved as {output_file}")
+            self.log_message(f"AutoMixer completed. Output saved as {output_file}")
         except Exception as e:
-            self.output_text.append(f"Error running AutoMixer: {str(e)}")
+            self.log_message(f"Error running AutoMixer: {str(e)}")
