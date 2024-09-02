@@ -200,15 +200,21 @@ class MainWindow(QMainWindow):
         if file_path.startswith("Error"):
             self.output_text.append(f"Error downloading: {file_path}")
         else:
-            self.output_text.append(f"Download complete: {file_path}")
-            self.audio_file_path = file_path
-            self.file_label.setText(f"Selected file: {file_path}")
-            self.sample_cutter = SampleCutter(file_path, "samples")
-            self.output_text.append("Detecting beats...")
-            self.sample_cutter._detect_beats()
-            self.detected_sample_length = self.sample_cutter.calculate_sample_length()
-            self.sample_length_spin.setValue(self.detected_sample_length)
-            self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+            if os.path.exists(file_path):
+                self.output_text.append(f"Download complete: {file_path}")
+                self.audio_file_path = file_path
+                self.file_label.setText(f"Selected file: {file_path}")
+                try:
+                    self.sample_cutter = SampleCutter(file_path, "samples")
+                    self.output_text.append("Detecting beats...")
+                    self.sample_cutter._detect_beats()
+                    self.detected_sample_length = self.sample_cutter.calculate_sample_length()
+                    self.sample_length_spin.setValue(self.detected_sample_length)
+                    self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+                except Exception as e:
+                    self.output_text.append(f"Error processing file: {str(e)}")
+            else:
+                self.output_text.append(f"Error: Downloaded file not found at {file_path}")
 
     def run_automixer(self):
         if not self.audio_file_path:
