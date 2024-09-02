@@ -74,6 +74,14 @@ class MainWindow(QMainWindow):
         self.length_input.setPlaceholderText("e.g., /3 or *2")
         param_layout.addRow("Sample Length (l):", self.length_input)
         
+        # Add a new QDoubleSpinBox for precise sample length input
+        self.sample_length_spin = QDoubleSpinBox()
+        self.sample_length_spin.setRange(0.1, 10.0)
+        self.sample_length_spin.setSingleStep(0.1)
+        self.sample_length_spin.setDecimals(2)
+        self.sample_length_spin.setValue(1.0)  # Default value
+        param_layout.addRow("Precise Sample Length (s):", self.sample_length_spin)
+        
         self.mode_input = QComboBox()
         self.mode_input.addItems(["r", "3", "3w"])
         param_layout.addRow("Mode (m):", self.mode_input)
@@ -120,6 +128,7 @@ class MainWindow(QMainWindow):
                     avg_beat_length = sum(b[1] - b[0] for b in self.sample_cutter.beats[1:]) / (len(self.sample_cutter.beats) - 1)
                     self.detected_sample_length = avg_beat_length / 1000  # Convert to seconds
                     self.output_text.append(f"Beats detected. Suggested sample length: {self.detected_sample_length:.2f} seconds")
+                    self.sample_length_spin.setValue(self.detected_sample_length)
                 else:
                     self.output_text.append("Beats detected, but no sample length could be calculated.")
                     self.handle_beat_detection_failure()
@@ -140,8 +149,7 @@ class MainWindow(QMainWindow):
     def handle_beat_detection_failure(self):
         self.output_text.append("Beat detection failed. Using default sample length.")
         self.detected_sample_length = 1.0  # Default to 1 second
-        if hasattr(self, 'automixer_panel') and self.automixer_panel:
-            self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
+        self.sample_length_spin.setValue(self.detected_sample_length)
         self.output_text.append(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
 
     def execute_command(self, command):
