@@ -4,4 +4,6 @@ matplotlib
 pydub
 tqdm
 yt-dlp
+PyQt6
+pyqtgraph
 pyrubberband
