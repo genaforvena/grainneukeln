@@ -41,9 +41,12 @@ class WorkerThread(QThread):
     def run(self):
         try:
             file_path = download_video(self.url, self.output_path, self.progress.emit)
-            self.finished.emit(file_path)
+            if file_path and os.path.exists(file_path):
+                self.finished.emit(file_path)
+            else:
+                self.finished.emit(f"Error: Downloaded file not found at {file_path}")
         except Exception as e:
-            self.finished.emit(str(e))
+            self.finished.emit(f"Error: {str(e)}")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -207,18 +210,17 @@ class MainWindow(QMainWindow):
     def update_progress(self, value):
         self.progress_bar.setValue(value)
 
-    def download_finished(self, file_path):
+    def download_finished(self, result):
         self.progress_bar.setVisible(False)
-        if file_path.startswith("Error"):
-            self.output_text.append(f"Error downloading: {file_path}")
+        if isinstance(result, str) and result.startswith("Error"):
+            self.output_text.append(f"Error downloading: {result}")
+        elif isinstance(result, str) and os.path.exists(result):
+            self.output_text.append(f"Download complete: {result}")
+            self.audio_file_path = result
+            self.file_label.setText(f"Selected file: {result}")
+            self.output_text.append("File downloaded successfully. You can now select it to detect beats.")
         else:
-            if os.path.exists(file_path):
-                self.output_text.append(f"Download complete: {file_path}")
-                self.audio_file_path = file_path
-                self.file_label.setText(f"Selected file: {file_path}")
-                self.output_text.append("File downloaded successfully. You can now select it to detect beats.")
-            else:
-                self.output_text.append(f"Error: Downloaded file not found at {file_path}")
+            self.output_text.append(f"Error: Invalid download result. Expected file path, got: {result}")
 
     def run_automixer(self):
         if not self.audio_file_path:

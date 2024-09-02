@@ -7,10 +7,12 @@ url = "https://www.youtube.com/watch?v=k_bkjsjElrI"
 
 def download_video(url, output_path, progress_callback=None):
     def progress_hook(d):
-        if d['status'] == 'downloading':
-            percent = d['_percent_str']
-            percent = percent.replace('%', '')
-            progress_callback(int(float(percent)))
+        if d['status'] == 'downloading' and progress_callback:
+            try:
+                percent = d.get('_percent_str', '0%').replace('%', '')
+                progress_callback(int(float(percent)))
+            except ValueError:
+                pass  # Ignore if we can't convert the percentage to a number
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -23,9 +25,16 @@ def download_video(url, output_path, progress_callback=None):
                 "preferredquality": "192",
             }
         ],
-        "progress_hooks": [progress_hook] if progress_callback else [],
+        "progress_hooks": [progress_hook],
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-        file_name = ydl.prepare_filename(ydl.extract_info(url, download=True))
-        return os.path.splitext(file_name)[0] + ".mp3"
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            final_filename = os.path.splitext(filename)[0] + ".mp3"
+            if os.path.exists(final_filename):
+                return final_filename
+            else:
+                return f"Error: File not found after download: {final_filename}"
+    except Exception as e:
+        return f"Error: {str(e)}"
