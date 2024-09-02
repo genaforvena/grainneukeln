@@ -13,30 +13,37 @@ try:
                                QInputDialog, QProgressBar)
     from PySide6.QtGui import QFont
     from PySide6.QtCore import QThread, Signal
+except ImportError as e:
+    print(f"Error importing PySide6 modules: {e}")
+    print("Please make sure PySide6 is installed. You can install it using:")
+    print("pip install PySide6")
+    sys.exit(1)
+
+try:
     from cutter.sample_cut_tool import SampleCutter
     from automixer.config import AutoMixerConfig
     from automixer.runner import AutoMixerRunner
     from youtube.downloader import download_video
-
-    class WorkerThread(QThread):
-        progress = Signal(int)
-        finished = Signal(str)
-
-        def __init__(self, url, output_path):
-            super().__init__()
-            self.url = url
-            self.output_path = output_path
-
-        def run(self):
-            try:
-                file_path = download_video(self.url, self.output_path, self.progress.emit)
-                self.finished.emit(file_path)
-            except Exception as e:
-                self.finished.emit(str(e))
 except ImportError as e:
-    print(f"Error importing required modules: {e}")
-    print("Please make sure all required packages are installed.")
+    print(f"Error importing custom modules: {e}")
+    print("Please make sure all required custom modules are in the correct directory.")
     sys.exit(1)
+
+class WorkerThread(QThread):
+    progress = Signal(int)
+    finished = Signal(str)
+
+    def __init__(self, url, output_path):
+        super().__init__()
+        self.url = url
+        self.output_path = output_path
+
+    def run(self):
+        try:
+            file_path = download_video(self.url, self.output_path, self.progress.emit)
+            self.finished.emit(file_path)
+        except Exception as e:
+            self.finished.emit(str(e))
 
 class MainWindow(QMainWindow):
     def __init__(self):
