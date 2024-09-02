@@ -89,13 +89,19 @@ class MainWindow(QMainWindow):
             self.log_message(f"Loaded audio file: {file_path}")
             
             # Detect sample length
-            detected_length = self.sample_cutter.sample_length
+            self.detected_sample_length = self.sample_cutter.sample_length
             
             self.create_automixer_panel()
             
             # Set the detected sample length in the UI
             if self.automixer_panel:
-                self.automixer_panel.set_detected_sample_length(detected_length)
+                self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
+            
+            # Check if beat detection was successful
+            if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats.size > 0:
+                self.log_message("Beat detection successful")
+            else:
+                self.handle_beat_detection_failure()
         except Exception as e:
             self.log_message(f"Error loading audio: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to load audio file: {str(e)}\n\nFile path: {file_path}\nFile size: {file_size} bytes")
