@@ -1,6 +1,7 @@
 myvenv/
 output/
 samples/
+downloads/
 .idea/
 .DS_Store
 .pytest_cache
