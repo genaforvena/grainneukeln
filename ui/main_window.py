@@ -70,21 +70,24 @@ class MainWindow(QMainWindow):
         self.sample_speed_input.setValue(1.0)
         param_layout.addRow("Sample Speed (ss):", self.sample_speed_input)
         
-        self.length_input = QLineEdit()
-        self.length_input.setPlaceholderText("e.g., /3 or *2")
-        param_layout.addRow("Sample Length (l):", self.length_input)
-        
-        # Add a new QDoubleSpinBox for precise sample length input
         self.sample_length_spin = QDoubleSpinBox()
         self.sample_length_spin.setRange(0.1, 10.0)
         self.sample_length_spin.setSingleStep(0.1)
         self.sample_length_spin.setDecimals(2)
         self.sample_length_spin.setValue(1.0)  # Default value
-        param_layout.addRow("Precise Sample Length (s):", self.sample_length_spin)
+        param_layout.addRow("Sample Length (l):", self.sample_length_spin)
         
         self.mode_input = QComboBox()
         self.mode_input.addItems(["r", "3", "3w"])
         param_layout.addRow("Mode (m):", self.mode_input)
+        
+        self.window_divider_input = QSpinBox()
+        self.window_divider_input.setRange(1, 10)
+        self.window_divider_input.setValue(2)
+        param_layout.addRow("Window Divider:", self.window_divider_input)
+        
+        self.verbose_mode_checkbox = QCheckBox("Verbose Mode")
+        param_layout.addRow(self.verbose_mode_checkbox)
 
         main_layout.addLayout(param_layout)
 
