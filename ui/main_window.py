@@ -1,44 +1,27 @@
 import os
-from datetime import datetime
-from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
-                               QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
-                               QInputDialog, QApplication, QProgressBar,
-                               QFormLayout, QDoubleSpinBox, QComboBox, QSpinBox, QCheckBox)
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QPushButton, QWidget, 
+                               QFileDialog, QMessageBox, QInputDialog)
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtCore import QUrl
 
+from automixer_config_panel import AutoMixerConfigPanel
 from cutter.sample_cut_tool import SampleCutter
-from automixer.runner import AutoMixerRunner
-from youtube.downloader import download_video
-
-class WorkerThread(QThread):
-    progress = Signal(int)
-    finished = Signal(str)
-
-    def __init__(self, url, output_path):
-        super().__init__()
-        self.url = url
-        self.output_path = output_path
-
-    def run(self):
-        try:
-            file_path = download_video(self.url, self.output_path, self.progress.emit)
-            if file_path and os.path.exists(file_path):
-                self.finished.emit(file_path)
-            else:
-                self.finished.emit(f"Error: Downloaded file not found at {file_path}")
-        except Exception as e:
-            self.finished.emit(f"Error: {str(e)}")
+from workers import YouTubeDownloaderWorker
+from help_dialog import HelpDialog
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sample Cutter and AutoMixer")
+        self.setWindowTitle("Granular Sampler")
         self.setGeometry(100, 100, 800, 600)
 
         self.setup_ui()
 
         self.sample_cutter = None
-        self.audio_file_path = None
+        self.automixer_panel = None
+        self.player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.player.setAudioOutput(self.audio_output)
 
     def setup_ui(self):
         main_layout = QVBoxLayout()
