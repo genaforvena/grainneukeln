@@ -251,6 +251,19 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     try:
+        # Redirect stderr to capture QT warnings
+        class StderrCatcher:
+            def __init__(self):
+                self.data = []
+            def write(self, msg):
+                self.data.append(msg)
+                sys.stderr.write(msg)
+            def flush(self):
+                sys.stderr.flush()
+
+        stderr_catcher = StderrCatcher()
+        sys.stderr = stderr_catcher
+
         app = QApplication(sys.argv)
         
         # Set global tooltip style
@@ -258,6 +271,11 @@ if __name__ == "__main__":
         
         window = MainWindow()
         window.show()
+
+        # Print captured stderr messages to the UI console
+        for msg in stderr_catcher.data:
+            window.output_text.append(f"Console Error: {msg.strip()}")
+
         sys.exit(app.exec())
     except Exception as e:
         print(f"An error occurred: {e}")
