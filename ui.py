@@ -1,4 +1,9 @@
 import sys
+import os
+
+# Set the QT_QPA_PLATFORM environment variable to 'offscreen'
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
                                QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox)
@@ -100,6 +105,9 @@ class MainWindow(QMainWindow):
             self.file_label.setText(f"Selected file: {file_path}")
             self.sample_cutter = SampleCutter(file_path, "samples")
             self.output_text.append(f"Loaded file: {file_path}")
+            self.output_text.append("Detecting beats...")
+            self.sample_cutter._detect_beats()
+            self.output_text.append("Beats detected.")
 
     def execute_command(self, command):
         if self.sample_cutter:
@@ -119,9 +127,13 @@ class MainWindow(QMainWindow):
             self.output_text.append("Please select an audio file first")
             return
 
+        if not self.sample_cutter or not hasattr(self.sample_cutter, 'beats'):
+            self.output_text.append("Beats not detected. Please load the audio file and detect beats first.")
+            return
+
         config = AutoMixerConfig(
             audio=self.audio_file_path,
-            beats=self.sample_cutter._beats if self.sample_cutter else None,
+            beats=self.sample_cutter.beats,
             sample_length=self.sample_length_spin.value(),
             sample_speed=self.sample_speed_spin.value(),
             mode=self.mode_combo.currentText(),
