@@ -3,7 +3,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
                                QLineEdit, QToolTip, QInputDialog, QApplication, QProgressBar,
-                               QFormLayout, QDoubleSpinBox, QComboBox)
+                               QFormLayout, QDoubleSpinBox, QComboBox, QSpinBox, QCheckBox)
 from PySide6.QtCore import QThread, Signal
 
 from cutter.sample_cut_tool import SampleCutter
@@ -239,6 +239,14 @@ Window Divider: {config.window_divider}
         self.update_config()
 
         runner = AutoMixerRunner()
+        try:
+            mix = runner.run(self.sample_cutter.config)
+            output_file = f"{os.path.splitext(os.path.basename(self.audio_file_path))[0]}___mix_cut{int(float(self.sample_cutter.config.sample_length)*1000)}-vtgsmlpr____" + \
+                          f"{datetime.now().strftime('%Y_%m_%d_%H%M')}.mp3"
+            mix.export(output_file, format="mp3")
+            self.log_message(f"AutoMixer completed. Output saved as {output_file}")
+        except Exception as e:
+            self.log_message(f"Error running AutoMixer: {str(e)}")
 
     def update_config(self):
         if self.sample_cutter:
