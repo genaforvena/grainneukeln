@@ -138,36 +138,11 @@ class MainWindow(QMainWindow):
                 self.progress_bar.setVisible(False)
 
     def handle_beat_detection_failure(self):
-        self.output_text.append("Would you like to:")
-        self.output_text.append("1. Set a default sample length")
-        self.output_text.append("2. Try an alternative beat detection method")
-        self.output_text.append("3. Continue without beat detection")
-        
-        choice, ok = QInputDialog.getItem(self, "Beat Detection Failed", 
-                                          "Choose an option:", 
-                                          ["Set default sample length", "Try alternative method", "Continue without beat detection"], 
-                                          0, False)
-        
-        if ok:
-            if choice == "Set default sample length":
-                default_length, ok = QInputDialog.getDouble(self, "Set Default Sample Length", 
-                                                            "Enter default sample length (in seconds):", 
-                                                            1.0, 0.1, 10.0, 2)
-                if ok:
-                    self.detected_sample_length = default_length
-                    self.sample_length_spin.setValue(self.detected_sample_length)
-                    self.output_text.append(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
-            elif choice == "Try alternative method":
-                self.output_text.append("Attempting alternative beat detection method...")
-                # Implement an alternative beat detection method here
-                # For now, we'll just set a default length
-                self.detected_sample_length = 1.0
-                self.sample_length_spin.setValue(self.detected_sample_length)
-                self.output_text.append(f"Alternative method failed. Default sample length set to {self.detected_sample_length:.2f} seconds")
-            else:
-                self.output_text.append("Continuing without beat detection. You can manually set the sample length.")
-        else:
-            self.output_text.append("No option selected. You can manually set the sample length.")
+        self.output_text.append("Beat detection failed. Using default sample length.")
+        self.detected_sample_length = 1.0  # Default to 1 second
+        if hasattr(self, 'automixer_panel') and self.automixer_panel:
+            self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
+        self.output_text.append(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
 
     def execute_command(self, command):
         if self.sample_cutter:
