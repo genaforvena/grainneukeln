@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         automixer_layout.addWidget(self.mode_combo)
 
         self.sample_length_spin = QDoubleSpinBox()
-        self.sample_length_spin.setRange(0.1, 10.0)
+        self.sample_length_spin.setRange(0.1, 10.0)  # 0.1 to 10 seconds (10000ms)
         self.sample_length_spin.setValue(1.0)
         self.sample_length_spin.setToolTip("Set the length of each sample in seconds")
         automixer_layout.addWidget(QLabel("Sample Length:"))
