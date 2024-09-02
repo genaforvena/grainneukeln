@@ -1,8 +1,8 @@
 import sys
 import os
 
-# Set the QT_QPA_PLATFORM environment variable to 'offscreen'
-os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+# Disable Qt platform plugin
+os.environ['QT_QPA_PLATFORM'] = 'minimal'
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                                QWidget, QPushButton, QFileDialog, QLabel, QTextEdit, 
