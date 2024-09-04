@@ -1,13 +1,14 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QPushButton, QWidget, 
-                               QFileDialog, QMessageBox, QInputDialog)
+                               QFileDialog, QInputDialog, QProgressBar)
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtCore import QUrl
 
 from automixer_config_panel import AutoMixerConfigPanel
 from cutter.sample_cut_tool import SampleCutter
-from workers import YouTubeDownloaderWorker
+from workers import YouTubeDownloaderWorker, AutoMixerWorker
 from help_dialog import HelpDialog
+from utils import show_error_message, show_info_message, log_message
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -40,6 +41,10 @@ class MainWindow(QMainWindow):
         
         self.add_button("Help", self.show_help, "Click for instructions on how to use this application")
 
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.layout.addWidget(self.progress_bar)
+
     def add_button(self, text, callback, tooltip):
         button = QPushButton(text)
         button.clicked.connect(callback)
@@ -57,14 +62,17 @@ class MainWindow(QMainWindow):
         if ok and url:
             self.youtube_downloader = YouTubeDownloaderWorker(url, "samples")
             self.youtube_downloader.finished.connect(self.on_youtube_download_finished)
+            self.youtube_downloader.progress.connect(self.update_progress)
             self.youtube_downloader.start()
-            QMessageBox.information(self, "Download Started", "YouTube audio download has started. Please wait...")
+            self.progress_bar.setVisible(True)
+            show_info_message(self, "Download Started", "YouTube audio download has started. Please wait...")
 
     def on_youtube_download_finished(self, success, result):
+        self.progress_bar.setVisible(False)
         if success:
             self.load_audio(result)
         else:
-            QMessageBox.critical(self, "Error", f"Failed to download YouTube audio: {result}")
+            show_error_message(self, "Error", f"Failed to download YouTube audio: {result}")
 
     def load_audio(self, file_path):
         try:
@@ -76,7 +84,7 @@ class MainWindow(QMainWindow):
                 raise ValueError(f"The file {file_path} is empty.")
 
             self.sample_cutter = SampleCutter(file_path, "samples")
-            self.log_message(f"Loaded audio file: {file_path}")
+            log_message(self, f"Loaded audio file: {file_path}")
             
             self.detected_sample_length = self.sample_cutter.sample_length
             
@@ -86,12 +94,12 @@ class MainWindow(QMainWindow):
                 self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
             
             if hasattr(self.sample_cutter, 'beats') and self.sample_cutter.beats.size > 0:
-                self.log_message("Beat detection successful")
+                log_message(self, "Beat detection successful")
             else:
                 self.handle_beat_detection_failure()
         except Exception as e:
-            self.log_message(f"Error loading audio: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Failed to load audio file: {str(e)}\n\nFile path: {file_path}\nFile size: {file_size} bytes")
+            log_message(self, f"Error loading audio: {str(e)}")
+            show_error_message(self, "Error", f"Failed to load audio file: {str(e)}\n\nFile path: {file_path}\nFile size: {file_size} bytes")
 
     def play_audio(self, is_original=True):
         if self.sample_cutter:
@@ -102,10 +110,10 @@ class MainWindow(QMainWindow):
                 
                 self.player.setSource(QUrl.fromLocalFile(audio_file))
                 self.player.play()
-                self.log_message(f"Playing {'original' if is_original else 'mixed'} audio")
+                log_message(self, f"Playing {'original' if is_original else 'mixed'} audio")
             except Exception as e:
-                self.log_message(f"Error playing audio: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to play audio: {str(e)}")
+                log_message(self, f"Error playing audio: {str(e)}")
+                show_error_message(self, "Error", f"Failed to play audio: {str(e)}")
 
     def save_mixed_audio(self):
         if self.sample_cutter:
@@ -118,11 +126,11 @@ class MainWindow(QMainWindow):
                 if save_path:
                     import shutil
                     shutil.copy2(source_file, save_path)
-                    self.log_message(f"Mixed audio saved to: {save_path}")
-                    QMessageBox.information(self, "Save Successful", f"Mixed audio saved to: {save_path}")
+                    log_message(self, f"Mixed audio saved to: {save_path}")
+                    show_info_message(self, "Save Successful", f"Mixed audio saved to: {save_path}")
             except Exception as e:
-                self.log_message(f"Error saving mixed audio: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to save mixed audio: {str(e)}")
+                log_message(self, f"Error saving mixed audio: {str(e)}")
+                show_error_message(self, "Error", f"Failed to save mixed audio: {str(e)}")
 
     def create_automixer_panel(self):
         if self.automixer_panel:
@@ -133,18 +141,16 @@ class MainWindow(QMainWindow):
         self.play_mixed_button.setEnabled(True)
         self.save_button.setEnabled(True)
 
-    def log_message(self, message):
-        if self.automixer_panel:
-            self.automixer_panel.log_message(message)
-        print(message)  # Also print to console for debugging
-
     def handle_beat_detection_failure(self):
-        self.log_message("Beat detection failed. Using default sample length.")
+        log_message(self, "Beat detection failed. Using default sample length.")
         self.detected_sample_length = 1.0  # Default to 1 second
         if self.automixer_panel:
             self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
-        self.log_message(f"Default sample length set to {self.detected_sample_length:.2f} seconds")
+        log_message(self, f"Default sample length set to {self.detected_sample_length:.2f} seconds")
 
     def show_help(self):
         help_dialog = HelpDialog(self)
         help_dialog.exec()
+
+    def update_progress(self, value):
+        self.progress_bar.setValue(int(value))

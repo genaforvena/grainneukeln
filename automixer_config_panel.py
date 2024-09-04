@@ -1,8 +1,9 @@
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QMessageBox
+from PySide6.QtWidgets import QGroupBox, QVBoxLayout
 from config_inputs import ModeSelector, SpeedInput, WindowDividerInput, ChannelInput, SampleLengthInput
 from progress_display import ProgressDisplay
 from config_buttons import ConfigButtons
 from workers import AutoMixerWorker
+from utils import show_error_message, show_info_message, log_message
 
 class AutoMixerConfigPanel(QGroupBox):
     def __init__(self, sample_cutter):
@@ -52,7 +53,7 @@ class AutoMixerConfigPanel(QGroupBox):
             config_command += f"l {self.sample_length_input.get_value()}"
         
         self.sample_cutter.config_automix(config_command)
-        self.log_message(f"AutoMixer configuration applied: {config_command}")
+        log_message(self, f"AutoMixer configuration applied: {config_command}")
 
     def run_automixer(self):
         self.worker = AutoMixerWorker(self.sample_cutter)
@@ -60,16 +61,16 @@ class AutoMixerConfigPanel(QGroupBox):
         self.worker.progress.connect(self.progress_display.set_progress)
         self.worker.start()
         self.config_buttons.set_run_enabled(False)
-        self.log_message("AutoMixer process started...")
+        log_message(self, "AutoMixer process started...")
 
     def on_automixer_finished(self, success, message):
         self.config_buttons.set_run_enabled(True)
         if success:
-            self.log_message(message)
-            QMessageBox.information(self, "AutoMixer Complete", message)
+            log_message(self, message)
+            show_info_message(self, "AutoMixer Complete", message)
         else:
-            self.log_message(f"Error: {message}")
-            QMessageBox.critical(self, "Error", f"An error occurred while running AutoMixer: {message}")
+            log_message(self, f"Error: {message}")
+            show_error_message(self, "Error", f"An error occurred while running AutoMixer: {message}")
 
     def log_message(self, message):
         self.progress_display.log_message(message)
