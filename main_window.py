@@ -143,10 +143,10 @@ class MainWindow(QMainWindow):
 
     def handle_beat_detection_failure(self):
         log_message(self, "Beat detection failed. Using default sample length.")
-        self.detected_sample_length = 1.0  # Default to 1 second
+        self.detected_sample_length = calculate_step(self.sample_cutter.beats) or 1.0  # Use calculated step or default to 1 second
         if self.automixer_panel:
             self.automixer_panel.set_detected_sample_length(self.detected_sample_length)
-        log_message(self, f"Default sample length set to {self.detected_sample_length:.2f} seconds")
+        log_message(self, f"Sample length set to {self.detected_sample_length:.2f} seconds")
 
     def show_help(self):
         help_dialog = HelpDialog(self)

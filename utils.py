@@ -16,14 +16,15 @@ def calculate_step(beats):
     Calculate the step size as the average distance between the beats.
     
     :param beats: List of beat positions
-    :return: Average step size
+    :return: Average step size or 0 if calculation is not possible
     """
     try:
-        if len(beats) < 2:
-            raise ValueError("At least two beats are required to calculate step size")
+        if not beats or len(beats) < 2:
+            log_message(None, "Not enough beats to calculate step size. Using default.")
+            return 0
         
         step = sum(beats[i] - beats[i-1] for i in range(1, len(beats))) / (len(beats) - 1)
         return step
     except Exception as e:
         log_message(None, f"Error calculating step size: {str(e)}")
-        return 0  # Return a default value or raise the exception based on your error handling strategy
+        return 0
