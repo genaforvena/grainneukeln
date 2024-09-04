@@ -8,7 +8,7 @@ from automixer_config_panel import AutoMixerConfigPanel
 from cutter.sample_cut_tool import SampleCutter
 from workers import YouTubeDownloaderWorker, AutoMixerWorker
 from help_dialog import HelpDialog
-from utils import show_error_message, show_info_message, log_message
+from utils import show_error_message, show_info_message, log_message, calculate_step
 
 class MainWindow(QMainWindow):
     def __init__(self):
