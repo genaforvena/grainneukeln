@@ -5,10 +5,14 @@ from PySide6.QtWidgets import QApplication
 from main_window import MainWindow
 
 def launch_gui():
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        return app.exec()
+    except Exception as e:
+        print(f"Error launching GUI: {e}")
+        return None
 
 if __name__ == "__main__":
     import argparse
@@ -22,8 +26,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.gui:
-        launch_gui()
-    elif args.source_path and args.destination_path:
+        result = launch_gui()
+        if result is None:
+            print("GUI launch failed. Falling back to CLI mode.")
+            args.gui = False
+
+    if not args.gui and args.source_path and args.destination_path:
         if not os.path.isdir(args.destination_path):
             print("Destination path doesn't exist")
             sys.exit(1)
@@ -37,6 +45,6 @@ if __name__ == "__main__":
         
         print("Starting cut tool with file: " + args.source_path)
         sample_cut_tool.main(args.source_path, args.destination_path, args.commands)
-    else:
+    elif not args.gui:
         parser.print_help()
         sys.exit(1)
