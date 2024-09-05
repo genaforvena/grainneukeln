@@ -7,3 +7,6 @@ yt-dlp
 PySide6
 pyqtgraph
 pyrubberband
+numpy
+scipy
+librosa
