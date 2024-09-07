@@ -11,8 +11,11 @@ A powerful audio processing tool that allows you to create new audio from existi
 - Command-line interface with various commands
 - Graphical user interface using PySide6
 - YouTube audio downloading capability
+- Docker support for easy setup and cross-platform compatibility
 
 ## Installation
+
+### Traditional Method
 
 1. Clone the repository:
    ```
@@ -29,6 +32,21 @@ A powerful audio processing tool that allows you to create new audio from existi
 3. Install the required dependencies:
    ```
    pip install -r requirements.txt
+   ```
+
+### Docker Method
+
+1. Install Docker on your system (https://docs.docker.com/get-docker/)
+
+2. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/granular-sampler.git
+   cd granular-sampler
+   ```
+
+3. Build and run the Docker container:
+   ```
+   ./run_granular_sampler.sh
    ```
 
 ## Usage
@@ -79,10 +97,16 @@ python main.py "/path/to/your/audio.mp3" ~/output/directory/ amc s 0.8 l /2 ss 1
 
 ### Graphical User Interface
 
-To use the GUI version of the tool, simply run:
+To use the GUI version of the tool, run:
 
 ```
 python main.py
+```
+
+Or if using Docker:
+
+```
+./run_granular_sampler.sh
 ```
 
 The GUI allows you to:
@@ -92,6 +116,19 @@ The GUI allows you to:
 4. Play original and processed audio
 5. Save processed audio
 
+## Docker Usage
+
+The Docker setup simplifies the installation process and ensures compatibility across different operating systems.
+
+1. Make sure you have Docker installed on your system.
+2. Run the provided shell script:
+   ```
+   ./run_granular_sampler.sh
+   ```
+   This script will build the Docker image and run the container with the appropriate settings for your operating system.
+
+Note: For Windows users, you may need to install an X server like VcXsrv to run GUI applications from Docker.
+
 ## Examples
 
 See the `run_with_params.sh` file for examples of running the tool with different parameters.
@@ -99,7 +136,3 @@ See the `run_with_params.sh` file for examples of running the tool with differen
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
