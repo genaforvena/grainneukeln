@@ -15,6 +15,24 @@ A powerful audio processing tool that allows you to create new audio from existi
 
 ## Installation
 
+> **Revived for modern Python (2026-06-21).** The old setup required Conda + `madmom` (built from
+> git) + `pyrubberband` — none of which install cleanly on current Python. Those were swapped for
+> `librosa` (beat detection + time-stretch); the granular automixer — the heart of the tool — is
+> unchanged. It now runs headless on plain Python 3.12 with `pip install -r requirements.txt`
+> (system `ffmpeg` required). The Conda instructions below still work but are no longer necessary.
+
+### Quick start (modern, no Conda)
+
+```
+python3 -m venv .venv && . .venv/bin/activate    # or: uv venv .venv
+pip install -r requirements.txt                   # GUI extras optional; system ffmpeg required
+python main.py assets/test_audio.mp3 output/ amc l /2
+```
+
+> Tip: the automixer's pure-Python band-pass + segment-append is O(n²) in track length, so a full
+> 3-minute song is slow. Feed it **short clips** (a handful of seconds) for fast, responsive grain
+> remixes — which is also how the live/ambient capture use-case works.
+
 ### Traditional Method
 
 1. Clone the repository:

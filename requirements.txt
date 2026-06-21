@@ -1,12 +1,22 @@
-cython
-git+https://github.com/CPJKU/madmom.git
-matplotlib
-pydub
-tqdm
-yt-dlp
-PySide6
-pyqtgraph
-pyrubberband
+# Revived for modern Python (tested on 3.12, 2026-06-21).
+# Dropped: madmom + pyrubberband + cython — madmom no longer builds on modern Python (uses np.float,
+# collections.MutableSequence, cython-from-git) and pyrubberband needs the external `rubberband` CLI.
+#   beat detection  -> librosa.beat.beat_track   (cutter/sample_cut_tool.py)
+#   time-stretch     -> librosa.effects.time_stretch (automixer/effects/change_tempo.py)
+# Pure pip, no conda. The CLI automix path needs only the core block below; GUI needs the extras.
+#
+# System prerequisite: ffmpeg (pydub uses it for mp3/m4a/webm I/O).
+
+# --- core (CLI automix) ---
 numpy
 scipy
 librosa
+soundfile
+pydub
+tqdm
+yt-dlp
+
+# --- GUI only (optional: `python main.py` / `--gui`) ---
+matplotlib
+PySide6
+pyqtgraph

@@ -3,9 +3,7 @@ import random
 import re
 from datetime import datetime
 
-import madmom
 import traceback
-import matplotlib.pyplot as plt
 import pydub.effects
 import pydub.playback
 import pydub.utils
@@ -86,16 +84,20 @@ class SampleCutter:
         )
 
     def _detect_beats(self):
-        print("Detecting beats...")
+        # Beat detection. Originally madmom (RNNBeatProcessor + DBNBeatTracking), which no longer
+        # installs on modern Python (3.6-era: np.float, collections.MutableSequence, cython-from-git).
+        # Swapped to librosa.beat.beat_track — installs clean, same contract: returns beat positions in
+        # MILLISECONDS (int list), which is all the automixer consumes downstream. The creative core
+        # (rolling-window granular recombination) is untouched. — mesh revive 2026-06-21
+        print("Detecting beats (librosa)...")
         import numpy as np
+        import librosa
 
-        beat_probabilities = madmom.features.beats.RNNBeatProcessor()(
-            self.audio_file_path
-        )
-        beat_positions = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)(
-            beat_probabilities
-        )
-        beat_positions = np.vectorize(lambda x: int(x * 1000))(beat_positions)
+        y, sr = librosa.load(self.audio_file_path, sr=None, mono=True)
+        _tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr)  # seconds
+        beat_positions = (np.asarray(beat_times) * 1000).astype(int)  # -> ms
+        print(f"Detected {len(beat_positions)} beats")
         return beat_positions
 
     # Define a completer function that returns a list of all previous input
@@ -212,6 +214,7 @@ class SampleCutter:
         print("File loaded from " + audio_file_path)
 
     def plot_amplitude(self, command):
+        import matplotlib.pyplot as plt  # lazy: GUI-only, not needed for headless automix
         selected_samples = self.audio[
             self.current_position : self.current_position + self.sample_length
         ].get_array_of_samples()
