@@ -1,11 +1,12 @@
 import cutter.sample_cut_tool as sample_cut_tool
 import os
 import sys
-from PySide6.QtWidgets import QApplication
-from main_window import MainWindow
 
 def launch_gui():
     try:
+        # GUI deps (PySide6) imported lazily so headless CLI automix runs without them installed.
+        from PySide6.QtWidgets import QApplication
+        from main_window import MainWindow
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
