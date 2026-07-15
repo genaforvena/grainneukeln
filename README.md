@@ -11,12 +11,57 @@ locked to the source's groove.
 
 ---
 
+## What it *is*: a rhythm-seeking maniac
+
+The mechanics below are only half the story. The other half is its **character**, and it explains
+most of what you'll hear:
+
+**It sees rhythm everywhere — including where there is none.** Beat detection doesn't *ask* whether
+the audio is rhythmic. It fits a pulse to whatever fluctuation it can find, and it always has a
+default tempo in mind (librosa's prior, ~120 BPM). Hand it a beatless field recording, room hum, or
+literal white noise, and it will not shrug — it will hear a beat and commit to it:
+
+| what you feed it | what it "hears" |
+|---|---|
+| white noise (no rhythm whatsoever) | **23 beats, 112 BPM** — a confident pulse, invented |
+| 8 real room recordings (ambient hum, no music) | **15–53 beats each; median 123.0 BPM** (range 80.7–184.6) — it never once said "no rhythm here" |
+| a real 400 ms click track | **400.1 ms** — dead accurate, when the rhythm is genuinely there |
+| a steady drone, or digital silence | *nothing* (0 beats) — it needs some flutter to latch onto |
+
+*(Measured, not asserted — `librosa.beat.beat_track` on real captures, 2026-07-15.)*
+
+So there are two regimes, and it never tells you which one it's in: when a real pulse exists it
+locks to it faithfully; when none exists it **hallucinates** one near its 120 BPM prior. Both feel
+equally confident downstream. This is not a bug to be fixed — it is the instrument. The imagined
+grid is what lets you grind a rainstorm or a room's silence into something that *grooves*.
+
+**Then it cuts everything it hears to fit that rhythm.** Real or imagined, the beat grid becomes the
+skeleton: every grain starts on a beat, every window is measured in beats, every chunk is about one
+beat long. Nothing survives off-grid. Whatever went in comes out marching.
+
+**And subdividing the grid doesn't break it.** `l /2`, `l /3`, `l *2`, `l *3` scale the grain length
+against the beat period by **integer ratios** — so the grains stay metrically coherent with the
+pulse it imagined. A grain of `T/3` still lands on the grid every third grain; the *felt* rhythm of
+the original (real or invented) is preserved while the texture changes completely. That's why `/3`
+sounds like a new reading of the same groove rather than a different tempo: you're re-reading the
+grid, not moving it. Change `s` if you want to actually move it.
+
+> Practical upshot: **beatless input is not a failure mode, it's a use case** — but check the beat
+> count. A source with 0 detected beats gives the grinder nothing to build on and yields an empty or
+> dead mix. Anything with a few beats — real or hallucinated — will grind.
+
+---
+
 ## How it works
 
 What actually happens when you run an automix:
 
-1. **Find the beat.** The track is analysed into a list of beat positions (milliseconds). Everything
-   downstream is anchored to these beats — the rhythm of the source becomes the skeleton of the output.
+1. **Find the beat — or invent one.** The track is analysed into a list of beat positions
+   (milliseconds) via `librosa.beat.beat_track`. Everything downstream is anchored to these beats:
+   the rhythm of the source becomes the skeleton of the output. Note that this step *cannot fail
+   loudly* — given any fluctuating audio it returns a grid, whether or not the source has a pulse
+   (see [rhythm-seeking maniac](#what-it-is-a-rhythm-seeking-maniac)). Only a featureless drone or
+   silence returns nothing.
 2. **Slide a window over the beats.** Rather than look at the whole track at once, a *rolling window*
    moves across the beat list. Its size is `total_beats / window_divider`, so a bigger `w` means a
    smaller, tighter window — grains get drawn from a narrower slice of time.
@@ -80,7 +125,7 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 
 | param | meaning | example | what it does |
 |-------|---------|---------|--------------|
-| `l`  | grain length | `l /2`, `l *3`, `l 250` | `/` or `*` scales the beat-derived default; a bare number sets milliseconds. Shorter = finer, more fragmented texture. |
+| `l`  | grain length | `l /2`, `l *3`, `l 250` | `/` or `*` scales the beat-derived default by an **integer ratio**, so the grain stays metrically coherent with the detected (or imagined) pulse — `/3` re-reads the same groove rather than moving it. A bare number sets milliseconds outright, which is the one way to cut *against* the grid. Shorter = finer, more fragmented texture. |
 | `s`  | whole-mix speed | `s 0.8` | tempo of the **final** track (pitch preserved). `<1` slower, `>1` faster. |
 | `ss` | per-grain speed | `ss 1.2` | tempo of **each grain** (pitch preserved) — warps the micro-texture. |
 | `c`  | channels / bands | `c 0,250;250,15000` | one or more `low,high` band-pass bands in Hz, separated by `;`. Each band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. |
