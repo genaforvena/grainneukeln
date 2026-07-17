@@ -13,6 +13,30 @@ from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.runner import AutoMixerRunner
 from automixer.utils import calculate_step
 
+# Loudness targets for the exported mix. The granular automix routinely comes out far below unity — a
+# sparse or quiet source grinds down to a -30..-45 dBFS mix — so a straight export is near-inaudible.
+# Overridable via env for a consumer that wants a different level. Target is RMS (dBFS); PEAK is the
+# true-peak safety ceiling the mp3 encode must not exceed.
+TARGET_DBFS = float(os.environ.get("GRAINNEUKELN_TARGET_DBFS", "-16.0"))
+PEAK_DBFS = float(os.environ.get("GRAINNEUKELN_PEAK_DBFS", "-1.0"))
+
+
+def normalize_loudness(seg, target_dbfs=TARGET_DBFS, peak_dbfs=PEAK_DBFS):
+    """Bring a mix to a consistent, audible level with a pure gain change.
+
+    Normalizes to a target RMS loudness so mixes made from different sources land at the SAME
+    perceived level, then caps the gain by the available peak headroom so the boost never pushes the
+    true peak past the safety ceiling (no clipping on the mp3 encode). It only changes the level — it
+    does not reshape the mix. Silent/empty segments are returned untouched.
+    """
+    if seg is None or len(seg) == 0 or seg.dBFS == float("-inf"):
+        return seg
+    gain = target_dbfs - seg.dBFS
+    # never boost so hard the peak clips: cap by the headroom to the safety ceiling (this also
+    # attenuates a mix whose peak is already over the ceiling, so the export is always peak-safe).
+    gain = min(gain, peak_dbfs - seg.max_dBFS)
+    return seg.apply_gain(gain)
+
 
 class SampleCutter:
     def __init__(self, audio_file_path, destination_path):
@@ -331,6 +355,9 @@ class SampleCutter:
         )
 
     def _save_mix(self, mix):
+        # Level the mix before export — the raw automix is routinely near-inaudible (see
+        # normalize_loudness). Applied here so both the wav and mp3 exports below get the same level.
+        mix = normalize_loudness(mix)
         # Extract file name from path
         original_file_name = self.audio_file_path.split("/")[-1].split(".")[0]
         now = datetime.now()
