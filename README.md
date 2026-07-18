@@ -130,7 +130,22 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `ss` | per-grain speed | `ss 1.2` | tempo of **each grain** (pitch preserved) — warps the micro-texture. |
 | `c`  | channels / bands | `c 0,250;250,15000` | one or more `low,high` band-pass bands in Hz, separated by `;`. Each band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. |
 | `w`  | window divider | `w 4` | windows = `total_beats / w`. Bigger `w` → smaller windows → grains drawn from tighter time-neighborhoods (more local, less wandering). |
-| `m`  | mode | `m rw` | grain-selection algorithm. `rw` (random window) is the tested default. |
+| `m`  | mode | `m rw`, `m q` | grain-selection algorithm. `rw` (random window) is the tested default; `q` is the **quantized** mixer (below). |
+| `ek` `en` | euclidean pattern (mode `q`) | `ek 3 en 8` | `E(k, n)`: place `k` grains across `n` beat-subdivision slots as an evenly-spread euclidean rhythm. `E(3,8)` is the tresillo, `E(5,8)` the cinquillo, `E(4,4)` four-on-the-floor. Only used by `m q`. |
+
+#### Quantized mode (`m q`) — designed grooves instead of a uniform fill
+
+`rw` picks a random beat per grain and concatenates — the groove is whatever the source had. `q`
+subdivides the beat period into `n` slots and fires a grain **only on the slots a euclidean pattern
+`E(k, n)` marks**, cutting each grain at a source **onset** snapped to the grid. The output has a
+*designed* rhythm (tresillo, cinquillo, …) laid over the source's transients. Two runs differ in grain
+content but the **grid placement is deterministic** given the pattern. Beatless input still grinds on
+the hallucinated grid (no beat floor — same rhythm-seeking regime as `rw`).
+
+```bash
+python main.py song.mp3 output/ amc m q ek 3 en 8      # tresillo
+python main.py song.mp3 output/ amc m q ek 5 en 8 ss 1.5   # cinquillo, grains sped up
+```
 
 ### Interactive shell
 
