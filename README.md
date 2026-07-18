@@ -154,10 +154,26 @@ Run **without** automix params to drop into an interactive cutter
 
 ---
 
+## TUI (recommended, headless-friendly)
+
+```
+python main.py --tui
+```
+
+A keyboard-driven terminal UI you can run over SSH inside tmux — no display server needed. One screen:
+load a source (file path or YouTube URL), edit the grain params live (speed, sample-speed, window
+divider, sample length), manage the **multitrack** channel bands as track rows (`a` add, `d` remove,
+`enter` edit each track's low/high Hz), run the grind with a progress bar + log (`r`), and browse /
+preview the rendered mixes. TUI extra: `textual`. This is the primary interface; the Qt GUI below
+stays for desktop use.
+
+---
+
 ## GUI
 
 `python main.py` with no arguments launches the PySide6 GUI: load from file or YouTube, detect beats,
-configure and run the automixer, play and save. (GUI extras: `PySide6`, `pyqtgraph`.)
+configure and run the automixer, play and save. (GUI extras: `PySide6`, `pyqtgraph`.) Needs a display
+server — on a headless box use the TUI above.
 
 ---
 

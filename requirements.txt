@@ -20,3 +20,6 @@ yt-dlp
 matplotlib
 PySide6
 pyqtgraph
+
+# --- TUI only (optional: `python main.py --tui`) — headless-friendly, runs over SSH/tmux ---
+textual

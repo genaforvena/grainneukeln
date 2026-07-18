@@ -20,11 +20,17 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Granular Sampler")
     parser.add_argument("--gui", action="store_true", help="Launch the graphical user interface")
+    parser.add_argument("--tui", action="store_true", help="Launch the terminal UI (headless-friendly)")
     parser.add_argument("source_path", nargs="?", help="Path to mp3 file to cut or YouTube URL")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
     
     args = parser.parse_args()
+
+    if args.tui:
+        from tui.app import run_tui
+        run_tui()
+        sys.exit(0)
 
     if args.gui:
         result = launch_gui()
