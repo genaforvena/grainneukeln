@@ -1,0 +1,43 @@
+import unittest
+from textual.app import App, ComposeResult
+from tui.state import TrackSpec
+from tui.widgets.tracks_panel import TracksPanel
+
+
+class _Host(App):
+    def __init__(self, tracks):
+        super().__init__()
+        self._tracks = tracks
+
+    def compose(self) -> ComposeResult:
+        yield TracksPanel(self._tracks)
+
+
+class TracksPanelTest(unittest.IsolatedAsyncioTestCase):
+    async def test_add_and_remove(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            self.assertEqual(len(panel.tracks), 1)
+            panel.add_track()
+            await pilot.pause()
+            self.assertEqual(len(panel.tracks), 2)
+            panel.remove_selected()
+            await pilot.pause()
+            self.assertEqual(len(panel.tracks), 1)
+
+    async def test_never_below_one(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.remove_selected()
+            await pilot.pause()
+            self.assertEqual(len(panel.tracks), 1)   # floor at one track
+
+    async def test_edit_range(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.set_selected_range(200, 400)
+            await pilot.pause()
+            self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (200, 400))
