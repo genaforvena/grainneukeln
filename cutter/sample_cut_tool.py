@@ -304,6 +304,27 @@ class SampleCutter:
         if "en" in args:
             euclid_n = int(args[args.index("en") + 1])
 
+        # Poly ("poly") mixer streams: `pr 4:1-2000;3:6000-15000` -> two streams, ratios 4 & 3, each
+        # with its own band; `ratio[@length][:low-high]`, segments separated by ";". Bare `pr 4;3`
+        # runs both streams full-band.
+        streams = self.auto_mixer_config.streams
+        if "pr" in args:
+            spec = args[args.index("pr") + 1]
+            streams = []
+            for seg in spec.split(";"):
+                if not seg:
+                    continue
+                stream = {}
+                head, _, band = seg.partition(":")
+                ratio_part, _, length_part = head.partition("@")
+                stream["ratio"] = int(ratio_part)
+                if length_part:
+                    stream["length"] = float(length_part)
+                if band:
+                    low, high = band.split("-")
+                    stream["channels"] = [ChannelConfig(int(low), int(high))]
+                streams.append(stream)
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -342,6 +363,7 @@ class SampleCutter:
             channels_config=channels_config,
             euclid_k=euclid_k,
             euclid_n=euclid_n,
+            streams=streams,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

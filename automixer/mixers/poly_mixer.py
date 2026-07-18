@@ -1,0 +1,104 @@
+"""Polyphonic macro-granular mixer (issue #6) — mode ``"poly"``.
+
+Where ``rw``/``q`` run a **single** grain stream (one thing at a time, concatenated), this mixer runs
+**N parallel streams** at different subdivisions of the same beat grid and **overlays** them, so they
+phase against each other (Reich "Piano Phase", but granular):
+
+- Each stream has a ``ratio`` r — it fires r grains per beat (``beat_period / r`` apart). Two streams
+  at ratios 3 and 4 give a 3-against-4 polyrhythm that coincides every ``LCM(3,4) = 12`` subdivisions
+  and drifts out of phase in between.
+- Each stream keeps its own grain length and band-pass channels, so the layers stay distinguishable.
+- Grains are cut at source onsets (shared onset pass) and overlaid onto one silent canvas at their
+  grid offsets — a genuine layer, not a concatenation.
+
+No beat floor (README's rhythm-seeking regime): beatless input still grinds on the hallucinated grid;
+< 2 beats falls back to the grain length as the beat period.
+"""
+import random
+from functools import reduce
+from math import gcd
+
+from pydub import AudioSegment
+from tqdm import tqdm
+
+from automixer.effects.band_pass import band_pass_filer
+from automixer.effects.change_tempo import change_audioseg_tempo
+from automixer.iterators.onsets import onset_positions
+from automixer.utils import beat_interval
+
+
+def _lcm(a, b):
+    return a * b // gcd(a, b)
+
+
+class PolyphonicAutoMixer:
+    def mix(self, config, return_streams=False):
+        """Overlay N parallel grain streams. When ``return_streams`` is set, also return the list of
+        per-stream ``AudioSegment``s (each stream rendered on its own canvas) — the honest artifact
+        for verifying each stream's subdivision and their phasing without band-leakage guesswork."""
+        audio = config.audio
+        total_ms = len(audio)
+        if total_ms == 0:
+            return (AudioSegment.empty(), []) if return_streams else AudioSegment.empty()
+
+        streams = getattr(config, "streams", None)
+        if not streams:
+            # Default 3-against-4, both streams full-band.
+            streams = [{"ratio": 4}, {"ratio": 3}]
+
+        beat_period = beat_interval(config.beats)
+        if beat_period <= 0:
+            beat_period = config.sample_length if config.sample_length and config.sample_length > 0 else 500.0
+
+        ratios = [max(1, int(s.get("ratio", 1))) for s in streams]
+        cycle = reduce(_lcm, ratios)  # subdivisions per beat where all streams realign
+        sub_ms = float(beat_period) / cycle
+        # One onset pass at the finest grid the streams share, reused by every stream.
+        onsets = onset_positions(audio, snap_ms=sub_ms)
+
+        total_grains = sum(int(total_ms / (beat_period / r)) + 1 for r in ratios)
+        pbar = tqdm(desc="Polyrhythm", total=total_grains)
+        stream_segs = []
+        for s, ratio in zip(streams, ratios):
+            step_ms = float(beat_period) / ratio            # this stream's subdivision period
+            grain_len = int(round(s.get("length") or step_ms))
+            grain_len = max(1, grain_len)
+            channels = s.get("channels") or config.channels_config
+            seg = AudioSegment.silent(duration=int(round(total_ms)))
+            pos = 0.0
+            while pos < total_ms:
+                grain = self._create_grain(config, onsets, grain_len, channels)
+                if grain is not None and len(grain) > 0:
+                    seg = seg.overlay(grain, position=int(round(pos)))
+                pos += step_ms
+                pbar.update(1)
+            stream_segs.append(seg)
+        pbar.close()
+
+        out = AudioSegment.silent(duration=int(round(total_ms)))
+        for seg in stream_segs:
+            out = out.overlay(seg)
+        return (out, stream_segs) if return_streams else out
+
+    def _create_grain(self, config, onsets, grain_len, channels):
+        """Cut one grain at a random source onset, band-passed through this stream's channels.
+
+        Random onset -> content varies run to run; the stream's grid positions are fixed, so the
+        polyrhythmic PLACEMENT is deterministic."""
+        audio = config.audio
+        max_start = len(audio) - grain_len
+        if max_start <= 0:
+            return audio[:grain_len]
+
+        candidates = [o for o in onsets if 0 <= o <= max_start]
+        start_cut = random.choice(candidates) if candidates else random.randint(0, max_start)
+
+        grain = AudioSegment.silent(duration=grain_len)
+        for channel in channels:
+            channel_chunk = audio[start_cut: start_cut + grain_len]
+            channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+            grain = grain.overlay(channel_chunk)
+        if config.sample_speed != 1.0:
+            grain = change_audioseg_tempo(grain, config.sample_speed,
+                                          verbose=config.is_verbose_mode_enabled)
+        return grain
