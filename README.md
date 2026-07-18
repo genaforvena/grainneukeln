@@ -130,7 +130,8 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `ss` | per-grain speed | `ss 1.2` | tempo of **each grain** (pitch preserved) — warps the micro-texture. |
 | `c`  | channels / bands | `c 0,250;250,15000` | one or more `low,high` band-pass bands in Hz, separated by `;`. Each band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. |
 | `w`  | window divider | `w 4` | windows = `total_beats / w`. Bigger `w` → smaller windows → grains drawn from tighter time-neighborhoods (more local, less wandering). |
-| `m`  | mode | `m rw`, `m q`, `m poly` | grain-selection algorithm. `rw` (random window) is the tested default; `q` is the **quantized** mixer, `poly` the **polyrhythmic** mixer (both below). |
+| `m`  | mode | `m rw`, `m q`, `m poly`, `m lib` | grain-selection algorithm. `rw` (random window) is the tested default; `q` quantized, `poly` polyrhythmic, `lib` feature-library (all below). |
+| `lib` `lk` | library policy / clusters (mode `lib`) | `lib con lk 8` | `lib sim`/`lib con` selects the sequencing policy (similarity vs contrast); `lk` sets the cluster count. Only used by `m lib`. |
 | `ek` `en` | euclidean pattern (mode `q`) | `ek 3 en 8` | `E(k, n)`: place `k` grains across `n` beat-subdivision slots as an evenly-spread euclidean rhythm. `E(3,8)` is the tresillo, `E(5,8)` the cinquillo, `E(4,4)` four-on-the-floor. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
 
@@ -161,6 +162,24 @@ layers stay distinguishable. Beatless input still grinds on the hallucinated gri
 python main.py song.mp3 output/ amc m poly pr 4;3                 # 3-against-4, full band
 python main.py song.mp3 output/ amc m poly pr 4:1-2000;3:6000-15000   # split low vs high band
 python main.py song.mp3 output/ amc m poly pr 4@80:1-2000;3@120:6000-15000  # staccato, per-stream length
+```
+
+#### Library mode (`m lib`) — sequenced selection instead of random
+
+Every other mode picks grains at random (memoryless). `lib` first builds a **library** of beat-grid
+grains, measures each on three axes — spectral centroid, RMS, and rhythm-density (onsets/sec) —
+**rank-calibrated against the actual grain set** (so no axis can saturate), clusters them, and then
+**sequences** grains with a Markov policy over the clusters:
+
+- `lib sim` (**similarity**) — stay in / near the current cluster → hypnotic, coherent.
+- `lib con` (**contrast**) — jump to a distant cluster → jarring, glitchy.
+
+The two policies produce measurably different grain-to-grain motion. Too few grains to cluster degrades
+honestly (reported), it does not fake a full clustering.
+
+```bash
+python main.py song.mp3 output/ amc m lib sim lk 6     # coherent, stays in-cluster
+python main.py song.mp3 output/ amc m lib con lk 8     # glitchy, jumps between clusters
 ```
 
 ### Interactive shell
