@@ -23,6 +23,7 @@ from tqdm import tqdm
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
 from automixer.iterators.grid import euclidean, grid_slots
+from automixer.iterators.onsets import onset_positions
 from automixer.utils import beat_interval
 
 
@@ -90,26 +91,6 @@ class QuantizedAutoMixer:
         return grain
 
     def _onsets(self, audio, slot_ms):
-        """Source onset positions (ms), snapped to the nearest grid slot.
-
-        Snapping quantizes the cut boundaries to the same grid the grains are placed on, so a grain
-        is a transient *and* metrically aligned. Returns [] when nothing latches (the caller then
-        falls back to a random position — never a beat floor)."""
-        import numpy as np
-        import librosa
-
-        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-        if audio.channels == 2:
-            samples = samples.reshape((-1, 2)).mean(axis=1)
-        peak = np.max(np.abs(samples)) if samples.size else 0.0
-        if peak > 0:
-            samples = samples / peak
-        sr = audio.frame_rate
-        try:
-            onset_times = librosa.onset.onset_detect(y=samples, sr=sr, units="time")
-        except Exception:
-            return []
-        if slot_ms <= 0:
-            return sorted({int(round(t * 1000)) for t in onset_times})
-        snapped = {int(round(round((t * 1000) / slot_ms) * slot_ms)) for t in onset_times}
-        return sorted(s for s in snapped if s >= 0)
+        """Source onset positions (ms), snapped to the nearest grid slot — see
+        ``automixer.iterators.onsets.onset_positions``."""
+        return onset_positions(audio, snap_ms=slot_ms)

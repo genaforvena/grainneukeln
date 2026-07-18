@@ -1,5 +1,6 @@
 from automixer.mixers.default_mixer import RandomWindowAutoMixer
 from automixer.mixers.quantized_mixer import QuantizedAutoMixer
+from automixer.mixers.poly_mixer import PolyphonicAutoMixer
 
 
 class ChannelConfig:
@@ -19,6 +20,7 @@ class AutoMixerConfig:
     modes = {
         "rw": RandomWindowAutoMixer,
         "q": QuantizedAutoMixer,
+        "poly": PolyphonicAutoMixer,
     }
 
     def __init__(self,
@@ -32,7 +34,8 @@ class AutoMixerConfig:
                  window_divider=2,
                  channels_config=[ChannelConfig(0, 15000)],
                  euclid_k=3,
-                 euclid_n=8):
+                 euclid_n=8,
+                 streams=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -51,6 +54,9 @@ class AutoMixerConfig:
         # subdivision slots. Ignored by the rw mixer.
         self.euclid_k = euclid_k
         self.euclid_n = euclid_n
+        # Poly ("poly") mixer: list of {ratio, length?, channels?} stream dicts. None -> a default
+        # 3-against-4. Ignored by the other mixers.
+        self.streams = streams
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
