@@ -9,6 +9,22 @@ class _FakeCutter:
 
 
 class AppWiringTest(unittest.IsolatedAsyncioTestCase):
+    async def test_all_panels_fit_on_screen(self):
+        # Regression: a bad `height: auto` let Source and Run each fill their whole column, pushing
+        # Params/Tracks/Outputs off the bottom (y past the screen). Every panel must be visible.
+        from tui.widgets.source_panel import SourcePanel
+        from tui.widgets.params_panel import ParamsPanel
+        from tui.widgets.tracks_panel import TracksPanel
+        from tui.widgets.run_panel import RunPanel
+        from tui.widgets.output_panel import OutputPanel
+        app = GrainTUI(output_dir="output")
+        async with app.run_test(size=(150, 40)) as pilot:
+            await pilot.pause()
+            for W in (SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel):
+                r = app.query_one(W).region
+                self.assertGreater(r.height, 0, f"{W.__name__} has zero height")
+                self.assertLessEqual(r.bottom, 40, f"{W.__name__} runs off the bottom (y={r.bottom})")
+
     async def test_source_loaded_seeds_state(self):
         app = GrainTUI(output_dir="output")
         async with app.run_test() as pilot:

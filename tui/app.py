@@ -47,18 +47,20 @@ class GrainTUI(App):
     #left { width: 3fr; }
     #right { width: 2fr; }
     SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
-        border: round $primary; padding: 0 1; margin: 0 1 1 0; height: auto;
+        border: round $primary; padding: 0 1; margin: 0 1 1 0;
     }
-    SourcePanel { height: auto; }
+    /* content-sized panels: the panel AND its inner container hug their content */
+    SourcePanel, ParamsPanel, RunPanel { height: auto; }
+    SourcePanel > Vertical, RunPanel > Vertical { height: auto; }
     ParamsPanel Grid { grid-size: 2; grid-rows: auto; height: auto; }
     ParamsPanel Grid Input { width: 1fr; }
-    TracksPanel { height: 1fr; }
+    RunPanel #run_log { height: 8; border-top: solid $panel; }
+    /* space-filling panels grow into the leftover column height */
+    TracksPanel, OutputPanel { height: 1fr; }
+    TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
+    TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
     #track_edit { height: auto; margin-top: 1; }
-    #track_edit Input { width: 10; }
-    RunPanel { height: auto; }
-    OutputPanel { height: 1fr; }
-    RichLog { height: 8; border-top: solid $panel; }
-    ListView { height: 1fr; }
+    #track_edit Input { width: 12; }
     """
     BINDINGS = [
         ("ctrl+r", "run", "Run grind"),
