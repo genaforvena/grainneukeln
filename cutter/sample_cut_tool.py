@@ -325,6 +325,15 @@ class SampleCutter:
                     stream["channels"] = [ChannelConfig(int(low), int(high))]
                 streams.append(stream)
 
+        # Library ("lib") mixer: `lib sim|con` policy + `lk <k>` cluster count.
+        lib_policy = self.auto_mixer_config.lib_policy
+        if "lib" in args:
+            p = str(args[args.index("lib") + 1])
+            lib_policy = "contrast" if p.startswith("con") else "similarity"
+        lib_clusters = self.auto_mixer_config.lib_clusters
+        if "lk" in args:
+            lib_clusters = int(args[args.index("lk") + 1])
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -364,6 +373,8 @@ class SampleCutter:
             euclid_k=euclid_k,
             euclid_n=euclid_n,
             streams=streams,
+            lib_policy=lib_policy,
+            lib_clusters=lib_clusters,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

@@ -1,6 +1,7 @@
 from automixer.mixers.default_mixer import RandomWindowAutoMixer
 from automixer.mixers.quantized_mixer import QuantizedAutoMixer
 from automixer.mixers.poly_mixer import PolyphonicAutoMixer
+from automixer.mixers.library_mixer import LibraryAutoMixer
 
 
 class ChannelConfig:
@@ -21,6 +22,7 @@ class AutoMixerConfig:
         "rw": RandomWindowAutoMixer,
         "q": QuantizedAutoMixer,
         "poly": PolyphonicAutoMixer,
+        "lib": LibraryAutoMixer,
     }
 
     def __init__(self,
@@ -35,7 +37,9 @@ class AutoMixerConfig:
                  channels_config=[ChannelConfig(0, 15000)],
                  euclid_k=3,
                  euclid_n=8,
-                 streams=None):
+                 streams=None,
+                 lib_policy="similarity",
+                 lib_clusters=6):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -57,6 +61,10 @@ class AutoMixerConfig:
         # Poly ("poly") mixer: list of {ratio, length?, channels?} stream dicts. None -> a default
         # 3-against-4. Ignored by the other mixers.
         self.streams = streams
+        # Library ("lib") mixer: Markov policy over feature clusters ("similarity"/"contrast") and the
+        # cluster count. Ignored by the other mixers.
+        self.lib_policy = lib_policy
+        self.lib_clusters = lib_clusters
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
