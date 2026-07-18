@@ -1,4 +1,5 @@
 from automixer.mixers.default_mixer import RandomWindowAutoMixer
+from automixer.mixers.quantized_mixer import QuantizedAutoMixer
 
 
 class ChannelConfig:
@@ -17,6 +18,7 @@ class ChannelConfig:
 class AutoMixerConfig:
     modes = {
         "rw": RandomWindowAutoMixer,
+        "q": QuantizedAutoMixer,
     }
 
     def __init__(self,
@@ -28,7 +30,9 @@ class AutoMixerConfig:
                  speed=1.0,
                  is_verbose_mode_enabled=False,
                  window_divider=2,
-                 channels_config=[ChannelConfig(0, 15000)]):
+                 channels_config=[ChannelConfig(0, 15000)],
+                 euclid_k=3,
+                 euclid_n=8):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -43,6 +47,10 @@ class AutoMixerConfig:
         self.is_verbose_mode_enabled = is_verbose_mode_enabled
         self.window_divider = window_divider
         self.channels_config = channels_config
+        # Quantized ("q") mixer: euclidean pattern E(euclid_k, euclid_n) — k hits over n beat
+        # subdivision slots. Ignored by the rw mixer.
+        self.euclid_k = euclid_k
+        self.euclid_n = euclid_n
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]

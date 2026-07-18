@@ -296,6 +296,14 @@ class SampleCutter:
             window_divider = int(args[args.index("w") + 1])
             print("window_divider: " + str(self.auto_mixer_config.window_divider))
 
+        # Quantized ("q") mixer euclidean pattern E(ek, en) — ek hits over en beat subdivisions.
+        euclid_k = self.auto_mixer_config.euclid_k
+        if "ek" in args:
+            euclid_k = int(args[args.index("ek") + 1])
+        euclid_n = self.auto_mixer_config.euclid_n
+        if "en" in args:
+            euclid_n = int(args[args.index("en") + 1])
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -332,6 +340,8 @@ class SampleCutter:
             is_verbose_mode_enabled=self.is_verbose_mode_enabled,
             window_divider=window_divider,
             channels_config=channels_config,
+            euclid_k=euclid_k,
+            euclid_n=euclid_n,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
