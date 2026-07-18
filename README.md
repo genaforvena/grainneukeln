@@ -88,6 +88,19 @@ source audio
 new track  =  chunk₁ + chunk₂ + chunk₃ + …          (+ optional whole-mix speed s)
 ```
 
+> Every export is loudness-normalized (RMS to −16 dBFS, capped at a −1 dBFS true peak so the encode
+> never clips) — raw automixes are near-inaudible otherwise. Tunable via `GRAINNEUKELN_TARGET_DBFS` /
+> `GRAINNEUKELN_PEAK_DBFS`.
+
+### Deeper reference
+
+The four mixer modes are distinct algorithms, not presets. For the full, code-level treatment — the
+euclidean (Bjorklund) generator, the polyrhythm phasing math, the feature-clustering + Markov
+sequencing in `lib`, beat-clock derivation, the loudness stage, and a determinism note — see:
+
+- **[`docs/ALGORITHMS.md`](docs/ALGORITHMS.md)** — how each mixer selects, places, and recombines grains.
+- **[`docs/PARAMETERS.md`](docs/PARAMETERS.md)** — every `amc` parameter, the cross-mode matrix, and recipes.
+
 ---
 
 ## Install (Python 3.12+, no Conda)
@@ -125,7 +138,7 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 
 | param | meaning | example | what it does |
 |-------|---------|---------|--------------|
-| `l`  | grain length | `l /2`, `l *3`, `l 250` | `/` or `*` scales the beat-derived default by an **integer ratio**, so the grain stays metrically coherent with the detected (or imagined) pulse — `/3` re-reads the same groove rather than moving it. A bare number sets milliseconds outright, which is the one way to cut *against* the grid. Shorter = finer, more fragmented texture. |
+| `l`  | grain length | `l /2`, `l *3`, `l 250` | `/N` or `*N` scales the beat-derived default by a **ratio** (`/N` divide, `*N` multiply; `N` may be fractional in the `amc` path), so the grain stays metrically coherent with the detected (or imagined) pulse — `/3` re-reads the same groove rather than moving it. A **bare number is absolute milliseconds** (`l 2` = 2 ms, *not* 2 beats — use `l *2`), the one way to cut *against* the grid. Shorter = finer, more fragmented texture. |
 | `s`  | whole-mix speed | `s 0.8` | tempo of the **final** track (pitch preserved). `<1` slower, `>1` faster. |
 | `ss` | per-grain speed | `ss 1.2` | tempo of **each grain** (pitch preserved) — warps the micro-texture. |
 | `c`  | channels / bands | `c 0,250;250,15000` | one or more `low,high` band-pass bands in Hz, separated by `;`. Each band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. |
@@ -135,6 +148,7 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `snap` | snap-to-beat | `snap` | pitch-preserving time-stretch of each grain to land exactly in its slot (composable, any mode). Off by default. |
 | `sw` | swing % | `sw 66` | micro-timing groove: delay every off-beat grain. `0`/`<=50` = straight (no-op), `66` = 2:1 shuffle. |
 | `ek` `en` | euclidean pattern (mode `q`) | `ek 3 en 8` | `E(k, n)`: place `k` grains across `n` beat-subdivision slots as an evenly-spread euclidean rhythm. `E(3,8)` is the tresillo, `E(5,8)` the cinquillo, `E(4,4)` four-on-the-floor. Only used by `m q`. |
+| `nofill` `fg` | gap-fill (mode `q`) | `nofill`, `fg -12` | the euclidean pattern leaves `n−k` rest slots silent; by default they're filled with off-grid remnant grains `fg` dB (default −6) below the hits. `nofill` restores the pure silent-rest grid. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
 
 #### Quantized mode (`m q`) — designed grooves instead of a uniform fill
