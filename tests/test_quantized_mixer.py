@@ -113,9 +113,62 @@ if starts_a != starts_b:
 if mix_a.raw_data == mix_b.raw_data:
     failures.append("two runs produced byte-identical audio — grain content is not varying")
 
+# ---- 6. Gap-fill (operator 2026-07-18): rest slots are filled with off-grid remnants, not silence -
+# On CONTINUOUS material (a tone bed the clicks ride on) the off-grid remnants are audible, so the
+# euclidean REST slots must render sound with fill on and stay silent with fill off — and the HITS
+# must still read as accents above the fills. On the pure click track the between-click remnants are
+# silence, so gates 1-2 above (fill defaults on) are unaffected; this gate needs a non-silent bed.
+def slot_dbfs(mix, i, slot_ms):
+    seg = mix[int(i * slot_ms):int((i + 1) * slot_ms)]
+    return seg.dBFS if len(seg) else float("-inf")
+
+bed = Sine(200).to_audio_segment(duration=2000).apply_gain(-20)
+clicks = click_track(400, 5)                      # 2000 ms, clicks at 0,400,800,1200,1600
+src6 = bed.overlay(clicks)                         # continuous bed + transient onsets
+beats6 = [0, 400, 800, 1200, 1600]
+slot6 = 400 / 8                                    # 50 ms
+pat6 = euclidean(3, 8)                             # [1,0,0,1,0,0,1,0]
+nslots6 = len(src6) // int(slot6)
+rest_idx = [i for i in range(nslots6) if not pat6[i % 8]]
+hit_idx6 = [i for i in range(nslots6) if pat6[i % 8]]
+
+cfg_fill = AutoMixerConfig(src6, beats6, sample_length=100, mode="q", euclid_k=3, euclid_n=8, fill=True)
+cfg_nofill = AutoMixerConfig(src6, beats6, sample_length=100, mode="q", euclid_k=3, euclid_n=8, fill=False)
+mix_fill = QuantizedAutoMixer().mix(cfg_fill)
+mix_nofill = QuantizedAutoMixer().mix(cfg_nofill)
+
+# (a) rest slots are SILENT without fill, and AUDIBLE with fill.
+rest_sample = [i for i in rest_idx if i < nslots6 - 1][:12]
+nofill_rest_loud = [i for i in rest_sample if slot_dbfs(mix_nofill, i, slot6) > -45]
+fill_rest_loud = [i for i in rest_sample if slot_dbfs(mix_fill, i, slot6) > -45]
+if nofill_rest_loud:
+    failures.append("nofill: rest slots %r are not silent — a fill crept into the pure-grid path"
+                    % nofill_rest_loud)
+if len(fill_rest_loud) < max(1, len(rest_sample) // 2):
+    failures.append("fill: only %d/%d rest slots got audible remnant fill (gaps still silent/choppy)"
+                    % (len(fill_rest_loud), len(rest_sample)))
+
+# (b) the fill adds sound overall (more non-silent audio than the silent-rest render).
+ns_fill = sum(e - s for s, e in detect_nonsilent(mix_fill, min_silence_len=20, silence_thresh=-45))
+ns_nofill = sum(e - s for s, e in detect_nonsilent(mix_nofill, min_silence_len=20, silence_thresh=-45))
+if not ns_fill > ns_nofill:
+    failures.append("fill did not add audible material: non-silent fill=%dms <= nofill=%dms"
+                    % (ns_fill, ns_nofill))
+
+# (c) HITS stay accented above the fills — the euclidean groove is still audible as amplitude.
+hit_lvl = [slot_dbfs(mix_fill, i, slot6) for i in hit_idx6 if slot_dbfs(mix_fill, i, slot6) > float("-inf")]
+fill_lvl = [slot_dbfs(mix_fill, i, slot6) for i in rest_idx if slot_dbfs(mix_fill, i, slot6) > float("-inf")]
+if hit_lvl and fill_lvl:
+    mean_hit = sum(hit_lvl) / len(hit_lvl)
+    mean_fill = sum(fill_lvl) / len(fill_lvl)
+    if not mean_hit > mean_fill + 1.5:
+        failures.append("groove lost: mean hit %.1f dBFS not accented above mean fill %.1f dBFS"
+                        % (mean_hit, mean_fill))
+
 if failures:
     for f in failures:
         print("FAIL: " + f)
     sys.exit(1)
 print("ok: grains land on the euclidean beat-subdivision grid; tresillo audible; "
-      "beatless produces output; grid deterministic, content varies")
+      "beatless produces output; grid deterministic, content varies; "
+      "rest slots filled with off-grid remnants (silent under nofill), hits stay accented")

@@ -343,6 +343,16 @@ class SampleCutter:
         if "sw" in args:
             swing = float(args[args.index("sw") + 1])
 
+        # Gap-fill (operator 2026-07-18, quantized mode): rest slots are filled with off-grid
+        # remnants by default; `nofill` restores the pure-grid (silent-rest) behaviour, `fg <db>`
+        # sets the fill gain relative to the hits (default -6).
+        fill = getattr(self.auto_mixer_config, "fill", True)
+        if "nofill" in args:
+            fill = False
+        fill_gain_db = getattr(self.auto_mixer_config, "fill_gain_db", -6.0)
+        if "fg" in args:
+            fill_gain_db = float(args[args.index("fg") + 1])
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -387,6 +397,8 @@ class SampleCutter:
             snap=snap,
             swing=swing,
             groove_template=self.auto_mixer_config.groove_template,
+            fill=fill,
+            fill_gain_db=fill_gain_db,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

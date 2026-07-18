@@ -42,7 +42,9 @@ class AutoMixerConfig:
                  lib_clusters=6,
                  snap=False,
                  swing=0,
-                 groove_template=None):
+                 groove_template=None,
+                 fill=True,
+                 fill_gain_db=-6.0):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -73,6 +75,11 @@ class AutoMixerConfig:
         self.snap = snap
         self.swing = swing
         self.groove_template = groove_template
+        # Quantized ("q") mixer gap-fill (operator 2026-07-18): stitch off-grid remnants into the
+        # euclidean REST slots instead of leaving silence; fills sit `fill_gain_db` below the hits so
+        # the groove still reads. fill=False restores the pure-grid (silent-rest) behaviour.
+        self.fill = fill
+        self.fill_gain_db = fill_gain_db
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]

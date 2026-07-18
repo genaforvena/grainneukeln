@@ -14,6 +14,14 @@ beat-subdivision grid** and cuts each grain at a source **onset**:
 No beat floor (README's rhythm-seeking regime): librosa hallucinates a pulse on beatless input and
 cannot report "no rhythm", so a beatless source still grinds on the hallucinated grid; only when the
 beat is genuinely unknowable (< 2 beats) do we fall back to the grain length as the slot period.
+
+Gap-fill (operator 2026-07-18): the euclidean pattern marks only k of n slots as HITS; the n-k REST
+slots were left silent, so a sparse groove (E(3,8): 5 of 8 slots silent) rendered very *choppy*
+("обрывисто"). We now FILL the rest slots with grains cut from **off-grid remnant** material — the
+audio *between* the snapped grid onsets, i.e. the pieces that did NOT land in a quantum — at a
+reduced gain (``fill_gain_db``, default -6) so the euclidean HITS still read as the accented groove
+instead of a uniform wash. Default on (``config.fill``); ``nofill`` restores the pure-grid behaviour.
+The grid-miss remnants are stitched into the pauses, not discarded.
 """
 import random
 
@@ -58,6 +66,14 @@ class QuantizedAutoMixer:
         template = getattr(config, "groove_template", None)
         snap = bool(getattr(config, "snap", False))
 
+        # Gap-fill (operator 2026-07-18): stitch off-grid remnants into the REST slots instead of
+        # leaving silence. Default on; fills sit `fill_gain_db` below the hits so the groove reads.
+        fill = bool(getattr(config, "fill", True))
+        fill_gain_db = float(getattr(config, "fill_gain_db", -6.0))
+        num_slots = int(total_ms // slot_ms) if slot_ms > 0 else 0
+        hit_idx = {i for i in range(num_slots) if pattern[i % n]}
+        remnants = self._remnants(onsets, len(audio), grain_len) if fill else []
+
         # Canvas must be long enough to hold swung-late off-beats and the trailing grain.
         canvas_ms = int(round(total_ms + slot_ms + grain_len))
         out = AudioSegment.silent(duration=canvas_ms)
@@ -73,12 +89,42 @@ class QuantizedAutoMixer:
                 out = out.overlay(grain, position=int(round(pos + offset)))
             pbar.update(1)
         pbar.close()
+
+        # Fill the REST slots (the n-k the euclidean pattern leaves silent) with quieter off-grid
+        # remnant grains, so a sparse groove is textured rather than choppy — grid-miss material
+        # stitched into the pauses, not discarded.
+        if fill and num_slots:
+            for i in range(num_slots):
+                if i in hit_idx:
+                    continue
+                pos = i * slot_ms
+                if template:
+                    offset = float(template[i % len(template)])
+                else:
+                    offset = swing_offset(i, swing, slot_ms)
+                grain = self._create_grain(config, remnants, grain_len, snap)
+                if grain is not None and len(grain) > 0:
+                    out = out.overlay(grain.apply_gain(fill_gain_db),
+                                      position=int(round(pos + offset)))
         return out
 
-    def _create_grain(self, config, onsets, grain_len, snap=False):
-        """Cut one grain at a (randomly chosen) source onset, band-passed per channel.
+    def _remnants(self, onsets, audio_len, grain_len):
+        """Off-grid remnant cut positions: the MIDPOINTS between consecutive snapped onsets — the
+        material that fell *between* the grid quanta and would otherwise be discarded. These feed the
+        rest-slot fills. Empty -> ``_create_grain`` falls back to a random (still off-grid) position."""
+        pts = sorted({o for o in onsets if 0 <= o <= max(0, audio_len - grain_len)})
+        rem = []
+        for a, b in zip(pts, pts[1:]):
+            mid = (a + b) // 2
+            if mid != a and mid != b:
+                rem.append(mid)
+        return rem
 
-        Random onset -> content varies run to run; the grid position it lands on is fixed by the
+    def _create_grain(self, config, onsets, grain_len, snap=False):
+        """Cut one grain at a (randomly chosen) source position from ``onsets`` (an onset pool for
+        HIT slots, or a remnant pool for fills), band-passed per channel.
+
+        Random pick -> content varies run to run; the grid position it lands on is fixed by the
         caller, so the *placement* stays deterministic (issue #5 acceptance #4)."""
         audio = config.audio
         max_start = len(audio) - grain_len
