@@ -334,6 +334,15 @@ class SampleCutter:
         if "lk" in args:
             lib_clusters = int(args[args.index("lk") + 1])
 
+        # Placement effects (issue #8): `snap` toggles pitch-preserving snap-to-slot; `sw <pct>`
+        # sets swing (0/<=50 = straight, 66 = 2:1 shuffle).
+        snap = self.auto_mixer_config.snap
+        if "snap" in args:
+            snap = True
+        swing = self.auto_mixer_config.swing
+        if "sw" in args:
+            swing = float(args[args.index("sw") + 1])
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -375,6 +384,9 @@ class SampleCutter:
             streams=streams,
             lib_policy=lib_policy,
             lib_clusters=lib_clusters,
+            snap=snap,
+            swing=swing,
+            groove_template=self.auto_mixer_config.groove_template,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

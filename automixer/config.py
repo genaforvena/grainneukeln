@@ -39,7 +39,10 @@ class AutoMixerConfig:
                  euclid_n=8,
                  streams=None,
                  lib_policy="similarity",
-                 lib_clusters=6):
+                 lib_clusters=6,
+                 snap=False,
+                 swing=0,
+                 groove_template=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -65,6 +68,11 @@ class AutoMixerConfig:
         # cluster count. Ignored by the other mixers.
         self.lib_policy = lib_policy
         self.lib_clusters = lib_clusters
+        # Placement effects (issue #8), composable across modes: pitch-preserving snap-to-slot, and
+        # swing % / groove-template micro-timing offsets. snap=False, swing=0, template=None are no-ops.
+        self.snap = snap
+        self.swing = swing
+        self.groove_template = groove_template
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
