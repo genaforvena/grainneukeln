@@ -23,3 +23,4 @@ pyqtgraph
 
 # --- TUI only (optional: `python main.py --tui`) — headless-friendly, runs over SSH/tmux ---
 textual
+pyfiglet   # block-font wordmark in the TUI masthead (tui/widgets/banner.py)

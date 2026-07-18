@@ -41,7 +41,8 @@ class SourcePanel(Static):
             yield Label(self.status_text, id="source_status")
 
     def on_mount(self):
-        self.border_title = "1 · Source"
+        self.border_title = "◈ 1 · source"
+        self.border_subtitle = "file · youtube"
 
     def on_input_submitted(self, event):
         self.load(event.value)

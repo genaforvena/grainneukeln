@@ -23,7 +23,8 @@ class RunPanel(Static):
             yield RichLog(id="run_log", max_lines=200, wrap=True)
 
     def on_mount(self):
-        self.border_title = "3 · Run"
+        self.border_title = "◈ 3 · run"
+        self.border_subtitle = "ctrl+r"
 
     def set_ready(self, ready, reason="load a source first"):
         """Gate the Run button on whether a source is actually loaded. Keeping Run un-clickable until

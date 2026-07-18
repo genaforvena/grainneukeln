@@ -49,7 +49,7 @@ class TracksPanel(Static):
             table.add_row(str(i + 1), str(t.low), str(t.high))
         if self._tracks:
             table.move_cursor(row=min(cursor, len(self._tracks) - 1))
-        self.border_title = f"Tracks ({len(self._tracks)})"
+        self.border_title = f"◈ bands ({len(self._tracks)})"
         self.post_message(self.Changed(self.tracks))
 
     def _sync_inputs_to_cursor(self):

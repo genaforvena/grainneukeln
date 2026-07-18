@@ -1,0 +1,101 @@
+/* grainneukeln — visual stylesheet. Structure (heights/widths/grid) is load-bearing and mirrors
+   the old inline CSS so the layout tests still hold; everything else is the "grain" look. */
+
+Screen {
+    background: $background;
+    color: $foreground;
+    layers: base;
+}
+
+/* --- masthead --- */
+Banner {
+    height: 5;          /* 3 wordmark rows + 1 wave + 1 top pad */
+    padding: 1 1 0 1;
+    background: $background;
+}
+
+/* --- layout skeleton (unchanged geometry) --- */
+#top   { height: 1fr; }
+#left  { width: 3fr; }
+#right { width: 2fr; }
+
+/* --- panels: rounded, per-role accent, titled --- */
+SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
+    border: round $primary;
+    background: $surface;
+    padding: 0 1;
+    margin: 0 1 1 0;
+    border-title-align: left;
+    border-title-color: $primary;
+    border-title-style: bold;
+    border-subtitle-color: $panel-lighten-2;
+}
+SourcePanel { border: round $secondary; border-title-color: $secondary; }
+ParamsPanel { border: round $primary;   border-title-color: $primary;   }
+TracksPanel { border: round $accent;    border-title-color: $accent;    }
+RunPanel    { border: round $success;   border-title-color: $success;   }
+OutputPanel { border: round $secondary; border-title-color: $secondary; }
+
+/* content-sized panels hug their content; space-fillers grow into the leftover column height */
+SourcePanel, ParamsPanel, RunPanel { height: auto; }
+SourcePanel > Vertical, RunPanel > Vertical { height: auto; }
+TracksPanel, OutputPanel { height: 1fr; }
+TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
+TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
+
+/* --- params grid --- */
+ParamsPanel Grid { grid-size: 2; grid-rows: auto; grid-gutter: 0 1; height: auto; }
+ParamsPanel Grid Input { width: 1fr; }
+ParamsPanel Grid Label { color: $foreground-darken-1; padding: 1 0 0 0; }
+
+/* --- captions / helper labels --- */
+#source_status { color: $text-muted; padding: 1 0 0 0; }
+#track_status  { color: $text-muted; }
+SourcePanel Label, TracksPanel Label, OutputPanel Label { color: $foreground-darken-1; }
+
+/* --- inputs --- */
+Input {
+    background: $surface-lighten-1;
+    border: tall $panel;
+}
+Input:focus { border: tall $secondary; background: $surface-lighten-2; }
+
+/* --- buttons --- */
+Button { border: none; height: 3; margin: 0; text-style: bold; }
+Button.-primary { background: $primary; color: $background; }
+Button.-primary:hover { background: $primary-lighten-1; }
+Button.-primary:disabled { background: $panel; color: $text-disabled; text-style: none; }
+Button.-default:hover { background: $panel-lighten-1; }
+
+/* --- tracks table --- */
+DataTable { background: $surface; color: $foreground; }
+DataTable > .datatable--header { background: $panel; color: $secondary; text-style: bold; }
+DataTable > .datatable--cursor { background: $accent; color: $background; text-style: bold; }
+DataTable > .datatable--hover  { background: $panel-lighten-1; }
+#track_edit { height: auto; margin-top: 1; }
+#track_edit Input { width: 12; }
+#track_set { width: auto; margin-left: 1; background: $accent; color: $background; }
+#track_set:hover { background: $accent-lighten-1; }
+
+/* --- run panel --- */
+RunPanel #run_progress { margin: 1 0; }
+RunPanel #run_log {
+    height: 8;
+    background: $surface-darken-1;
+    border: round $panel;
+    color: $text-muted;
+}
+Bar > .bar--bar      { color: $success; }
+Bar > .bar--complete { color: $success; }
+Bar > .bar--indeterminate { color: $accent; }
+PercentageStatus { color: $success; text-style: bold; }
+
+/* --- outputs list --- */
+ListView { background: $surface; }
+ListView > ListItem { padding: 0 1; }
+ListView > ListItem.--highlight { background: $secondary 25%; }
+ListView:focus > ListItem.--highlight { background: $secondary 40%; color: $foreground; }
+
+/* --- footer --- */
+Footer { background: $panel; }
+Footer > .footer-key--key { color: $secondary; text-style: bold; }

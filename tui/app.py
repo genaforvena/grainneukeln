@@ -1,10 +1,12 @@
 import os
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Footer, Header, Input
+from textual.widgets import Button, Footer, Input
 
 from tui.state import SessionState
 from tui import engine
+from tui.theme import grain_theme
+from tui.widgets.banner import Banner
 from tui.widgets.source_panel import SourcePanel
 from tui.widgets.params_panel import ParamsPanel
 from tui.widgets.tracks_panel import TracksPanel
@@ -42,26 +44,7 @@ def _real_player(path):
 
 
 class GrainTUI(App):
-    CSS = """
-    #top { height: 1fr; }
-    #left { width: 3fr; }
-    #right { width: 2fr; }
-    SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
-        border: round $primary; padding: 0 1; margin: 0 1 1 0;
-    }
-    /* content-sized panels: the panel AND its inner container hug their content */
-    SourcePanel, ParamsPanel, RunPanel { height: auto; }
-    SourcePanel > Vertical, RunPanel > Vertical { height: auto; }
-    ParamsPanel Grid { grid-size: 2; grid-rows: auto; height: auto; }
-    ParamsPanel Grid Input { width: 1fr; }
-    RunPanel #run_log { height: 8; border-top: solid $panel; }
-    /* space-filling panels grow into the leftover column height */
-    TracksPanel, OutputPanel { height: 1fr; }
-    TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
-    TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
-    #track_edit { height: auto; margin-top: 1; }
-    #track_edit Input { width: 12; }
-    """
+    CSS_PATH = "app.tcss"
     BINDINGS = [
         ("ctrl+r", "run", "Run grind"),
         ("f1", "help", "Help"),
@@ -75,7 +58,7 @@ class GrainTUI(App):
         self._player = player or _real_player
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield Banner()
         with Horizontal(id="top"):
             with Vertical(id="left"):
                 yield SourcePanel(self._loader)
@@ -87,10 +70,13 @@ class GrainTUI(App):
         yield Footer()
 
     def on_mount(self):
-        self.title = "GrainTUI"
+        self.register_theme(grain_theme)
+        self.theme = "grain"
+        self.title = "grainneukeln"
         self.sub_title = "granular grinder"
-        self.query_one(ParamsPanel).border_title = "2 · Grind params"
-        self.query_one(OutputPanel).border_title = "Outputs"
+        self.query_one(ParamsPanel).border_title = "◈ 2 · grind params"
+        self.query_one(ParamsPanel).border_subtitle = "speed · window · length"
+        self.query_one(OutputPanel).border_title = "♫ outputs"
 
     # --- wiring ---
     def on_source_panel_loading(self, msg):
