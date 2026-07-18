@@ -103,11 +103,16 @@ class GrainTUI(App):
 
     def on_source_panel_loaded(self, msg):
         self.state.cutter = msg.cutter
-        step = int(getattr(msg.cutter, "step", 0) or 0)
-        if step > 0:
-            self.state.sample_length_ms = step
+        # Seed the grind length from the real beat period (the base for /2 /3 *2). Fall back to the
+        # navigation step only when the beat is unknowable (< 2 beats detected).
+        beat = int(getattr(msg.cutter, "beat", 0) or 0)
+        base = beat if beat > 0 else int(getattr(msg.cutter, "step", 0) or 0)
+        params = self.query_one(ParamsPanel)
+        params.set_beat(beat)
+        if base > 0:
+            self.state.sample_length_ms = base
             try:
-                self.query_one("#sample_length", Input).value = str(step)
+                self.query_one("#sample_length", Input).value = str(base)
             except Exception:
                 pass
         self.query_one(RunPanel).set_ready(True)

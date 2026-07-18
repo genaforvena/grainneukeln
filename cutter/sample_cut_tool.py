@@ -11,7 +11,7 @@ from pydub import AudioSegment
 
 from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.runner import AutoMixerRunner
-from automixer.utils import calculate_step
+from automixer.utils import calculate_step, beat_interval
 
 # Loudness targets for the exported mix. The granular automix routinely comes out far below unity — a
 # sparse or quiet source grinds down to a -30..-45 dBFS mix — so a straight export is near-inaudible.
@@ -95,8 +95,11 @@ class SampleCutter:
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
-        self.step = calculate_step(self.beats)
-        self.sample_length = self.step
+        self.step = calculate_step(self.beats)  # navigation stride (f/r) — unchanged
+        # Grain-length BASE is the real beat period (l = beat); the operator divides/multiplies
+        # it (÷2 eighth, ÷3 triplet, ×2 half). Fall back to step only when the beat is unknowable.
+        self.beat = beat_interval(self.beats)
+        self.sample_length = self.beat if self.beat > 0 else self.step
         self.show_help("")
         self.is_wav_export_enabled = False
         self.is_verbose_mode_enabled = False
