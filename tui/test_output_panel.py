@@ -32,3 +32,20 @@ class OutputPanelTest(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
                 self.assertEqual(len(played), 1)
                 self.assertTrue(played[0].endswith(".mp3"))
+
+    async def test_play_failure_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "a.mp3"), "wb") as f:
+                f.write(b"\x00" * 10)
+
+            def no_sink(path):
+                raise RuntimeError("no audio device")
+
+            app = _Host(d, no_sink)
+            async with app.run_test() as pilot:
+                panel = app.query_one(OutputPanel)
+                panel.refresh_list()
+                await pilot.pause()
+                panel.play_selected()      # must not raise
+                await pilot.pause()
+                self.assertEqual(len(panel.paths), 1)   # TUI still alive

@@ -38,8 +38,14 @@ class OutputPanel(Static):
     def play_selected(self):
         lv = self.query_one("#output_list", ListView)
         idx = lv.index
-        if idx is not None and 0 <= idx < len(self.paths):
-            self._player(self.paths[idx])
+        if idx is None or not (0 <= idx < len(self.paths)):
+            return
+        path = self.paths[idx]
+        try:
+            self._player(path)
+        except Exception as e:
+            # Headless box with no audio sink: don't crash the TUI — surface the path to copy.
+            self.notify(f"Can't play here ({e}). File: {path}", severity="warning", timeout=8)
 
     def action_play(self):
         self.play_selected()
