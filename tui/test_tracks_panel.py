@@ -41,3 +41,27 @@ class TracksPanelTest(unittest.IsolatedAsyncioTestCase):
             panel.set_selected_range(200, 400)
             await pilot.pause()
             self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (200, 400))
+
+    async def test_band_edit_ui_applies_to_selected_row(self):
+        from textual.widgets import Button, Input
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.query_one("#track_low", Input).value = "300"
+            panel.query_one("#track_high", Input).value = "1200"
+            # exercise the Set-button wiring (on_button_pressed -> _apply_edit)
+            panel.on_button_pressed(Button.Pressed(panel.query_one("#track_set", Button)))
+            await pilot.pause()
+            self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (300, 1200))
+
+    async def test_band_edit_rejects_invalid_range(self):
+        from textual.widgets import Button, Input
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.query_one("#track_low", Input).value = "5000"
+            panel.query_one("#track_high", Input).value = "100"      # low >= high
+            panel.on_button_pressed(Button.Pressed(panel.query_one("#track_set", Button)))
+            await pilot.pause()
+            self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (0, 15000))  # unchanged
+            self.assertIn("invalid", panel.status_text.lower())

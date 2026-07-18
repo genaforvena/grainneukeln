@@ -12,14 +12,27 @@ from tui.widgets.run_panel import RunPanel
 from tui.widgets.output_panel import OutputPanel
 
 
-def _real_loader(value):
+def _real_loader(value, on_stage=None):
+    """Download (if a URL) + build a SampleCutter. Runs on SourcePanel's worker thread, so the
+    slow parts (yt-dlp download, librosa beat-detection) never freeze the UI. on_stage(str) streams
+    human progress to the source status line."""
+    def stage(text):
+        if on_stage:
+            on_stage(text)
+
     from cutter.sample_cut_tool import SampleCutter
     out = os.path.abspath("output")
     os.makedirs(out, exist_ok=True)
     if value.startswith("http://") or value.startswith("https://"):
         import youtube.downloader as downloader
-        value = downloader.download_video(value, out)
-    return SampleCutter(os.path.abspath(value), out)
+        stage("Downloading from YouTube… 0%")
+        value = downloader.download_video(
+            value, out, progress_callback=lambda pct: stage(f"Downloading from YouTube… {pct}%"))
+        stage(f"Downloaded → {os.path.relpath(value, out)}. Detecting beats (librosa)…")
+    else:
+        value = os.path.abspath(value)
+        stage("Detecting beats (librosa)…")
+    return SampleCutter(value, out)
 
 
 def _real_player(path):
@@ -31,13 +44,27 @@ def _real_player(path):
 class GrainTUI(App):
     CSS = """
     #top { height: 1fr; }
-    #left { width: 1fr; }
-    #right { width: 1fr; }
+    #left { width: 3fr; }
+    #right { width: 2fr; }
+    SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
+        border: round $primary; padding: 0 1; margin: 0 1 1 0; height: auto;
+    }
+    SourcePanel { height: auto; }
     ParamsPanel Grid { grid-size: 2; grid-rows: auto; height: auto; }
+    ParamsPanel Grid Input { width: 1fr; }
     TracksPanel { height: 1fr; }
-    RichLog { height: 1fr; }
+    #track_edit { height: auto; margin-top: 1; }
+    #track_edit Input { width: 10; }
+    RunPanel { height: auto; }
+    OutputPanel { height: 1fr; }
+    RichLog { height: 8; border-top: solid $panel; }
+    ListView { height: 1fr; }
     """
-    BINDINGS = [("r", "run", "Run"), ("q", "quit", "Quit")]
+    BINDINGS = [
+        ("ctrl+r", "run", "Run grind"),
+        ("f1", "help", "Help"),
+        ("q", "quit", "Quit"),
+    ]
 
     def __init__(self, output_dir="output", loader=None, player=None):
         super().__init__()
@@ -46,7 +73,7 @@ class GrainTUI(App):
         self._player = player or _real_player
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(show_clock=True)
         with Horizontal(id="top"):
             with Vertical(id="left"):
                 yield SourcePanel(self._loader)
@@ -57,7 +84,21 @@ class GrainTUI(App):
                 yield OutputPanel(self.state.output_dir, self._player)
         yield Footer()
 
+    def on_mount(self):
+        self.title = "GrainTUI"
+        self.sub_title = "granular grinder"
+        self.query_one(ParamsPanel).border_title = "2 · Grind params"
+        self.query_one(OutputPanel).border_title = "Outputs"
+
     # --- wiring ---
+    def on_source_panel_loading(self, msg):
+        self.state.cutter = None
+        self.query_one(RunPanel).set_ready(False, "loading source…")
+
+    def on_source_panel_failed(self, msg):
+        self.state.cutter = None
+        self.query_one(RunPanel).set_ready(False, "load a source first")
+
     def on_source_panel_loaded(self, msg):
         self.state.cutter = msg.cutter
         step = int(getattr(msg.cutter, "step", 0) or 0)
@@ -67,6 +108,7 @@ class GrainTUI(App):
                 self.query_one("#sample_length", Input).value = str(step)
             except Exception:
                 pass
+        self.query_one(RunPanel).set_ready(True)
 
     def on_tracks_panel_changed(self, msg):
         self.state.tracks = msg.tracks
@@ -77,6 +119,14 @@ class GrainTUI(App):
     def action_run(self):
         self.query_one(ParamsPanel).apply_to_state()
         self.query_one(RunPanel).start()
+
+    def action_help(self):
+        self.notify(
+            "Enter a file/URL in Source → Enter (watch the download progress).\n"
+            "When it says ✓ Loaded, press Ctrl+R (or the Run button) to grind.\n"
+            "Tracks: a add · d remove · edit low/high + Set for multitrack.\n"
+            "Outputs: p play · g refresh.   Quit: q",
+            title="How to grind", timeout=12)
 
     # --- real threaded runner injected into RunPanel ---
     def _threaded_runner(self, state, on_progress, on_log):
@@ -89,21 +139,22 @@ class GrainTUI(App):
                 on_progress=lambda f: self.call_from_thread(on_progress, f),
             )
 
-        on_log(f"Rendering {len(state.tracks)} track(s), cut {state.sample_length_ms}ms...")
-        self.run_worker(work, thread=True, exit_on_error=False)
+        on_log(f"Rendering {len(state.tracks)} track(s), cut {state.sample_length_ms}ms…")
+        self.run_worker(work, thread=True, exit_on_error=False, group="grind")
         return None  # completion arrives async via on_worker_state_changed
 
     def on_worker_state_changed(self, event):
+        # Only the grind worker feeds the run panel — the SourcePanel load worker also raises these
+        # events (it is a thread worker too) and must NOT be treated as a finished grind.
+        if event.worker.group != "grind":
+            return
         from textual.worker import WorkerState
         panel = self.query_one(RunPanel)
         if event.state == WorkerState.SUCCESS and event.worker.result:
             panel._on_finished(event.worker.result)
         elif event.state == WorkerState.ERROR:
             panel._log(f"Run failed: {event.worker.error}")
-            try:
-                self.query_one("#run_btn", Button).disabled = False
-            except Exception:
-                pass
+            panel.set_ready(True)
 
 
 def run_tui(output_dir="output"):

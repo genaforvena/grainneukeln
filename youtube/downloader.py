@@ -1,18 +1,25 @@
 import yt_dlp
 import os
 
-# Enter the YouTube video URL
-url = "https://www.youtube.com/watch?v=k_bkjsjElrI"
-
 
 def download_video(url, output_path, progress_callback=None):
+    """Download a YouTube URL to an mp3 under <output_path>/downloads/ and return its path.
+
+    progress_callback, if given, is called with an integer 0..100 as the download proceeds.
+    On any failure this RAISES RuntimeError (it used to return an "Error: …" string, which then got
+    fed to SampleCutter as if it were a file path and surfaced as a bogus "File does not exist").
+    """
     def progress_hook(d):
-        if d['status'] == 'downloading' and progress_callback:
+        if d.get("status") != "downloading" or not progress_callback:
+            return
+        # _percent_str carries ANSI colour codes and is unreliable — compute from bytes instead.
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+        done = d.get("downloaded_bytes")
+        if total and done is not None:
             try:
-                percent = d.get('_percent_str', '0%').replace('%', '')
-                progress_callback(int(float(percent)))
-            except ValueError:
-                pass  # Ignore if we can't convert the percentage to a number
+                progress_callback(int(done * 100 / total))
+            except (ValueError, ZeroDivisionError):
+                pass
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -32,9 +39,8 @@ def download_video(url, output_path, progress_callback=None):
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             final_filename = os.path.splitext(filename)[0] + ".mp3"
-            if os.path.exists(final_filename):
-                return final_filename
-            else:
-                return f"Error: File not found after download: {final_filename}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        raise RuntimeError(f"YouTube download failed: {e}") from e
+    if not os.path.exists(final_filename):
+        raise RuntimeError(f"download finished but no file at {final_filename}")
+    return final_filename

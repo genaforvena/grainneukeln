@@ -23,7 +23,7 @@ class SessionState:
 
     def is_runnable(self) -> tuple[bool, str]:
         if self.cutter is None:
-            return False, "No source loaded"
+            return False, "No source loaded — enter a file/URL in Source and press Enter"
         if self.sample_length_ms <= 0:
             return False, "Sample length must be > 0"
         if not self.tracks:

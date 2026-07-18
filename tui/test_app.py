@@ -27,3 +27,35 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             panel.add_track()
             await pilot.pause()
             self.assertEqual(len(app.state.tracks), 2)
+
+    async def test_run_button_gated_on_loaded_source(self):
+        # The core "does not work" fix: Run is un-clickable until a source has actually loaded, so
+        # "Loaded: N beats" and "No source loaded" can never disagree.
+        app = GrainTUI(output_dir="output")
+        async with app.run_test() as pilot:
+            from textual.widgets import Button
+            from tui.widgets.source_panel import SourcePanel
+            btn = app.query_one("#run_btn", Button)
+            self.assertTrue(btn.disabled)                       # disabled at start
+            app.query_one(SourcePanel).post_message(SourcePanel.Loaded(_FakeCutter()))
+            await pilot.pause()
+            self.assertFalse(btn.disabled)                      # enabled once a source lands
+            app.query_one(SourcePanel).post_message(SourcePanel.Failed("boom"))
+            await pilot.pause()
+            self.assertTrue(btn.disabled)                       # a failed reload re-locks it
+            self.assertIsNone(app.state.cutter)
+
+    async def test_real_source_worker_completion_is_not_a_grind_result(self):
+        # SourcePanel's load worker is a thread worker too; its completion must NOT drive the run log
+        # (the app filters on worker group == "grind").
+        loaded = _FakeCutter()
+        app = GrainTUI(output_dir="output", loader=lambda v: loaded, player=lambda p: None)
+        async with app.run_test() as pilot:
+            from textual.widgets import RichLog
+            from tui.widgets.source_panel import SourcePanel
+            app.query_one(SourcePanel).load("/tmp/x.wav")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
+            self.assertNotIn("Done", log_text)                  # no phantom "Done: <cutter>"
+            self.assertIsNotNone(app.state.cutter)
