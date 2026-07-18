@@ -132,6 +132,8 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `w`  | window divider | `w 4` | windows = `total_beats / w`. Bigger `w` → smaller windows → grains drawn from tighter time-neighborhoods (more local, less wandering). |
 | `m`  | mode | `m rw`, `m q`, `m poly`, `m lib` | grain-selection algorithm. `rw` (random window) is the tested default; `q` quantized, `poly` polyrhythmic, `lib` feature-library (all below). |
 | `lib` `lk` | library policy / clusters (mode `lib`) | `lib con lk 8` | `lib sim`/`lib con` selects the sequencing policy (similarity vs contrast); `lk` sets the cluster count. Only used by `m lib`. |
+| `snap` | snap-to-beat | `snap` | pitch-preserving time-stretch of each grain to land exactly in its slot (composable, any mode). Off by default. |
+| `sw` | swing % | `sw 66` | micro-timing groove: delay every off-beat grain. `0`/`<=50` = straight (no-op), `66` = 2:1 shuffle. |
 | `ek` `en` | euclidean pattern (mode `q`) | `ek 3 en 8` | `E(k, n)`: place `k` grains across `n` beat-subdivision slots as an evenly-spread euclidean rhythm. `E(3,8)` is the tresillo, `E(5,8)` the cinquillo, `E(4,4)` four-on-the-floor. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
 
@@ -180,6 +182,18 @@ honestly (reported), it does not fake a full clustering.
 ```bash
 python main.py song.mp3 output/ amc m lib sim lk 6     # coherent, stays in-cluster
 python main.py song.mp3 output/ amc m lib con lk 8     # glitchy, jumps between clusters
+```
+
+#### Snap-to-beat + swing (`snap`, `sw`) — composable placement effects
+
+Two small effects usable by any mode. **Snap** (`snap`) pitch-preservingly time-stretches each grain so
+off-length material lands *exactly* in its beat slot instead of smearing the groove. **Swing** (`sw`)
+applies a micro-timing offset so the output breathes instead of marching: `sw 66` is a 2:1 shuffle,
+`sw 0` (or `<=50`) is a genuine no-op (bit-identical straight placement).
+
+```bash
+python main.py song.mp3 output/ amc m q ek 3 en 8 snap sw 66   # tresillo, snapped, shuffled
+python main.py song.mp3 output/ amc snap                       # snap composed onto the rw baseline
 ```
 
 ### Interactive shell

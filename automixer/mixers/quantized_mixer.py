@@ -21,7 +21,8 @@ from pydub import AudioSegment
 from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
-from automixer.effects.change_tempo import change_audioseg_tempo
+from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
+from automixer.effects.groove import swing_offset
 from automixer.iterators.grid import euclidean, grid_slots
 from automixer.iterators.onsets import onset_positions
 from automixer.utils import beat_interval
@@ -52,17 +53,29 @@ class QuantizedAutoMixer:
         slots = grid_slots(beat_period, pattern, total_ms)
         onsets = self._onsets(audio, slot_ms)
 
-        out = AudioSegment.silent(duration=int(round(total_ms)))
+        # Placement effects (issue #8): swing/groove micro-timing + pitch-preserving snap.
+        swing = float(getattr(config, "swing", 0) or 0)
+        template = getattr(config, "groove_template", None)
+        snap = bool(getattr(config, "snap", False))
+
+        # Canvas must be long enough to hold swung-late off-beats and the trailing grain.
+        canvas_ms = int(round(total_ms + slot_ms + grain_len))
+        out = AudioSegment.silent(duration=canvas_ms)
         pbar = tqdm(desc="Quantizing", total=len(slots))
         for pos in slots:
-            grain = self._create_grain(config, onsets, grain_len)
+            slot_idx = int(round(pos / slot_ms)) if slot_ms > 0 else 0
+            if template:
+                offset = float(template[slot_idx % len(template)])
+            else:
+                offset = swing_offset(slot_idx, swing, slot_ms)
+            grain = self._create_grain(config, onsets, grain_len, snap)
             if grain is not None and len(grain) > 0:
-                out = out.overlay(grain, position=int(round(pos)))
+                out = out.overlay(grain, position=int(round(pos + offset)))
             pbar.update(1)
         pbar.close()
         return out
 
-    def _create_grain(self, config, onsets, grain_len):
+    def _create_grain(self, config, onsets, grain_len, snap=False):
         """Cut one grain at a (randomly chosen) source onset, band-passed per channel.
 
         Random onset -> content varies run to run; the grid position it lands on is fixed by the
@@ -80,11 +93,22 @@ class QuantizedAutoMixer:
             # than a beat floor, so the grid still fills.
             start_cut = random.randint(0, max_start)
 
-        grain = AudioSegment.silent(duration=grain_len)
+        # Snap (issue #8): cut the natural transient unit (onset -> next onset, capped) and
+        # pitch-preservingly stretch it to the slot length, so off-length material lands on the grid.
+        cut_len = grain_len
+        if snap and candidates:
+            nexts = [o for o in onsets if o > start_cut]
+            raw = (nexts[0] - start_cut) if nexts else grain_len
+            cut_len = int(max(1, min(raw, len(audio) - start_cut)))
+            cut_len = int(max(grain_len * 0.5, min(grain_len * 1.5, cut_len)))
+
+        grain = AudioSegment.silent(duration=cut_len)
         for channel in config.channels_config:
-            channel_chunk = audio[start_cut: start_cut + grain_len]
+            channel_chunk = audio[start_cut: start_cut + cut_len]
             channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
+        if snap and len(grain) != grain_len:
+            grain = snap_to_length(grain, grain_len, verbose=config.is_verbose_mode_enabled)
         if config.sample_speed != 1.0:
             grain = change_audioseg_tempo(grain, config.sample_speed,
                                           verbose=config.is_verbose_mode_enabled)
