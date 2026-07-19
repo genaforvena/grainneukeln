@@ -20,7 +20,7 @@ Banner {
 #right { width: 2fr; }
 
 /* --- panels: rounded, per-role accent, titled --- */
-SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
+SourcePanel, ParamsPanel, ModePanel, TracksPanel, RunPanel, OutputPanel {
     border: round $primary;
     background: $surface;
     padding: 0 1;
@@ -32,21 +32,31 @@ SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel {
 }
 SourcePanel { border: round $secondary; border-title-color: $secondary; }
 ParamsPanel { border: round $primary;   border-title-color: $primary;   }
+ModePanel   { border: round $warning;   border-title-color: $warning;   margin: 0 1 0 0; }
 TracksPanel { border: round $accent;    border-title-color: $accent;    }
 RunPanel    { border: round $success;   border-title-color: $success;   }
 OutputPanel { border: round $secondary; border-title-color: $secondary; }
 
 /* content-sized panels hug their content; space-fillers grow into the leftover column height */
-SourcePanel, ParamsPanel, RunPanel { height: auto; }
+SourcePanel, ParamsPanel, ModePanel, RunPanel { height: auto; }
 SourcePanel > Vertical, RunPanel > Vertical { height: auto; }
 TracksPanel, OutputPanel { height: 1fr; }
 TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
 TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
 
-/* --- params grid --- */
+/* --- params grid (2-col: label | field, one field per row) --- */
 ParamsPanel Grid { grid-size: 2; grid-rows: auto; grid-gutter: 0 1; height: auto; }
 ParamsPanel Grid Input { width: 1fr; }
 ParamsPanel Grid Label { color: $foreground-darken-1; padding: 1 0 0 0; }
+
+/* --- mode/effects grid (4-col: label | field | label | field, two fields per row so the twelve
+   controls stay compact and all panels fit on one screen) --- */
+ModePanel Grid { grid-size: 4; grid-rows: auto; grid-gutter: 0 1; height: auto; }
+ModePanel Grid Label { color: $foreground-darken-1; height: 1; padding: 0; }
+ModePanel Grid Input { width: 1fr; height: 1; border: none; background: $surface-lighten-1; }
+ModePanel Grid Input:focus { background: $surface-lighten-2; }
+ModePanel Grid Select { width: 1fr; height: 3; }
+ModePanel Grid Checkbox { width: 1fr; height: 1; background: $surface; border: none; }
 
 /* --- captions / helper labels --- */
 #source_status { color: $text-muted; padding: 1 0 0 0; }
@@ -78,6 +88,8 @@ DataTable > .datatable--hover  { background: $panel-lighten-1; }
 #track_set:hover { background: $accent-lighten-1; }
 
 /* --- run panel --- */
+RunPanel #run_options { height: auto; margin: 0 0 1 0; }
+RunPanel #run_options Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; }
 RunPanel #run_progress { margin: 1 0; }
 RunPanel #run_log {
     height: 8;

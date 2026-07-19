@@ -21,15 +21,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Granular Sampler")
     parser.add_argument("--gui", action="store_true", help="Launch the graphical user interface")
     parser.add_argument("--tui", action="store_true", help="Launch the terminal UI (headless-friendly)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Seed every mixer's RNG so two runs with the same seed + params are "
+                             "byte-identical. Injected into the amc command as `seed <N>`. Absent = "
+                             "legacy unseeded behaviour (runs differ as before).")
     parser.add_argument("source_path", nargs="?", help="Path to mp3 file to cut or YouTube URL")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
-    
+
     args = parser.parse_args()
 
     if args.tui:
         from tui.app import run_tui
-        run_tui()
+        run_tui(args.seed)
         sys.exit(0)
 
     if args.gui:
@@ -42,16 +46,22 @@ if __name__ == "__main__":
         if not os.path.isdir(args.destination_path):
             print("Destination path doesn't exist")
             sys.exit(1)
-        
+
         args.destination_path = os.path.abspath(args.destination_path)
-        
+
         if args.source_path.startswith("https://www.youtube.com/"):
             print("Downloading audio from YouTube")
             import youtube.downloader as downloader
             args.source_path = downloader.download_video(args.source_path, args.destination_path)
-        
+
+        # Inject `seed N` right after the leading `amc` token when --seed is passed and the user
+        # didn't already write `seed M` in the command. Lets `--seed 5` make any automix reproducible
+        # without changing the amc grammar; an explicit `seed M` later in the command still overrides.
+        commands = list(args.commands)
+        if args.seed is not None and commands and commands[0] == "amc" and "seed" not in commands:
+            commands[1:1] = ["seed", str(args.seed)]
         print("Starting cut tool with file: " + args.source_path)
-        sample_cut_tool.main(args.source_path, args.destination_path, args.commands)
+        sample_cut_tool.main(args.source_path, args.destination_path, commands)
     elif not args.gui:
         parser.print_help()
         sys.exit(1)

@@ -24,7 +24,7 @@ from tqdm import tqdm
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
 from automixer.iterators.onsets import onset_positions
-from automixer.utils import beat_interval
+from automixer.utils import beat_interval, apply_seed, overlay_bit_identical
 
 
 def _lcm(a, b):
@@ -36,6 +36,7 @@ class PolyphonicAutoMixer:
         """Overlay N parallel grain streams. When ``return_streams`` is set, also return the list of
         per-stream ``AudioSegment``s (each stream rendered on its own canvas) — the honest artifact
         for verifying each stream's subdivision and their phasing without band-leakage guesswork."""
+        apply_seed(config)
         audio = config.audio
         total_ms = len(audio)
         if total_ms == 0:
@@ -56,6 +57,11 @@ class PolyphonicAutoMixer:
         # One onset pass at the finest grid the streams share, reused by every stream.
         onsets = onset_positions(audio, snap_ms=sub_ms)
 
+        canvas_fr = max(11025, audio.frame_rate)
+        canvas_sw = max(2, audio.sample_width)
+        canvas_ch = max(1, audio.channels)
+        canvas_ms = int(round(total_ms))
+
         total_grains = sum(int(total_ms / (beat_period / r)) + 1 for r in ratios)
         pbar = tqdm(desc="Polyrhythm", total=total_grains)
         stream_segs = []
@@ -64,33 +70,58 @@ class PolyphonicAutoMixer:
             grain_len = int(round(s.get("length") or step_ms))
             grain_len = max(1, grain_len)
             channels = s.get("channels") or config.channels_config
-            seg = AudioSegment.silent(duration=int(round(total_ms)))
+            # Precompute this stream's candidate set ONCE — grain_len is fixed within a stream, so
+            # ``max_start = len(audio) - grain_len`` is too, and the per-grain O(n_onsets) filter
+            # was rebuilding the same list every grain. Bit-identical (same list, same random.choice
+            # draws); only the call site moves up.
+            max_start = len(audio) - grain_len
+            stream_candidates = [o for o in onsets if 0 <= o <= max_start] if max_start > 0 else []
+            # Per-stream canvas: collect this stream's grains + positions, overlay once. Bit-identical
+            # to chained ``seg.overlay(grain, position=p)`` on a silent canvas (same _sync + audioop.add
+            # chain as the q mixer). Each grain here lands on this stream's own subdivision grid; the
+            # phasing between streams comes from the final fold below.
+            stream_grains = []
             pos = 0.0
             while pos < total_ms:
-                grain = self._create_grain(config, onsets, grain_len, channels)
+                grain = self._create_grain(config, onsets, grain_len, channels,
+                                           candidates=stream_candidates)
                 if grain is not None and len(grain) > 0:
-                    seg = seg.overlay(grain, position=int(round(pos)))
+                    stream_grains.append((int(round(pos)), grain))
                 pos += step_ms
                 pbar.update(1)
-            stream_segs.append(seg)
+            stream_segs.append(overlay_bit_identical(
+                canvas_ms, stream_grains,
+                frame_rate=canvas_fr, sample_width=canvas_sw, channels=canvas_ch,
+            ))
         pbar.close()
 
-        out = AudioSegment.silent(duration=int(round(total_ms)))
-        for seg in stream_segs:
-            out = out.overlay(seg)
+        # Final fold: overlay every stream's full canvas onto a master canvas. Same helper; the
+        # stream_segs are now full-canvas-length AudioSegments, so each "grain" in this fold is
+        # stream-length and positioned at 0. Bit-identical to chained ``out.overlay(seg)``.
+        fold_pairs = [(0, seg) for seg in stream_segs]
+        out = overlay_bit_identical(
+            canvas_ms, fold_pairs,
+            frame_rate=canvas_fr, sample_width=canvas_sw, channels=canvas_ch,
+        )
         return (out, stream_segs) if return_streams else out
 
-    def _create_grain(self, config, onsets, grain_len, channels):
+    def _create_grain(self, config, onsets, grain_len, channels, candidates=None):
         """Cut one grain at a random source onset, band-passed through this stream's channels.
 
         Random onset -> content varies run to run; the stream's grid positions are fixed, so the
-        polyrhythmic PLACEMENT is deterministic."""
+        polyrhythmic PLACEMENT is deterministic.
+
+        ``candidates`` is the precomputed subset of ``onsets`` satisfying ``0 <= o <= max_start``
+        — passed by the caller (``mix``) so the per-grain O(n_onsons) filter runs ONCE per stream,
+        not once per grain. Bit-identical to in-function filtering; ``None`` falls back for callers
+        that didn't precompute."""
         audio = config.audio
         max_start = len(audio) - grain_len
         if max_start <= 0:
             return audio[:grain_len]
 
-        candidates = [o for o in onsets if 0 <= o <= max_start]
+        if candidates is None:
+            candidates = [o for o in onsets if 0 <= o <= max_start]
         start_cut = random.choice(candidates) if candidates else random.randint(0, max_start)
 
         grain = AudioSegment.silent(duration=grain_len)

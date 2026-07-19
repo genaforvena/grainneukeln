@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Button, ProgressBar, RichLog, Static
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Button, Checkbox, ProgressBar, RichLog, Static
 from textual.message import Message
 
 
@@ -17,6 +17,13 @@ class RunPanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            with Horizontal(id="run_options"):
+                yield Checkbox("WAV", value=self.state.wav_export, id="opt_wav",
+                               tooltip="Also export a .wav alongside the .mp3 (set_wav_enabled)")
+                yield Checkbox("Verbose", value=self.state.verbose, id="opt_verbose",
+                               tooltip="Pass is_verbose_mode_enabled to the mixers")
+                yield Checkbox("Self-feed", value=self.state.self_feed, id="opt_self_feed",
+                               tooltip="After the grind, reload the exported mp3 as the source (aminf)")
             yield Button("Run grind — load a source first", id="run_btn",
                          variant="primary", disabled=True)
             yield ProgressBar(total=100, show_eta=False, id="run_progress")
@@ -24,7 +31,7 @@ class RunPanel(Static):
 
     def on_mount(self):
         self.border_title = "◈ 3 · run"
-        self.border_subtitle = "ctrl+r"
+        self.border_subtitle = "ctrl+r · i: info"
 
     def set_ready(self, ready, reason="load a source first"):
         """Gate the Run button on whether a source is actually loaded. Keeping Run un-clickable until
@@ -32,6 +39,14 @@ class RunPanel(Static):
         btn = self.query_one("#run_btn", Button)
         btn.disabled = not ready
         btn.label = "Run grind  (Ctrl+R)" if ready else f"Run grind — {reason}"
+
+    def on_checkbox_changed(self, event):
+        """Sync the three render-option checkboxes straight onto state — they take effect on the
+        next Run, no separate apply step needed (they are booleans, nothing to validate)."""
+        cmap = {"opt_wav": "wav_export", "opt_verbose": "verbose", "opt_self_feed": "self_feed"}
+        attr = cmap.get(event.checkbox.id)
+        if attr:
+            setattr(self.state, attr, event.value)
 
     def on_button_pressed(self, event):
         if event.button.id == "run_btn":

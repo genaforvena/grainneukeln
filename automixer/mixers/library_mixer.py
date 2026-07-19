@@ -16,13 +16,14 @@ from tqdm import tqdm
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
 from automixer.features import measure_grain, calibrate, cluster, next_cluster
-from automixer.utils import beat_interval
+from automixer.utils import beat_interval, apply_seed, concat_bit_identical
 
 
 class LibraryAutoMixer:
     def mix(self, config, return_debug=False):
         import numpy as np
 
+        apply_seed(config)
         audio = config.audio
         total_ms = len(audio)
         if total_ms == 0:
@@ -54,7 +55,7 @@ class LibraryAutoMixer:
 
         # 3. Sequence via a Markov chain over clusters under the chosen policy.
         policy = str(getattr(config, "lib_policy", "similarity"))
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(getattr(config, "seed", None))
         members = {c: [i for i, l in enumerate(labels) if int(l) == c] for c in range(n_clusters)}
         M = max(1, int(round(total_ms / grain_len)))
         cur = int(rng.integers(n_clusters))
@@ -64,9 +65,12 @@ class LibraryAutoMixer:
             sequence.append(int(rng.choice(pool)))
             cur = next_cluster(cur, centroids, policy, rng)
 
-        out = AudioSegment.empty()
-        for gi in sequence:
-            out += self._render_grain(config, grains[gi])
+        # Render the sequenced grains. Collect in a list + concat ONCE at the end (bit-identical
+        # to chained ``out += grain``: pydub's __iadd__ falls through to append(crossfade=0), which
+        # is byte-concat). Pre-refactor the per-grain append re-copied the running buffer every
+        # grain → O(L²) in the rendered length; now O(L).
+        out_parts = [self._render_grain(config, grains[gi]) for gi in sequence]
+        out = concat_bit_identical(out_parts)
 
         if degraded:
             print("[lib] honest-degrade: only %d grain(s) for k=%d clusters (%d formed) — clustering "

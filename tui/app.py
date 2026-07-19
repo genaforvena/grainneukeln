@@ -9,6 +9,7 @@ from tui.theme import grain_theme
 from tui.widgets.banner import Banner
 from tui.widgets.source_panel import SourcePanel
 from tui.widgets.params_panel import ParamsPanel
+from tui.widgets.mode_panel import ModePanel
 from tui.widgets.tracks_panel import TracksPanel
 from tui.widgets.run_panel import RunPanel
 from tui.widgets.output_panel import OutputPanel
@@ -47,6 +48,7 @@ class GrainTUI(App):
     CSS_PATH = "app.tcss"
     BINDINGS = [
         ("ctrl+r", "run", "Run grind"),
+        ("i", "info", "Info"),
         ("f1", "help", "Help"),
         ("q", "quit", "Quit"),
     ]
@@ -63,6 +65,7 @@ class GrainTUI(App):
             with Vertical(id="left"):
                 yield SourcePanel(self._loader)
                 yield ParamsPanel(self.state)
+                yield ModePanel(self.state)
                 yield TracksPanel(self.state.tracks)
             with Vertical(id="right"):
                 yield RunPanel(self.state, self._threaded_runner)
@@ -76,6 +79,8 @@ class GrainTUI(App):
         self.sub_title = "granular grinder"
         self.query_one(ParamsPanel).border_title = "◈ 2 · grind params"
         self.query_one(ParamsPanel).border_subtitle = "speed · window · length"
+        self.query_one(ModePanel).border_title = "◈ 3 · mixer & effects"
+        self.query_one(ModePanel).border_subtitle = "mode · euclid · poly · lib · snap · swing"
         self.query_one(OutputPanel).border_title = "♫ outputs"
 
     # --- wiring ---
@@ -108,9 +113,53 @@ class GrainTUI(App):
 
     def on_run_panel_finished(self, msg):
         self.query_one(OutputPanel).refresh_list()
+        if self.state.self_feed:
+            self._self_feed_from(msg.path)
+
+    def _self_feed_from(self, path):
+        """Reload the just-exported mp3 as the source — the `aminf` creative loop: each grind
+        becomes the input to the next. Runs on the same threaded loader the SourcePanel uses so
+        the UI stays responsive, and posts the same Loaded/Failed messages so all the readiness
+        wiring (Run button gate, beat seed) updates exactly as if the operator typed the path."""
+        panel = self.query_one(RunPanel)
+        panel._log(f"Self-feed → reloading {os.path.basename(path)} as source…")
+        src = self.query_one(SourcePanel)
+        src.load(path)
+
+    def action_info(self):
+        """`amc info` + `info` parity: dump the live source + grind config into the run log so the
+        operator can read what is about to render without leaving the TUI."""
+        panel = self.query_one(RunPanel)
+        s = self.state
+        cutter = s.cutter
+        if cutter is None:
+            panel._log("Info: no source loaded")
+            return
+        beats = getattr(cutter, "beats", None)
+        n_beats = len(beats) if beats is not None else 0
+        beat = int(getattr(cutter, "beat", 0) or 0)
+        path = getattr(cutter, "audio_file_path", "?")
+        tracks = " ".join(f"{t.low}-{t.high}" for t in s.tracks) or "(none)"
+        streams = s.streams_spec or "(mixer default)"
+        panel._log(
+            f"Source: {os.path.basename(path)} · {n_beats} beats · beat={beat}ms\n"
+            f"  mode={s.mode}  l={s.sample_length_ms}ms  s={s.speed}  ss={s.sample_speed}"
+            f"  w={s.window_divider}\n"
+            f"  bands: {tracks}\n"
+            f"  euclid E({s.euclid_k},{s.euclid_n}) · swing={s.swing} · snap={s.snap}"
+            f" · fill={'on' if s.fill else 'off'}({s.fill_gain_db}dB)\n"
+            f"  lib: {s.lib_policy}/{s.lib_clusters} · poly: {streams}\n"
+            f"  out: wav={'on' if s.wav_export else 'off'}"
+            f" verbose={'on' if s.verbose else 'off'}"
+            f" self-feed={'on' if s.self_feed else 'off'}"
+        )
 
     def action_run(self):
-        self.query_one(ParamsPanel).apply_to_state()
+        errs = self.query_one(ParamsPanel).apply_to_state()
+        errs += self.query_one(ModePanel).apply_to_state()
+        if errs:
+            self.notify("\n".join(errs), severity="error", title="Fix params", timeout=8)
+            return
         self.query_one(RunPanel).start()
 
     def action_help(self):
@@ -118,18 +167,21 @@ class GrainTUI(App):
             "Enter a file/URL in Source → Enter (watch the download progress).\n"
             "When it says ✓ Loaded, press Ctrl+R (or the Run button) to grind.\n"
             "Tracks: a add · d remove · edit low/high + Set for multitrack.\n"
-            "Outputs: p play · g refresh.   Quit: q",
+            "Run opts: WAV export · Verbose · Self-feed (reload the mix as source).\n"
+            "i: dump live source + config.   Outputs: p play · g refresh.   Quit: q",
             title="How to grind", timeout=12)
 
     # --- real threaded runner injected into RunPanel ---
     def _threaded_runner(self, state, on_progress, on_log):
         self.query_one(ParamsPanel).apply_to_state()
+        self.query_one(ModePanel).apply_to_state()
         cfg = engine.build_config(state.cutter, state)
 
         def work():
             return engine.run(
                 cfg, state.output_dir,
                 on_progress=lambda f: self.call_from_thread(on_progress, f),
+                wav_export=state.wav_export,
             )
 
         on_log(f"Rendering {len(state.tracks)} track(s), cut {state.sample_length_ms}ms…")
@@ -150,5 +202,11 @@ class GrainTUI(App):
             panel.set_ready(True)
 
 
-def run_tui(output_dir="output"):
+def run_tui(output_dir="output", seed=None):
+    """Launch the TUI. ``seed`` (from ``main.py --seed``) is accepted for symmetry with the CLI but
+    not yet wired into the TUI's session state — the TUI's own params panel is the primary seed
+    surface there. The arg is accepted so ``main.py --seed N --tui`` does not raise."""
+    if seed is not None:
+        print(f"[tui] note: --seed {seed} accepted but not yet wired into the TUI session state; "
+              f"the CLI path (no --tui) honours it end-to-end.")
     GrainTUI(output_dir=output_dir).run()

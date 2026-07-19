@@ -6,7 +6,7 @@ from tqdm import tqdm
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
 from automixer.iterators.rolling_window import rolling_window
-from automixer.utils import calculate_step
+from automixer.utils import calculate_step, apply_seed, concat_bit_identical
 
 
 def _create_chunk(config, window):
@@ -36,17 +36,30 @@ def _create_chunk(config, window):
 
 class RandomWindowAutoMixer:
     def mix(self, config):
-        mix = AudioSegment.empty()
+        apply_seed(config)
         pbar = tqdm(desc="Mixing")
         chunk_length_in_window = calculate_step(config.beats)
+        # Collect window-chunks in a list and concat ONCE at the end — bit-identical to chained
+        # ``mix.append(chunk, crossfade=0)`` (pydub ``append`` with crossfade=0 is ``b"".join`` of
+        # the underlying ``_data``), but O(total_bytes) instead of O(total_bytes²). Pre-refactor this
+        # was the dominant cost on long sources (28.7s on a 30s feed; the chunk-bloom made the
+        # concat quadratic in the OUTPUT length, not the input).
+        mix_parts = []
         for window in rolling_window(config.beats, config.window_divider):
-            chunk1 = _create_chunk(config, window)
-            while len(chunk1) < int(chunk_length_in_window):
-                chunk = _create_chunk(config, window)
-                chunk1 = chunk1.append(chunk, crossfade=0)
-            mix = mix.append(chunk1, crossfade=0)
-            pbar.update(len(mix))
-        return mix
+            # Inner fill: build one window's chunk by appending grains until it reaches the
+            # chunk-length target. Same collect-then-concat pattern at the inner scale; track the
+            # accumulated length in a scalar so we don't re-walk the list (and don't read the LAST
+            # grain's length by mistake, which would loop forever when grain_len < target).
+            chunk_parts = [_create_chunk(config, window)]
+            chunk_total = len(chunk_parts[0])
+            while chunk_total < int(chunk_length_in_window):
+                new = _create_chunk(config, window)
+                chunk_parts.append(new)
+                chunk_total += len(new)
+            chunk1 = concat_bit_identical(chunk_parts)
+            mix_parts.append(chunk1)
+            pbar.update(len(chunk1))
+        return concat_bit_identical(mix_parts)
 
 # amc ss 0.5 s 1.5 c 1,250;500,15000 w 6
 # amc ss 2.0 s 0.5 c 1,250;10000,15000

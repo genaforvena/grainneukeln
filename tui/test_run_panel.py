@@ -1,5 +1,6 @@
 import unittest
 from textual.app import App, ComposeResult
+from textual.widgets import Checkbox
 from tui.state import SessionState
 from tui.widgets.run_panel import RunPanel
 
@@ -44,3 +45,21 @@ class RunPanelTest(unittest.IsolatedAsyncioTestCase):
             panel.start()
             await pilot.pause()
             self.assertEqual(app.finished, "/tmp/out.mp3")
+
+    async def test_render_option_checkboxes_sync_to_state(self):
+        """WAV / Verbose / Self-feed checkboxes are the TUI's parity surface for the CLI's
+        set_wav_enabled / set_verbose_enabled / aminf — toggling one writes straight to state."""
+        state = SessionState(cutter=object(), sample_length_ms=300)
+        app = _Host(state, lambda *a: None)
+        async with app.run_test() as pilot:
+            for cid, attr in (("opt_wav", "wav_export"),
+                              ("opt_verbose", "verbose"),
+                              ("opt_self_feed", "self_feed")):
+                cb = app.query_one(f"#{cid}", Checkbox)
+                self.assertFalse(getattr(state, attr))   # default off
+                cb.value = True
+                await pilot.pause()
+                self.assertTrue(getattr(state, attr))
+                cb.value = False
+                await pilot.pause()
+                self.assertFalse(getattr(state, attr))

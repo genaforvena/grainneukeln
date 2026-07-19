@@ -33,11 +33,12 @@ from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
 from automixer.effects.groove import swing_offset
 from automixer.iterators.grid import euclidean, grid_slots
 from automixer.iterators.onsets import onset_positions
-from automixer.utils import beat_interval
+from automixer.utils import beat_interval, apply_seed, overlay_bit_identical
 
 
 class QuantizedAutoMixer:
     def mix(self, config):
+        apply_seed(config)
         audio = config.audio
         total_ms = len(audio)
         if total_ms == 0:
@@ -76,7 +77,22 @@ class QuantizedAutoMixer:
 
         # Canvas must be long enough to hold swung-late off-beats and the trailing grain.
         canvas_ms = int(round(total_ms + slot_ms + grain_len))
-        out = AudioSegment.silent(duration=canvas_ms)
+        # Precompute the per-pool candidate sets ONCE — the per-grain O(n_onsets) filter
+        # ``[o for o in onsets if 0 <= o <= max_start]`` used to run inside ``_create_grain`` every
+        # call, but max_start is fixed for the mix (it depends only on len(audio) and grain_len),
+        # so the same list was being rebuilt ~2 × num_slots times. Bit-identical (same list, same
+        # random.choice draws); only the call site moves up. The remnants pool filters the same way.
+        max_start = len(audio) - grain_len
+        onset_candidates = [o for o in onsets if 0 <= o <= max_start]
+        remnant_candidates = [o for o in remnants if 0 <= o <= max_start] if fill else []
+        # Collect (position_ms, grain) pairs from BOTH the euclidean-hit loop and the gap-fill loop
+        # into one list, then overlay onto a numpy canvas ONCE at the end. Bit-identical to the
+        # pre-refactor chained ``out = out.overlay(grain, position=p)`` because pydub's overlay
+        # reduces to ``audioop.add`` (saturating int16 add) in the overlap slice, replicated exactly
+        # by ``overlay_bit_identical``; order is preserved (hits applied before fills, same as
+        # before). Pre-refactor every overlay call walked the FULL canvas (the unchanged prefix and
+        # tail too) → O(canvas × grains); now O(grain_len × grains).
+        grains_at_pos = []
         pbar = tqdm(desc="Quantizing", total=len(slots))
         for pos in slots:
             slot_idx = int(round(pos / slot_ms)) if slot_ms > 0 else 0
@@ -84,9 +100,9 @@ class QuantizedAutoMixer:
                 offset = float(template[slot_idx % len(template)])
             else:
                 offset = swing_offset(slot_idx, swing, slot_ms)
-            grain = self._create_grain(config, onsets, grain_len, snap)
+            grain = self._create_grain(config, onsets, grain_len, snap, candidates=onset_candidates)
             if grain is not None and len(grain) > 0:
-                out = out.overlay(grain, position=int(round(pos + offset)))
+                grains_at_pos.append((int(round(pos + offset)), grain))
             pbar.update(1)
         pbar.close()
 
@@ -102,11 +118,22 @@ class QuantizedAutoMixer:
                     offset = float(template[i % len(template)])
                 else:
                     offset = swing_offset(i, swing, slot_ms)
-                grain = self._create_grain(config, remnants, grain_len, snap)
+                grain = self._create_grain(
+                    config, remnants, grain_len, snap, candidates=remnant_candidates,
+                )
                 if grain is not None and len(grain) > 0:
-                    out = out.overlay(grain.apply_gain(fill_gain_db),
-                                      position=int(round(pos + offset)))
-        return out
+                    # apply_gain is applied BEFORE collection so the fill grain's bytes are already
+                    # attenuated when mixed into the canvas — same order pydub's overlay would see.
+                    grains_at_pos.append((int(round(pos + offset)), grain.apply_gain(fill_gain_db)))
+
+        # Canvas attrs = max(silent defaults, source attrs) — what pydub's _sync lands on after the
+        # first overlay. For real sources (≥11025 Hz) this equals the source's attrs.
+        return overlay_bit_identical(
+            canvas_ms, grains_at_pos,
+            frame_rate=max(11025, audio.frame_rate),
+            sample_width=max(2, audio.sample_width),
+            channels=max(1, audio.channels),
+        )
 
     def _remnants(self, onsets, audio_len, grain_len):
         """Off-grid remnant cut positions: the MIDPOINTS between consecutive snapped onsets — the
@@ -120,18 +147,25 @@ class QuantizedAutoMixer:
                 rem.append(mid)
         return rem
 
-    def _create_grain(self, config, onsets, grain_len, snap=False):
+    def _create_grain(self, config, onsets, grain_len, snap=False, candidates=None):
         """Cut one grain at a (randomly chosen) source position from ``onsets`` (an onset pool for
         HIT slots, or a remnant pool for fills), band-passed per channel.
 
         Random pick -> content varies run to run; the grid position it lands on is fixed by the
-        caller, so the *placement* stays deterministic (issue #5 acceptance #4)."""
+        caller, so the *placement* stays deterministic (issue #5 acceptance #4).
+
+        ``candidates`` is the precomputed subset of ``onsets`` satisfying ``0 <= o <= max_start``
+        — passed in by the caller (``mix``) so the per-grain O(n_onsets) list comprehension runs
+        ONCE per mix, not once per grain. Bit-identical to computing it here (same list, same
+        ``random.choice`` draw); only the call site moves. ``None`` falls back to the in-function
+        filter for callers that didn't precompute (e.g. tests)."""
         audio = config.audio
         max_start = len(audio) - grain_len
         if max_start <= 0:
             return audio[:grain_len]
 
-        candidates = [o for o in onsets if 0 <= o <= max_start]
+        if candidates is None:
+            candidates = [o for o in onsets if 0 <= o <= max_start]
         if candidates:
             start_cut = random.choice(candidates)
         else:

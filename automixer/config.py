@@ -17,6 +17,36 @@ class ChannelConfig:
         return "Low: " + str(self.low_pass) + "; High: " + str(self.high_pass)
 
 
+def parse_stream_spec(spec):
+    """Parse a poly ("poly") `pr` stream spec into the list-of-dicts `streams` form.
+
+    Grammar (identical to the CLI `amc pr` argument): segments separated by ";", each
+    ``ratio[@length][:low-high]`` — e.g. ``4:1-2000;3:6000-15000`` is two banded streams
+    (ratios 4 & 3), ``3;2`` is two full-band streams. Empty/whitespace -> None (mixer default).
+    This is the SINGLE parser for the spec; both the CLI and the TUI call it so the two entry
+    points can never drift.
+    """
+    spec = (spec or "").strip()
+    if not spec:
+        return None
+    streams = []
+    for seg in spec.split(";"):
+        seg = seg.strip()
+        if not seg:
+            continue
+        stream = {}
+        head, _, band = seg.partition(":")
+        ratio_part, _, length_part = head.partition("@")
+        stream["ratio"] = int(ratio_part)
+        if length_part:
+            stream["length"] = float(length_part)
+        if band:
+            low, high = band.split("-")
+            stream["channels"] = [ChannelConfig(int(low), int(high))]
+        streams.append(stream)
+    return streams or None
+
+
 class AutoMixerConfig:
     modes = {
         "rw": RandomWindowAutoMixer,
@@ -44,7 +74,8 @@ class AutoMixerConfig:
                  swing=0,
                  groove_template=None,
                  fill=True,
-                 fill_gain_db=-6.0):
+                 fill_gain_db=-6.0,
+                 seed=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -80,6 +111,11 @@ class AutoMixerConfig:
         # the groove still reads. fill=False restores the pure-grid (silent-rest) behaviour.
         self.fill = fill
         self.fill_gain_db = fill_gain_db
+        # Reproducibility (perf optimization 2026-07-19): when set, every mixer seeds the global
+        # ``random`` module + numpy's RNG at the top of ``mix()`` and ``LibraryAutoMixer`` builds its
+        # Markov rng from it, so two runs with the same seed + same params produce byte-identical
+        # output. None = legacy unseeded behaviour (the default; runs differ as before).
+        self.seed = seed
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]

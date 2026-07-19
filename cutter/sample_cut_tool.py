@@ -9,7 +9,7 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
-from automixer.config import AutoMixerConfig, ChannelConfig
+from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
 from automixer.runner import AutoMixerRunner
 from automixer.utils import calculate_step, beat_interval
 
@@ -309,21 +309,7 @@ class SampleCutter:
         # runs both streams full-band.
         streams = self.auto_mixer_config.streams
         if "pr" in args:
-            spec = args[args.index("pr") + 1]
-            streams = []
-            for seg in spec.split(";"):
-                if not seg:
-                    continue
-                stream = {}
-                head, _, band = seg.partition(":")
-                ratio_part, _, length_part = head.partition("@")
-                stream["ratio"] = int(ratio_part)
-                if length_part:
-                    stream["length"] = float(length_part)
-                if band:
-                    low, high = band.split("-")
-                    stream["channels"] = [ChannelConfig(int(low), int(high))]
-                streams.append(stream)
+            streams = parse_stream_spec(args[args.index("pr") + 1])
 
         # Library ("lib") mixer: `lib sim|con` policy + `lk <k>` cluster count.
         lib_policy = self.auto_mixer_config.lib_policy
@@ -366,6 +352,12 @@ class SampleCutter:
                 channels_config.append(ChannelConfig(int(low), int(high)))
             print("channel_config: " + str(self.auto_mixer_config.channels_config))
 
+        # Reproducibility (2026-07-19): `seed <int>` in the amc string seeds every mixer + the lib
+        # Markov rng. Absent = legacy unseeded behaviour. Also injected by `main.py --seed N`.
+        seed = getattr(self.auto_mixer_config, "seed", None)
+        if "seed" in args:
+            seed = int(args[args.index("seed") + 1])
+
         if "l" in args:
             sample_length = args[args.index("l") + 1]
             if sample_length.isdigit():
@@ -399,6 +391,7 @@ class SampleCutter:
             groove_template=self.auto_mixer_config.groove_template,
             fill=fill,
             fill_gain_db=fill_gain_db,
+            seed=seed,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
