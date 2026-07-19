@@ -39,7 +39,7 @@ def normalize_loudness(seg, target_dbfs=TARGET_DBFS, peak_dbfs=PEAK_DBFS):
 
 
 class SampleCutter:
-    def __init__(self, audio_file_path, destination_path):
+    def __init__(self, audio_file_path, destination_path, low_memory=False):
         self.commands = {
             "p": self.play_audio,
             "set_wav_enabled": self.set_wav_enabled,
@@ -65,6 +65,7 @@ class SampleCutter:
         }
         self.destination_path = destination_path
         self._self_feed = False
+        self.low_memory = low_memory
         self._load_audio(audio_file_path)
         try:
             import readline
@@ -79,7 +80,6 @@ class SampleCutter:
 
     def _load_audio(self, audio_file_path):
         self.audio_file_path = audio_file_path
-        # Check if file exists is wav or mp3 or webm or m4a
         if not os.path.isfile(audio_file_path):
             raise Exception("File does not exist")
         if audio_file_path.endswith(".wav"):
@@ -95,9 +95,7 @@ class SampleCutter:
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
-        self.step = calculate_step(self.beats)  # navigation stride (f/r) — unchanged
-        # Grain-length BASE is the real beat period (l = beat); the operator divides/multiplies
-        # it (÷2 eighth, ÷3 triplet, ×2 half). Fall back to step only when the beat is unknowable.
+        self.step = calculate_step(self.beats)
         self.beat = beat_interval(self.beats)
         self.sample_length = self.beat if self.beat > 0 else self.step
         self.show_help("")
@@ -108,23 +106,29 @@ class SampleCutter:
             beats=self.beats,
             sample_length=self.sample_length,
             is_verbose_mode_enabled=self.is_verbose_mode_enabled,
+            low_memory=self.low_memory,
         )
 
     def _detect_beats(self):
-        # Beat detection. Originally madmom (RNNBeatProcessor + DBNBeatTracking), which no longer
-        # installs on modern Python (3.6-era: np.float, collections.MutableSequence, cython-from-git).
-        # Swapped to librosa.beat.beat_track — installs clean, same contract: returns beat positions in
-        # MILLISECONDS (int list), which is all the automixer consumes downstream. The creative core
-        # (rolling-window granular recombination) is untouched. — mesh revive 2026-06-21
-        print("Detecting beats (librosa)...")
+        import gc
         import numpy as np
         import librosa
 
-        y, sr = librosa.load(self.audio_file_path, sr=None, mono=True)
+        samples = np.array(self.audio.get_array_of_samples())
+        if self.audio.channels == 2:
+            samples = samples.reshape((-1, 2)).mean(axis=1)
+        sr = self.audio.frame_rate
+        y = samples.astype(np.float32) / 32768.0
+
+        print("Detecting beats (librosa)...")
         _tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr)  # seconds
-        beat_positions = (np.asarray(beat_times) * 1000).astype(int)  # -> ms
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        beat_positions = (np.asarray(beat_times) * 1000).astype(int)
         print(f"Detected {len(beat_positions)} beats")
+
+        del y, samples, beat_frames, beat_times
+        gc.collect()
+
         return beat_positions
 
     # Define a completer function that returns a list of all previous input
@@ -520,14 +524,13 @@ class SampleCutter:
             return current_position
 
 
-def main(filepath=None, destination="samples", commands=""):
+def main(filepath=None, destination="samples", commands="", low_memory=False):
     if not os.path.isfile(filepath):
         filepath = input("Path to mp3 file to cut\n>>>>")
-        # Check if the file exists
         if not os.path.isfile(filepath):
             print("File doesn't exist")
             return
-    cut_tool = SampleCutter(filepath, destination)
+    cut_tool = SampleCutter(filepath, destination, low_memory=low_memory)
     if len(commands) > 0:
         cut_tool.handle_input(commands)
     else:

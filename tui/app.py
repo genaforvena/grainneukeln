@@ -15,7 +15,7 @@ from tui.widgets.run_panel import RunPanel
 from tui.widgets.output_panel import OutputPanel
 
 
-def _real_loader(value, on_stage=None):
+def _real_loader(value, on_stage=None, low_memory=False):
     """Download (if a URL) + build a SampleCutter. Runs on SourcePanel's worker thread, so the
     slow parts (yt-dlp download, librosa beat-detection) never freeze the UI. on_stage(str) streams
     human progress to the source status line."""
@@ -35,7 +35,7 @@ def _real_loader(value, on_stage=None):
     else:
         value = os.path.abspath(value)
         stage("Detecting beats (librosa)…")
-    return SampleCutter(value, out)
+    return SampleCutter(value, out, low_memory=low_memory)
 
 
 def _real_player(path):
@@ -53,11 +53,12 @@ class GrainTUI(App):
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, output_dir="output", loader=None, player=None):
+    def __init__(self, output_dir="output", loader=None, player=None, low_memory=False):
         super().__init__()
         self.state = SessionState(output_dir=output_dir)
         self._loader = loader or _real_loader
         self._player = player or _real_player
+        self.low_memory = low_memory
 
     def compose(self) -> ComposeResult:
         yield Banner()
@@ -202,11 +203,12 @@ class GrainTUI(App):
             panel.set_ready(True)
 
 
-def run_tui(output_dir="output", seed=None):
+def run_tui(output_dir="output", seed=None, low_memory=False):
     """Launch the TUI. ``seed`` (from ``main.py --seed``) is accepted for symmetry with the CLI but
     not yet wired into the TUI's session state — the TUI's own params panel is the primary seed
-    surface there. The arg is accepted so ``main.py --seed N --tui`` does not raise."""
+    surface there. The arg is accepted so ``main.py --seed N --tui`` does not raise.
+    ``low_memory`` enables aggressive GC for memory-constrained nodes."""
     if seed is not None:
         print(f"[tui] note: --seed {seed} accepted but not yet wired into the TUI session state; "
               f"the CLI path (no --tui) honours it end-to-end.")
-    GrainTUI(output_dir=output_dir).run()
+    GrainTUI(output_dir=output_dir, low_memory=low_memory).run()

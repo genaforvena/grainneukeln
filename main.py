@@ -25,6 +25,9 @@ if __name__ == "__main__":
                         help="Seed every mixer's RNG so two runs with the same seed + params are "
                              "byte-identical. Injected into the amc command as `seed <N>`. Absent = "
                              "legacy unseeded behaviour (runs differ as before).")
+    parser.add_argument("--low-memory", action="store_true",
+                        help="Enable aggressive garbage collection for memory-constrained nodes. "
+                             "Slower but uses ~30%% less peak RAM on long sources.")
     parser.add_argument("source_path", nargs="?", help="Path to mp3 file to cut or YouTube URL")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
@@ -33,7 +36,7 @@ if __name__ == "__main__":
 
     if args.tui:
         from tui.app import run_tui
-        run_tui(seed=args.seed)
+        run_tui(seed=args.seed, low_memory=args.low_memory)
         sys.exit(0)
 
     if args.gui:
@@ -61,7 +64,7 @@ if __name__ == "__main__":
         if args.seed is not None and commands and commands[0] == "amc" and "seed" not in commands:
             commands[1:1] = ["seed", str(args.seed)]
         print("Starting cut tool with file: " + args.source_path)
-        sample_cut_tool.main(args.source_path, args.destination_path, commands)
+        sample_cut_tool.main(args.source_path, args.destination_path, commands, low_memory=args.low_memory)
     elif not args.gui:
         parser.print_help()
         sys.exit(1)

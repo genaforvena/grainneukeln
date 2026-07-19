@@ -1,4 +1,6 @@
+import gc
 import os
+import tempfile
 from datetime import datetime
 
 from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
@@ -9,6 +11,7 @@ from cutter.sample_cut_tool import normalize_loudness
 def build_config(cutter, state):
     """Map a SessionState onto the existing AutoMixerConfig. DSP untouched."""
     channels = [ChannelConfig(t.low, t.high) for t in state.tracks]
+    low_memory = getattr(cutter, "low_memory", False)
     return AutoMixerConfig(
         audio=cutter.audio,
         beats=cutter.beats,
@@ -28,6 +31,7 @@ def build_config(cutter, state):
         swing=state.swing,
         fill=state.fill,
         fill_gain_db=state.fill_gain_db,
+        low_memory=low_memory,
     )
 
 
@@ -40,14 +44,23 @@ def run(config, out_dir, on_progress=None, wav_export=False):
     if on_progress:
         on_progress(0.0)
     os.makedirs(out_dir, exist_ok=True)
+
+    gc.collect()
     mix = AutoMixerRunner().run(config)
+
+    gc.collect()
     mix = normalize_loudness(mix)
+
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     base = f"grain_cut{int(config.sample_length)}_{stamp}"
     mp3_path = os.path.join(out_dir, base + ".mp3")
     mix.export(mp3_path, format="mp3")
     if wav_export:
         mix.export(os.path.join(out_dir, base + ".wav"), format="wav")
+
+    del mix
+    gc.collect()
+
     if on_progress:
         on_progress(1.0)
     return mp3_path

@@ -85,7 +85,8 @@ class AutoMixerConfig:
                  groove_template=None,
                  fill=True,
                  fill_gain_db=-6.0,
-                 seed=None):
+                 seed=None,
+                 low_memory=False):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -128,11 +129,8 @@ class AutoMixerConfig:
         # the groove still reads. fill=False restores the pure-grid (silent-rest) behaviour.
         self.fill = fill
         self.fill_gain_db = fill_gain_db
-        # Reproducibility (perf optimization 2026-07-19): when set, every mixer seeds the global
-        # ``random`` module + numpy's RNG at the top of ``mix()`` and ``LibraryAutoMixer`` builds its
-        # Markov rng from it, so two runs with the same seed + same params produce byte-identical
-        # output. None = legacy unseeded behaviour (the default; runs differ as before).
         self.seed = seed
+        self.low_memory = low_memory
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
