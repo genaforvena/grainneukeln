@@ -425,17 +425,32 @@ class SampleCutter:
         # Level the mix before export — the raw automix is routinely near-inaudible (see
         # normalize_loudness). Applied here so both the wav and mp3 exports below get the same level.
         mix = normalize_loudness(mix)
-        # Extract file name from path
-        original_file_name = self.audio_file_path.split("/")[-1].split(".")[0]
         now = datetime.now()
         timestamp = now.strftime("%Y_%m_%d_%H%M")
 
-        file_name = (
-            original_file_name
-            + "___mix_cut"
-            + str(int(self.sample_length))
-            + f"-vtgsmlpr____{timestamp}"
-        )
+        cfg = self.auto_mixer_config
+        params_parts = [f"l{int(cfg.sample_length)}"]
+        if cfg.window_divider != 1:
+            params_parts.append(f"w{cfg.window_divider}")
+        if cfg.sample_speed != 1.0:
+            params_parts.append(f"ss{cfg.sample_speed}")
+        if cfg.speed != 1.0:
+            params_parts.append(f"s{cfg.speed}")
+        if cfg.channels_config and any(ch.low_pass > 0 or ch.high_pass < 25000 for ch in cfg.channels_config):
+            cutoffs = "_".join(f"{ch.low_pass}-{ch.high_pass}" for ch in cfg.channels_config)
+            params_parts.append(f"c{cutoffs}")
+        if cfg.mode != "rw":
+            params_parts.append(f"m-{cfg.mode}")
+        if cfg.euclid_k:
+            params_parts.append(f"k{cfg.euclid_k}")
+        if cfg.euclid_n:
+            params_parts.append(f"n{cfg.euclid_n}")
+        if getattr(cfg, "streams", None):
+            params_parts.append(f"st{cfg.streams}")
+        if getattr(cfg, "seed", None):
+            params_parts.append(f"seed{cfg.seed}")
+
+        file_name = "_".join(params_parts) + f"_{timestamp}"
         if self.is_wav_export_enabled:
             mix.export(
                 os.path.join(self.destination_path, file_name + ".wav"), format="wav"
