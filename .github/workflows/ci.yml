@@ -4,19 +4,30 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
 
 jobs:
-  build:
-    runs-on: macos-latest
+  test:
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+    
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
-        python-version: 3.8
-    - name: Install dependencies
-      run:
-        make install
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+    
+    - name: Install Python dependencies
+      run: pip install -r requirements.txt pytest
+    
     - name: Run tests
-      run: pytest
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: pytest tests/ cutter/test_normalize_loudness.py automixer/test_utils.py -v

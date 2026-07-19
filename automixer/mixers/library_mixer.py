@@ -87,7 +87,10 @@ class LibraryAutoMixer:
     def _render_grain(self, config, grain):
         out = AudioSegment.silent(duration=len(grain))
         for channel in config.channels_config:
-            out = out.overlay(band_pass_filer(channel.low_pass, channel.high_pass, grain))
+            if channel.bypass:
+                out = out.overlay(grain)
+            else:
+                out = out.overlay(band_pass_filer(channel.low_pass, channel.high_pass, grain))
         if config.sample_speed != 1.0:
             out = change_audioseg_tempo(out, config.sample_speed, verbose=config.is_verbose_mode_enabled)
         return out

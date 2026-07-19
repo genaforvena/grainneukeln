@@ -127,7 +127,8 @@ class PolyphonicAutoMixer:
         grain = AudioSegment.silent(duration=grain_len)
         for channel in channels:
             channel_chunk = audio[start_cut: start_cut + grain_len]
-            channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+            if not channel.bypass:
+                channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
         if config.sample_speed != 1.0:
             grain = change_audioseg_tempo(grain, config.sample_speed,

@@ -20,13 +20,15 @@ def _create_chunk(config, window):
         if snap:
             cut_len = max(1, int(config.sample_length * random.uniform(0.6, 1.4)))
             channel_chunk = config.audio[start_cut: start_cut + cut_len]
-            channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+            if not channel.bypass:
+                channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             if len(channel_chunk) != int(config.sample_length):
                 channel_chunk = snap_to_length(channel_chunk, config.sample_length,
                                                 verbose=config.is_verbose_mode_enabled)
         else:
             channel_chunk = config.audio[start_cut: start_cut + config.sample_length]
-            channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+            if not channel.bypass:
+                channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
         chunk = chunk.overlay(channel_chunk)
     if config.sample_speed != 1.0:
         chunk = change_audioseg_tempo(chunk, config.sample_speed, verbose=config.is_verbose_mode_enabled)

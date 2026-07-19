@@ -185,7 +185,8 @@ class QuantizedAutoMixer:
         grain = AudioSegment.silent(duration=cut_len)
         for channel in config.channels_config:
             channel_chunk = audio[start_cut: start_cut + cut_len]
-            channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
+            if not channel.bypass:
+                channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
         if snap and len(grain) != grain_len:
             grain = snap_to_length(grain, grain_len, verbose=config.is_verbose_mode_enabled)

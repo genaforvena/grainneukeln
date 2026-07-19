@@ -8,3 +8,8 @@ downloads/
 __pycache__/
 *.pyc
 .aider*
+
+# Operator-local artifacts (not part of the project)
+bench/
+yt_*
+*.prof

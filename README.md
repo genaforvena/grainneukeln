@@ -11,6 +11,20 @@ locked to the source's groove.
 
 ---
 
+## What's new (2026-07-19)
+
+- **4-5× faster default path**: band-pass filtering is now opt-in via `c low,high`. Default (no `c`
+  arg) uses raw grains — preserves full source spectrum, renders 4-5× faster. See
+  [Performance](#performance) for benchmarks.
+- **Reproducible renders**: `--seed 42` or `amc seed 42` seeds every mixer's RNG so two runs with
+  the same params produce byte-identical output. Useful for A/B testing recipes.
+- **O(n) concat/overlay**: refactored from the original O(n²) pattern. Long tracks (30s+) render
+  dramatically faster even with band-pass filtering enabled.
+- **TUI screenshot**: see the [TUI section](#tui-recommended-headless-friendly) for a visual
+  overview of the terminal interface.
+
+---
+
 ## What it *is*: a rhythm-seeking maniac
 
 The mechanics below are only half the story. The other half is its **character**, and it explains
@@ -124,14 +138,17 @@ python main.py <audio file or YouTube URL> <output dir> [automix params]
 ```
 
 ```bash
-# default automix
+# default automix — fast path, raw grains (no band-pass filtering)
 python main.py song.mp3 output/
 
 # half-length grains, each grain a touch faster, whole mix a touch slower
 python main.py song.mp3 output/ amc l /2 ss 1.2 s 0.9
 
-# two frequency bands (bass + air), tighter windows
+# two frequency bands (bass + air), tighter windows — opts into band-pass filtering (slower)
 python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
+
+# reproducible render — same seed + same params = byte-identical output
+python main.py song.mp3 output/ amc seed 42 l /2 ss 1.2
 ```
 
 ### Automix parameters — the `amc` block
@@ -141,7 +158,7 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `l`  | grain length | `l /2`, `l *3`, `l 250` | `/N` or `*N` scales the beat-derived default by a **ratio** (`/N` divide, `*N` multiply; `N` may be fractional in the `amc` path), so the grain stays metrically coherent with the detected (or imagined) pulse — `/3` re-reads the same groove rather than moving it. A **bare number is absolute milliseconds** (`l 2` = 2 ms, *not* 2 beats — use `l *2`), the one way to cut *against* the grid. Shorter = finer, more fragmented texture. |
 | `s`  | whole-mix speed | `s 0.8` | tempo of the **final** track (pitch preserved). `<1` slower, `>1` faster. |
 | `ss` | per-grain speed | `ss 1.2` | tempo of **each grain** (pitch preserved) — warps the micro-texture. |
-| `c`  | channels / bands | `c 0,250;250,15000` | one or more `low,high` band-pass bands in Hz, separated by `;`. Each band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. |
+| `c`  | channels / bands | `c 0,250;250,15000` | **Opt-in band-pass filtering.** Each `low,high` band pulls its **own** random grain and they're layered — e.g. split bass and treble into independent grain streams. **Default (no `c` arg): raw grains, no filtering** — 4-5× faster, preserves full source spectrum. Explicit `c` opts into the slower filtered path. |
 | `w`  | window divider | `w 4` | windows = `total_beats / w`. Bigger `w` → smaller windows → grains drawn from tighter time-neighborhoods (more local, less wandering). |
 | `m`  | mode | `m rw`, `m q`, `m poly`, `m lib` | grain-selection algorithm. `rw` (random window) is the tested default; `q` quantized, `poly` polyrhythmic, `lib` feature-library (all below). |
 | `lib` `lk` | library policy / clusters (mode `lib`) | `lib con lk 8` | `lib sim`/`lib con` selects the sequencing policy (similarity vs contrast); `lk` sets the cluster count. Only used by `m lib`. |
@@ -150,6 +167,7 @@ python main.py song.mp3 output/ amc c 1,250;10000,15000 w 6
 | `ek` `en` | euclidean pattern (mode `q`) | `ek 3 en 8` | `E(k, n)`: place `k` grains across `n` beat-subdivision slots as an evenly-spread euclidean rhythm. `E(3,8)` is the tresillo, `E(5,8)` the cinquillo, `E(4,4)` four-on-the-floor. Only used by `m q`. |
 | `nofill` `fg` | gap-fill (mode `q`) | `nofill`, `fg -12` | the euclidean pattern leaves `n−k` rest slots silent; by default they're filled with off-grid remnant grains `fg` dB (default −6) below the hits. `nofill` restores the pure silent-rest grid. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
+| `seed` | RNG seed | `seed 42` | **Reproducibility.** Seeds every mixer's RNG so two runs with the same params produce byte-identical output. Also available as `--seed 42` CLI flag. Default: unseeded (runs differ as before). |
 
 #### Quantized mode (`m q`) — designed grooves instead of a uniform fill
 
@@ -234,8 +252,9 @@ Run **without** automix params to drop into an interactive cutter
 
 ## TUI (recommended, headless-friendly)
 
-```
+```bash
 python main.py --tui
+# or: ./run_tui.sh
 ```
 
 A keyboard-driven terminal UI you can run over SSH inside tmux — no display server needed. One screen:
@@ -244,6 +263,13 @@ divider, sample length), manage the **multitrack** channel bands as track rows (
 `enter` edit each track's low/high Hz), run the grind with a progress bar + log (`r`), and browse /
 preview the rendered mixes. TUI extra: `textual`. This is the primary interface; the Qt GUI below
 stays for desktop use.
+
+**Screenshot:**
+
+![TUI screenshot](assets/tui_screenshot.svg)
+
+*The TUI showing a quantized euclidean grind (E(3,8) tresillo) with two band-pass tracks. The left
+panel shows source + params + mode selection; the right panel shows the run log + output browser.*
 
 ---
 
@@ -255,11 +281,24 @@ server — on a headless box use the TUI above.
 
 ---
 
-## Performance note
+## Performance
 
-The automixer's band-pass + segment-append is pure Python and roughly **O(n²)** in track length, so a
-full 3-minute song takes a while. Feed it **short clips** (a few seconds) for fast, responsive
-remixes — which also fits live/ambient-capture use.
+The automixer's concat/overlay is now **O(n)** in output length (refactored 2026-07-19 from the
+original O(n²) pattern). The dominant cost is the per-grain band-pass filter when you opt into it
+with `c low,high`:
+
+**Speed comparison (30s source, measured 2026-07-19):**
+
+| mode | BPF-on (explicit `c`) | BPF-off (default) | speedup |
+|------|----------------------|-------------------|---------|
+| rw   | 27.4s                | 6.0s              | 4.6×    |
+| q    | 2.75s                | 0.82s             | 3.4×    |
+| poly | 5.65s                | 1.23s             | 4.6×    |
+| lib  | 2.64s                | 0.62s             | 4.3×    |
+
+**Recommendation:** use the default (no `c` arg) for fast iteration and exploration. Opt into
+explicit `c low,high` bands when you want the filtered character or multi-band layering. Short clips
+(a few seconds) render in milliseconds on either path.
 
 ---
 

@@ -5,15 +5,25 @@ from automixer.mixers.library_mixer import LibraryAutoMixer
 
 
 class ChannelConfig:
-    def __init__(self, low, high):
+    """One band-pass channel. With ``bypass=True`` the channel is a RAW pass-through — no
+    ``band_pass_filer`` call — used as the default so a plain ``amc …`` (no ``c`` arg) skips the
+    ~87%-of-wall-clock BPF cost. Explicit ``c low,high`` in the amc string still constructs
+    non-bypass channels (the slow, filtered path), so the operator opts INTO BPF by naming bands
+    and opts OUT by omitting the ``c`` arg. The two paths are audibly distinct (filtered vs raw)
+    but each is internally bit-identical run-to-run under the same seed."""
+
+    def __init__(self, low, high, bypass=False):
         if high == 0:
             high = 1
         if low == 0:
             low = 1
         self.high_pass = high
         self.low_pass = low
+        self.bypass = bool(bypass)
 
     def __str__(self):
+        if self.bypass:
+            return "bypass"
         return "Low: " + str(self.low_pass) + "; High: " + str(self.high_pass)
 
 
@@ -64,7 +74,7 @@ class AutoMixerConfig:
                  speed=1.0,
                  is_verbose_mode_enabled=False,
                  window_divider=2,
-                 channels_config=[ChannelConfig(0, 15000)],
+                 channels_config=None,
                  euclid_k=3,
                  euclid_n=8,
                  streams=None,
@@ -89,6 +99,13 @@ class AutoMixerConfig:
         self.sample_length = sample_length
         self.is_verbose_mode_enabled = is_verbose_mode_enabled
         self.window_divider = window_divider
+        # Default = ONE bypass (raw pass-through) channel — skips band_pass_filer entirely, the
+        # ~87%-of-wall-clock win (cProfile, 2026-07-19). Explicit ``c low,high`` in the amc string
+        # constructs non-bypass channels and opts back into the filtered path. ``None`` here is the
+        # sentinel for "user did not specify"; resolved to ``[ChannelConfig(0, 15000, bypass=True)]``
+        # below so downstream code sees a non-empty list (the mixers' per-channel loop iterates it).
+        if channels_config is None:
+            channels_config = [ChannelConfig(0, 15000, bypass=True)]
         self.channels_config = channels_config
         # Quantized ("q") mixer: euclidean pattern E(euclid_k, euclid_n) — k hits over n beat
         # subdivision slots. Ignored by the rw mixer.

@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     if args.tui:
         from tui.app import run_tui
-        run_tui(args.seed)
+        run_tui(seed=args.seed)
         sys.exit(0)
 
     if args.gui:

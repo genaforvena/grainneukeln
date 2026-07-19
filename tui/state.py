@@ -22,7 +22,6 @@ class SessionState:
     window_divider: int = 2
     sample_length_ms: int = 0
     tracks: list = field(default_factory=lambda: [TrackSpec(0, 15000)])
-    wav_export: bool = False
     output_dir: str = "output"
     # Mixer selection + per-mode effects — parity with the CLI `amc` knobs (issue: the TUI exposed
     # only the 5 mode-neutral params above). Each block below is ignored by the mixers it does not
