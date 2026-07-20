@@ -124,7 +124,14 @@ class SampleCutter:
         _tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
         beat_positions = (np.asarray(beat_times) * 1000).astype(int)
-        print(f"Detected {len(beat_positions)} beats")
+        from automixer.utils import beat_grid_floor
+        floored = beat_grid_floor(beat_positions, len(self.audio))
+        if len(floored) != len(beat_positions):
+            print(f"Detected {len(beat_positions)} beats — beatless material, floored to a "
+                  f"{len(floored)}-slot grid so the mix covers the source")
+            beat_positions = floored
+        else:
+            print(f"Detected {len(beat_positions)} beats")
 
         del y, samples, beat_frames, beat_times
         gc.collect()
@@ -269,19 +276,102 @@ class SampleCutter:
         self._cut_track(self.current_position, self.sample_length, adjust_cut_position)
 
     def handle_input(self, input):
-        self.config_automix(" ".join(input))
-        self.automix("am")
+        """Run the amc block the operator passed on the command line.
+
+        Series-aware (2026-07-19): if any amc parameter is bracketed (e.g. ``l [/2,/3,/4]`` or
+        ``s [0.8:1.2:0.2]``), expand to the cartesian product and run one grind per combination.
+        Otherwise: one config, one render — the legacy single-shot path. Each combination is
+        announced + logged, so the operator can read which recipe produced which file."""
+        from automixer.series import expand_amc_series, parse_series_token, SeriesError
+
+        args = list(input)
+        # Normalize: drop a leading "amc" so both ``amc l /2`` and bare ``l /2`` work from the CLI.
+        if args and args[0] == "amc":
+            args = args[1:]
+
+        has_series = any(parse_series_token(t) is not None for t in args)
+        if not has_series:
+            self.config_automix(" ".join(["amc"] + args))
+            self.automix("am")
+            return
+
+        try:
+            combos = expand_amc_series(["amc"] + args)
+        except SeriesError as e:
+            print(f"Series error: {e}")
+            return
+        print(f"Series run: {len(combos)} renders")
+        for i, combo in enumerate(combos, 1):
+            combo_args = combo[1:]  # strip the leading "amc" for the display line only
+            print(f"--- [{i}/{len(combos)}] amc {' '.join(combo_args)} ---")
+            self.config_automix(" ".join(combo))
+            self.automix("am")
 
     def automix(self, command):
-        automix_runner = AutoMixerRunner()
-        mix = automix_runner.run(self.auto_mixer_config)
-        self._save_mix(mix)
+        # Series-aware (interactive shell): a previous ``amc l [/2,/3,/4]`` populates
+        # ``self._pending_series`` — the cartesian expansion. ``am`` runs every pending combo;
+        # ``am N`` runs only combination #N (1-based); a plain ``amc l /2`` clears the pending
+        # list, restoring the single-render behaviour. From the CLI (handle_input) we iterate
+        # directly and never populate ``_pending_series``.
+        words = command.split()
+        idx = None
+        if len(words) >= 2 and words[1].isdigit():
+            idx = int(words[1])
+
+        pending = getattr(self, "_pending_series", None)
+        if not pending:
+            automix_runner = AutoMixerRunner()
+            mix = automix_runner.run(self.auto_mixer_config)
+            self._save_mix(mix)
+            return
+
+        if idx is not None:
+            if not (1 <= idx <= len(pending)):
+                print(f"Index {idx} out of range (series has {len(pending)} combos)")
+                return
+            combos = [pending[idx - 1]]
+        else:
+            combos = pending
+
+        for i, combo in enumerate(combos, 1):
+            # Reconfigure from the expanded token list so each grind uses its own resolved values.
+            self.config_automix(" ".join(combo))
+            combo_args = combo[1:]  # strip leading "amc" for display
+            which = f"#{idx}" if idx is not None else f"{i}/{len(combos)}"
+            print(f"--- series {which}: amc {' '.join(combo_args)} ---")
+            automix_runner = AutoMixerRunner()
+            mix = automix_runner.run(self.auto_mixer_config)
+            self._save_mix(mix)
 
     def config_automix(self, command):
         args = command.split(" ")
         if "info" in args:
             print("AutoMixer config: " + str(self.auto_mixer_config))
             return
+
+        # Series-aware (2026-07-19): if any param value is bracketed (e.g. ``l [/2,/3,/4]``),
+        # expand to the cartesian product, stash the list on ``self._pending_series`` so a
+        # subsequent ``am`` runs every combination, and configure with the FIRST combination.
+        # The interactive operator gets `am N` to render a single combination by index, and a
+        # plain non-series `amc l /2` clears the pending list. From the CLI, handle_input drives
+        # the iteration directly and never reads this attribute.
+        from automixer.series import expand_amc_series, parse_series_token, SeriesError
+        try:
+            has_series = any(parse_series_token(t) is not None for t in args)
+        except SeriesError as e:
+            print(f"Series error: {e}")
+            return
+        if has_series:
+            try:
+                combos = expand_amc_series(args)
+            except SeriesError as e:
+                print(f"Series error: {e}")
+                return
+            self._pending_series = combos
+            print(f"Series armed: {len(combos)} combinations queued. `am` runs all; `am N` runs #N.")
+            args = combos[0]  # configure with the first combination; am/am-N picks the rest
+        else:
+            self._pending_series = None
 
         mode = self.auto_mixer_config.mode
         if "m" in args:
@@ -572,6 +662,7 @@ def print_help():
     print("  cut: cut a sample at the current position with the current length")
     print("  am: generate an automixed sample")
     print("  amc: configure the auto mixer")
+    print("  am N: after a series `amc ...`, render only combination #N (1-based)")
     print("  amchelp: display the auto mixer help")
     print("  aminf: toggle automix self-feed mode")
     print("  q: quit the program")

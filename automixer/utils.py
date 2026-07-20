@@ -122,6 +122,31 @@ def calculate_step(beats):
     return max(1, int(np.mean(beats) / 4))
 
 
+def beat_grid_floor(beat_positions, duration_ms, grid_period_ms=500, min_beats=4):
+    """Floor a degenerate onset detection to a uniform beat grid.
+
+    ``librosa.beat_track`` locks a SINGLE beat onto ambient/beatless material — a note3
+    room recording, speech — where there is no rhythmic pulse to find. The rw
+    (RandomWindow) mixer places one window per detected beat, so a 1-beat read collapses
+    an 11.8s source to a ~0.2s grind that the downstream hollow gate then rejects (the
+    mesh-sound-reflex ``skip:hollow`` storm of 2026-07-20 — every 1-beat note3 record,
+    ~25% of the batch). This is the same 'rhythm-seeking regime' the poly/library mixers
+    already embrace: beatless input still grinds, on a hallucinated grid. When fewer than
+    ``min_beats`` beats are found, replace them with an evenly-spaced grid spanning the
+    whole source so the mix covers it; genuinely rhythmic input (>= ``min_beats``) is
+    returned untouched. A source too short to hold two grid slots is left alone.
+
+    ``min_beats=4`` is the observed cliff: a 1-beat read grinds to 0.2s (hollow), a 4-beat
+    read to ~1.7s (clears the >=1s gate on its own), so only 1-3 beat collapses are floored.
+    """
+    beats = np.asarray(beat_positions)
+    if len(beats) >= min_beats:
+        return beats
+    if duration_ms < grid_period_ms * 2:
+        return beats
+    return np.arange(0, int(duration_ms), int(grid_period_ms)).astype(int)
+
+
 def beat_interval(beats):
     """The real beat PERIOD in ms — the base value for grain length (``l = beat``).
 
