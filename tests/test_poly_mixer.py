@@ -123,3 +123,38 @@ if failures:
     sys.exit(1)
 print("ok: 3-against-4 streams fire at beat/4 and beat/3, realign every 12 subdivisions, "
       "and are genuinely layered (overlapping non-silent streams)")
+
+
+# ---- Grain shaping wiring (2026-07-21): env_pct/reverse_prob reach _create_grain -----------------
+import unittest
+from unittest.mock import patch
+
+
+class PolyMixerGrainShapeTest(unittest.TestCase):
+    def test_env_zero_never_calls_fade(self):
+        src = click_track(400, 6)
+        beats = [0, 400, 800, 1200, 1600, 2000]
+        cfg = AutoMixerConfig(src, beats, sample_length=100, mode="poly",
+                               streams=[{"ratio": 4}, {"ratio": 3}], env_pct=0.0)
+        with patch("automixer.mixers.poly_mixer.apply_envelope",
+                   side_effect=lambda seg, pct: seg) as spy:
+            PolyphonicAutoMixer().mix(cfg)
+        self.assertTrue(spy.called)
+        for call in spy.call_args_list:
+            self.assertEqual(call.args[1], 0.0)
+
+    def test_reverse_prob_one_reverses_every_grain(self):
+        src = click_track(400, 6)
+        beats = [0, 400, 800, 1200, 1600, 2000]
+        cfg = AutoMixerConfig(src, beats, sample_length=100, mode="poly",
+                               streams=[{"ratio": 4}, {"ratio": 3}], reverse_prob=1.0, seed=1)
+        with patch("automixer.mixers.poly_mixer.maybe_reverse",
+                   wraps=lambda seg, prob, rng: seg.reverse() if prob >= 1.0 else seg) as spy:
+            PolyphonicAutoMixer().mix(cfg)
+        self.assertTrue(spy.called)
+        for call in spy.call_args_list:
+            self.assertEqual(call.args[1], 1.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

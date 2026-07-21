@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope
 from automixer.iterators.onsets import onset_positions
 from automixer.utils import beat_interval, apply_seed, overlay_bit_identical
 
@@ -124,13 +125,17 @@ class PolyphonicAutoMixer:
             candidates = [o for o in onsets if 0 <= o <= max_start]
         start_cut = random.choice(candidates) if candidates else random.randint(0, max_start)
 
+        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
+        env_pct = float(getattr(config, "env_pct", 8.0))
         grain = AudioSegment.silent(duration=grain_len)
         for channel in channels:
             channel_chunk = audio[start_cut: start_cut + grain_len]
+            channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
         if config.sample_speed != 1.0:
             grain = change_audioseg_tempo(grain, config.sample_speed,
                                           verbose=config.is_verbose_mode_enabled)
+        grain = apply_envelope(grain, env_pct)
         return grain
