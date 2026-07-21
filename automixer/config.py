@@ -12,7 +12,7 @@ class ChannelConfig:
     and opts OUT by omitting the ``c`` arg. The two paths are audibly distinct (filtered vs raw)
     but each is internally bit-identical run-to-run under the same seed."""
 
-    def __init__(self, low, high, bypass=False):
+    def __init__(self, low, high, bypass=False, source2=False):
         if high == 0:
             high = 1
         if low == 0:
@@ -20,11 +20,16 @@ class ChannelConfig:
         self.high_pass = high
         self.low_pass = low
         self.bypass = bool(bypass)
+        # Dual-source grinding (2026-07-21): when True, this band pulls its grains from
+        # ``config.audio2`` instead of the primary ``config.audio`` — same beat grid throughout,
+        # only the raw material differs. False (default) is today's single-source behaviour.
+        self.source2 = bool(source2)
 
     def __str__(self):
+        src = " [src2]" if self.source2 else ""
         if self.bypass:
-            return "bypass"
-        return "Low: " + str(self.low_pass) + "; High: " + str(self.high_pass)
+            return "bypass" + src
+        return "Low: " + str(self.low_pass) + "; High: " + str(self.high_pass) + src
 
 
 def parse_stream_spec(spec):
@@ -88,13 +93,18 @@ class AutoMixerConfig:
                  seed=None,
                  low_memory=False,
                  env_pct=8.0,
-                 reverse_prob=0.0):
+                 reverse_prob=0.0,
+                 audio2=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
             mode = "rw"
         self.mode = mode
         self.audio = audio
+        # Dual-source grinding (2026-07-21): the SECOND source's raw audio, or None (default —
+        # single-source, today's behaviour). Only channels with ``source2=True`` ever read this;
+        # the beat grid always comes from the primary source regardless.
+        self.audio2 = audio2
         self.beats = beats
         self.sample_speed = sample_speed
         self.mixer = self.modes[mode]

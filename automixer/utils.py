@@ -166,3 +166,29 @@ def beat_interval(beats):
     if len(diffs) == 0:
         return 0
     return max(1, int(round(float(np.median(diffs)))))
+
+
+def slice_source(config, channel, start_ms, length_ms):
+    """Slice ``length_ms`` of audio starting at ``start_ms`` from whichever source ``channel``
+    names — ``config.audio2`` when the channel is tagged ``source2=True`` AND a second source was
+    actually loaded, else the primary ``config.audio``.
+
+    Positions always come from the PRIMARY source's beat grid regardless of which source supplies
+    the material — a source 2 shorter or longer than that grid is handled by wrapping ``start_ms``
+    modulo ITS OWN length, so every call still returns exactly ``length_ms`` of real audio (never
+    truncated, never silence-padded). Same beat grid throughout; only the raw material differs
+    (dual-source grinding, design doc 2026-07-21)."""
+    from pydub import AudioSegment
+
+    src = config.audio
+    if getattr(channel, "source2", False) and getattr(config, "audio2", None) is not None:
+        src = config.audio2
+    n = len(src)
+    length_ms = int(length_ms)
+    if n <= 0 or length_ms <= 0:
+        return AudioSegment.silent(duration=max(0, length_ms))
+    start_ms = int(start_ms) % n
+    end_ms = start_ms + length_ms
+    if end_ms <= n:
+        return src[start_ms:end_ms]
+    return src[start_ms:n] + src[0:end_ms - n]
