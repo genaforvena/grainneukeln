@@ -19,7 +19,7 @@ from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
 from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.features import measure_grain, calibrate, cluster, next_cluster
-from automixer.utils import beat_interval, apply_seed, concat_bit_identical
+from automixer.utils import beat_interval, apply_seed, concat_bit_identical, slice_source
 
 
 class LibraryAutoMixer:
@@ -72,7 +72,7 @@ class LibraryAutoMixer:
         # to chained ``out += grain``: pydub's __iadd__ falls through to append(crossfade=0), which
         # is byte-concat). Pre-refactor the per-grain append re-copied the running buffer every
         # grain → O(L²) in the rendered length; now O(L).
-        out_parts = [self._render_grain(config, grains[gi]) for gi in sequence]
+        out_parts = [self._render_grain(config, grains[gi], positions[gi]) for gi in sequence]
         out = concat_bit_identical(out_parts)
 
         if degraded:
@@ -87,7 +87,7 @@ class LibraryAutoMixer:
             }
         return out
 
-    def _render_grain(self, config, grain):
+    def _render_grain(self, config, grain, position_ms):
         reverse_prob, env_pct = grain_shape_params(config)
         # Reverse-gating uses a fresh, unseeded ``random.Random()`` here rather than the mixer's
         # own seeded RNG, because grain SELECTION (which grain plays, in what order) is already
@@ -99,14 +99,22 @@ class LibraryAutoMixer:
         # another. That is an honest, known gap (not silently implied to be reproducible) --
         # revisit only if a future task needs ``lib``-mode reversal itself to be seed-stable.
         #
-        # Exactly ONE draw per grain (not one per channel/band): every channel below is the same
-        # already-selected ``grain``, differing only by which band-pass gets applied to it, so the
-        # reverse decision is a property of the grain as a whole -- drawing it again per channel
-        # would let one band reverse while another stays forward, an incoherent scrambled grain.
+        # Exactly ONE draw per grain (not one per channel/band): every channel below is derived
+        # from the same already-selected grain position, differing only by which SOURCE it reads
+        # (dual-source grinding, 2026-07-21) and which band-pass gets applied, so the reverse
+        # decision is a property of the grain as a whole -- drawing it again per channel would let
+        # one band reverse while another stays forward, an incoherent scrambled grain.
+        # ``reversed_grain`` captures that one decision (identity check: ``maybe_reverse`` returns
+        # the SAME object when it doesn't reverse, a NEW one via ``.reverse()`` when it does) so it
+        # can be applied per-channel to whichever bytes ``slice_source`` actually cuts.
         base_chunk = maybe_reverse(grain, reverse_prob, random.Random())
-        out = AudioSegment.silent(duration=len(grain))
+        reversed_grain = base_chunk is not grain
+        grain_len = len(grain)
+        out = AudioSegment.silent(duration=grain_len)
         for channel in config.channels_config:
-            channel_chunk = base_chunk
+            channel_chunk = slice_source(config, channel, position_ms, grain_len)
+            if reversed_grain:
+                channel_chunk = channel_chunk.reverse()
             if channel.bypass:
                 out = out.overlay(channel_chunk)
             else:

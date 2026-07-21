@@ -22,6 +22,7 @@ from pydub.generators import Sine, WhiteNoise
 
 from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.mixers.library_mixer import LibraryAutoMixer
+from automixer.utils import slice_source
 
 failures = []
 
@@ -158,7 +159,7 @@ class LibraryMixerReverseCoherenceTest(unittest.TestCase):
 
         grain = track5[:400]
         with patch("automixer.mixers.library_mixer.maybe_reverse", side_effect=spy):
-            LibraryAutoMixer()._render_grain(cfg, grain)
+            LibraryAutoMixer()._render_grain(cfg, grain, 0)
 
         self.assertEqual(
             len(calls), 1,
@@ -166,6 +167,23 @@ class LibraryMixerReverseCoherenceTest(unittest.TestCase):
             "calls for a %d-channel config (a per-channel draw -- including the old fresh "
             "random.Random() per channel -- would scramble bands within the same grain)"
             % (len(calls), len(channels)))
+
+
+class LibraryMixerDualSourceTest(unittest.TestCase):
+    def test_source2_channel_pulls_from_audio2(self):
+        track5, beats5 = varied_source(5)
+        secondary = WhiteNoise().to_audio_segment(duration=len(track5)).apply_gain(-10)
+        cfg = AutoMixerConfig(
+            track5, beats5, sample_length=400, mode="lib", lib_policy="similarity", lib_clusters=4,
+            seed=7, channels_config=[ChannelConfig(0, 15000, bypass=True, source2=True)],
+        )
+        cfg.audio2 = secondary
+        with patch("automixer.mixers.library_mixer.slice_source",
+                   wraps=slice_source) as spy:
+            LibraryAutoMixer().mix(cfg)
+        self.assertTrue(spy.called)
+        for call in spy.call_args_list:
+            self.assertTrue(call.args[1].source2)
 
 
 if __name__ == "__main__":
