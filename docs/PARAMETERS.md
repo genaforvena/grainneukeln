@@ -8,7 +8,7 @@ python main.py <source> <output_dir> amc <param value> <param value> …
 ```
 
 Parameters are read positionally by key: the parser finds each key token and takes the **next** token
-as its value (`config_automix`, `cutter/sample_cut_tool.py:276-404`). A fresh config is built on every
+as its value (`config_automix`, `cutter/sample_cut_tool.py:363-533`). A fresh config is built on every
 `amc` call — unset params fall back to the defaults below.
 
 ---
