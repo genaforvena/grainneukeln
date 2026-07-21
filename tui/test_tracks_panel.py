@@ -86,6 +86,21 @@ class TracksPanelTest(unittest.IsolatedAsyncioTestCase):
             row = table.get_row_at(0)
             self.assertEqual(row[3], "B")
 
+    async def test_band_edit_preserves_source_toggle(self):
+        # Regression: set_selected_range rebuilt the TrackSpec without source2, so editing the Hz
+        # band silently reset a B-tagged track back to A.
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.action_toggle_source()
+            await pilot.pause()
+            panel.set_selected_range(200, 400)
+            await pilot.pause()
+            self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (200, 400))
+            self.assertTrue(panel.tracks[0].source2, "band edit must not reset the A/B tag")
+            table = panel.query_one("DataTable")
+            self.assertEqual(table.get_row_at(0)[3], "B")
+
     async def test_toggle_source_twice_returns_to_a(self):
         app = _Host([TrackSpec(0, 15000)])
         async with app.run_test() as pilot:

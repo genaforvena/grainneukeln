@@ -103,7 +103,8 @@ class TracksPanel(Static):
     def set_selected_range(self, low, high):
         idx = self.query_one(DataTable).cursor_row
         if idx is not None and 0 <= idx < len(self._tracks):
-            self._tracks[idx] = TrackSpec(int(low), int(high))
+            # Preserve the track's A/B tag — editing the Hz band must not reset a prior toggle.
+            self._tracks[idx] = TrackSpec(int(low), int(high), self._tracks[idx].source2)
             self._refresh()
 
     def toggle_selected_source(self):
