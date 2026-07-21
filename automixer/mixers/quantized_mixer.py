@@ -30,6 +30,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope
 from automixer.effects.groove import swing_offset
 from automixer.iterators.grid import euclidean, grid_slots
 from automixer.iterators.onsets import onset_positions
@@ -182,9 +183,12 @@ class QuantizedAutoMixer:
             cut_len = int(max(1, min(raw, len(audio) - start_cut)))
             cut_len = int(max(grain_len * 0.5, min(grain_len * 1.5, cut_len)))
 
+        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
+        env_pct = float(getattr(config, "env_pct", 8.0))
         grain = AudioSegment.silent(duration=cut_len)
         for channel in config.channels_config:
             channel_chunk = audio[start_cut: start_cut + cut_len]
+            channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
@@ -193,6 +197,7 @@ class QuantizedAutoMixer:
         if config.sample_speed != 1.0:
             grain = change_audioseg_tempo(grain, config.sample_speed,
                                           verbose=config.is_verbose_mode_enabled)
+        grain = apply_envelope(grain, env_pct)
         return grain
 
     def _onsets(self, audio, slot_ms):
