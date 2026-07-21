@@ -1,17 +1,25 @@
 ( paramgen.tal -- Uxn grain-parameter sequencer for grainneukeln, Option A external control layer )
 ( genaforvena/grainneukeln#13. Deterministic table-lookup ONLY: Uxn picks WHICH pool entry a tick )
-( maps to (8-bit AND/SFT arithmetic, no floats) -- it never formats or computes the values )
+( maps to (8-bit AND/SFT/EOR arithmetic, no floats) -- it never formats or computes the values )
 ( themselves; those are fixed ASCII strings baked into the ROM, matching grainneukeln's own )
 ( pool-quantized param convention. )
-( Sequences all 5 amc params the README's own scope note left for later: l, w, s, c, ss -- one )
-( 2-bit field per param. l/w/s/c spend the whole 8-bit tick_lo byte of the FIRST argv token )
-( (4x4x4x4 = 256 combos). ss needs a 5th field and the tick byte has no bits left, so it reads a )
-( SECOND argv token (a coarser "macro tick") and picks ss from its low 2 bits -- the README's own )
-( "read 2 argv tokens" option. Net period: 256 (micro) x 4 (macro) = 1024 ticks before repeat. )
-( input  : argv "<tick>" "<macro-tick>" (uxncli feeds each nl-terminated decimal ASCII in turn) )
+( Sequences all 5 amc params: l, w, s, c, ss -- one 2-bit field per param. l/w/s/c spend the whole )
+( 8-bit tick_lo byte of the 2nd argv token (4x4x4x4 = 256 combos). ss needs a 5th field and that )
+( byte has no bits left, so it reads a 3rd argv token (a coarser "macro tick") and picks ss from )
+( its low 2 bits. )
+( Closed-loop feedback (2026-07-21, grain-effects-and-control design): a 1ST argv token, read )
+( BEFORE the tick, lets a host-measured byte perturb WHICH c band-pair gets picked: )
+( idx_c = ((tick_lo >> 6) & 3) EOR (feedback_lo & 3). feedback=0 is a TRUE no-op (x EOR 0 == x), )
+( so today's open-loop output is unchanged when the host doesn't compute a real feedback value. )
+( Feedback MUST arrive first: c's string is emitted while processing the tick token, so a )
+( feedback value read afterward could never influence it -- there is no "peek ahead" once a line )
+( has already been read+processed. )
+( input  : argv "<feedback>" "<tick>" "<macro-tick>" (uxncli feeds each nl-terminated decimal )
+(          ASCII line in turn, in that order) )
 ( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N> ss <N>\n" -- a valid grainneukeln `amc` )
 ( fragment. )
-( zero-page: acc=00 (short), token=02 (0 = awaiting 1st token, 1 = awaiting 2nd) )
+( zero-page: acc=00 (short), token=02 (0=awaiting feedback, 1=awaiting tick, 2=awaiting )
+(            macro-tick), fb=03 (stashed feedback_lo, persists across the whole ROM run) )
 
 |0100
     ;on-console #10 DEO2
@@ -21,7 +29,8 @@
     #12 DEI
     DUP #0a NEQ ,&digit JCN
     POP
-    #02 LDZ #00 EQU ,&decide JCN
+    #02 LDZ #00 EQU ,&store-fb JCN
+    #02 LDZ #01 EQU ,&decide JCN
     ;&decide-ss JMP2
     &digit
     #30 SUB
@@ -29,6 +38,15 @@
     #00 LDZ2 #000a MUL2
     ADD2
     #00 STZ2
+    BRK
+
+    &store-fb
+    ( 1st line is the feedback byte -- stash its low byte at zp 03 (persists across the rest of )
+    ( this run), no emit. Reset acc, arm token=1 (awaiting the 2nd line, the tick that drives )
+    ( l/w/s/c), await the next newline. )
+    #01 LDZ #03 STZ
+    #0000 #00 STZ2
+    #01 #02 STZ
     BRK
 
     &decide
@@ -65,7 +83,8 @@
     &s3 ;sstr3 ;emit JSR2
 
     &cpart
-    #01 LDZ #06 SFT #03 AND  ( idx_c = (tick_lo >> 6) & 3 )
+    #01 LDZ #06 SFT #03 AND  ( idx_c_raw = (tick_lo >> 6) & 3 )
+    #03 LDZ #03 AND EOR      ( idx_c = idx_c_raw EOR (fb_reg & 3) -- feedback=0 is a no-op )
     DUP #00 EQU ,&c0 JCN
     DUP #01 EQU ,&c1 JCN
     #02 EQU ,&c2 JCN
@@ -76,10 +95,9 @@
     &c3 ;cstr3 ;emit JSR2
 
     &arm-ss
-    ( 1st token's line is done (no trailing newline yet -- cstrN now ends in a space, see below). )
-    ( reset acc so the 2nd argv token accumulates cleanly, then arm the token flag. )
+    ( 2nd line (tick) is done; reset acc, arm token=2 (awaiting the 3rd line, macro_tick -> ss) )
     #0000 #00 STZ2
-    #01 #02 STZ
+    #02 #02 STZ
     BRK
 
     &decide-ss

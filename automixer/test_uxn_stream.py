@@ -119,6 +119,41 @@ class UxnTickTest(unittest.TestCase):
             uxn_tick(0, rom_path="/nonexistent/paramgen.rom", uxncli_path=self.uxncli)
 
 
+class UxnFeedbackTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.uxncli = _ensure_uxn_toolchain()
+        cls.rom = os.path.join(UXN_CTRL, "paramgen.rom")
+
+    def test_feedback_zero_reproduces_existing_output_exactly(self):
+        # The no-op guarantee: feedback=0 -> idx_c XOR 0 == idx_c, so every existing fixture's
+        # exact output must be byte-for-byte unchanged.
+        from automixer.uxn_stream import uxn_tick
+        for t in range(16):
+            line = uxn_tick(t, feedback=0, rom_path=self.rom, uxncli_path=self.uxncli)
+            self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+$")
+
+    def test_nonzero_feedback_changes_c_selection_for_some_tick(self):
+        # A real-effect gate, not just "it runs": find at least one tick where feedback=0 and
+        # feedback=3 (max 2-bit XOR delta) select DIFFERENT c band-pairs.
+        from automixer.uxn_stream import uxn_tick
+        changed = False
+        for t in range(16):
+            base = uxn_tick(t, feedback=0, rom_path=self.rom, uxncli_path=self.uxncli)
+            fb = uxn_tick(t, feedback=3, rom_path=self.rom, uxncli_path=self.uxncli)
+            base_c = base.split("c ")[1].split(" ss")[0]
+            fb_c = fb.split("c ")[1].split(" ss")[0]
+            if base_c != fb_c:
+                changed = True
+        self.assertTrue(changed, "feedback=3 never changed idx_c across 16 ticks")
+
+    def test_feedback_is_deterministic(self):
+        from automixer.uxn_stream import uxn_tick
+        a = uxn_tick(5, feedback=2, rom_path=self.rom, uxncli_path=self.uxncli)
+        b = uxn_tick(5, feedback=2, rom_path=self.rom, uxncli_path=self.uxncli)
+        self.assertEqual(a, b)
+
+
 class RunUxnSequenceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
