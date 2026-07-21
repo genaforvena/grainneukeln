@@ -100,14 +100,25 @@ def _measure_feedback_byte(cutter):
     covers real material -- see automixer/features.py's own rhythm_density docs) to a byte. Only
     the low 2 bits of the returned byte are actually consumed by the ROM (idx_c is 2 bits), so
     this need not be a precision measurement -- it is a coarse perturbation key, not a control
-    signal in its own right."""
+    signal in its own right.
+
+    Review finding (2026-07-21): a 300ms grain window made this saturate to a CONSTANT on real
+    audio -- rhythm_density is onsets extrapolated to a per-second rate, and even a single onset
+    in a 300ms window already extrapolates past the assumed 0-5/sec ceiling (measured: real
+    300ms grains from assets/test_audio.mp3 ranged ~3.3-13.3, sampled at 0/30/60/90/120s all
+    landed >=5 -> byte 255 every time, low 2 bits pinned at 3). A LONGER grain window fixes this
+    at the source rather than re-guessing another ceiling: measured with sample_len=2000ms, the
+    SAME song's 8-pick average lands at ~3.3-5.9 onsets/sec across different regions -- squarely
+    inside the original 0-5 assumption, which was correct for a per-SECOND rate, just violated by
+    a window an order of magnitude shorter than a second. See
+    automixer/test_uxn_stream.py::MeasureFeedbackByteTest for the real-region regression gate."""
     from automixer.features import measure_grain
 
     audio = getattr(cutter, "audio", None)
     beats = getattr(cutter, "beats", None)
     if audio is None or beats is None or len(beats) == 0 or len(audio) == 0:
         return 0
-    sample_len = 300
+    sample_len = 2000
     positions = sorted(set(int(b) for b in beats if 0 <= b <= len(audio) - sample_len))
     if not positions:
         return 0
