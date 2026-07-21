@@ -347,21 +347,25 @@ class GrainTUI(App):
         single ``config_automix("amc env <v> rv <v>")`` call rebuilds ``cutter.auto_mixer_config``
         with env/rv set explicitly while every other field falls back to what was already cached
         (traced in cutter/sample_cut_tool.py:453-461), so each ROM tick's own token-absent fallback
-        picks these up for the rest of the run. Per-track A/B tags CANNOT compose this way — the
-        ROM emits its own `c` band string every tick, so bands are ROM-owned in this mode — so we
-        say that loudly, once, instead of silently dropping the tag."""
+        picks these up for the rest of the run. Per-track A/B tags AND Source B CANNOT compose
+        this way — the ROM emits its own `c` band string every tick (paramgen.tal's cstr0..cstr3,
+        none `2:`-prefixed), and `config_automix` rebuilds channels_config from scratch on every
+        `c` token with source2=True only for `2:`-prefixed bands, so no channel can ever pull from
+        audio2 in this mode (structural guard: test_app.py::UxnBandHonestyGuardTest). We therefore
+        do NOT load Source B here (loading it would be dead weight faking applicability) and say
+        loudly, once, that both tags and Source B are inert — instead of silently dropping them."""
         from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
 
         rom = state.uxn_rom_path.strip() or DEFAULT_ROM
         ticks = max(1, int(state.uxn_ticks))
 
         def work():
-            if any(t.source2 for t in state.tracks):
-                on_log("Uxn mode: ROM owns the bands — per-track A/B tags don't apply "
-                       "(env/rv/Source B do)")
+            # Fires when EITHER a track is tagged B OR a Source B path is set: an operator who
+            # set Source B must learn it is inert in this mode, not just one who tagged a track.
+            if any(t.source2 for t in state.tracks) or (state.source2_path or "").strip():
+                on_log("Uxn mode: ROM owns the bands — per-track A/B tags and Source B "
+                       "don't apply (env/rv do)")
             try:
-                if state.source2_path and state.source2_path.strip():
-                    state.cutter._load_secondary_audio(state.source2_path.strip())
                 state.cutter.config_automix(f"amc env {state.env_pct} rv {state.reverse_prob}")
             except Exception as e:
                 on_log(f"Run failed: {e}")

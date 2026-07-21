@@ -8,8 +8,8 @@ ASSET = os.path.join(os.path.dirname(__file__), "..", "assets", "test_audio.mp3"
 
 def _real_cutter():
     """A genuine SampleCutter (not the bare-attribute _FakeCutter below) — the Uxn seeding fix
-    drives config_automix/_load_secondary_audio/auto_mixer_config/audio2, none of which the
-    duck-typed fake implements. Truncated post-load to a short clip, mirroring tui/test_engine.py
+    drives config_automix/auto_mixer_config (and asserts audio2 stays UNLOADED), none of which
+    the duck-typed fake implements. Truncated post-load to a short clip, mirroring tui/test_engine.py
     and cutter/test_series_cli.py's own convention (beat-detection already ran before truncation;
     this just keeps any downstream render fast)."""
     from cutter.sample_cut_tool import SampleCutter
@@ -193,14 +193,19 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("[uxn tick 2]", log_text)
             self.assertIn("3 tick(s) complete", log_text)
 
-    async def test_uxn_seeds_env_rv_and_source2_onto_cutter(self):
-        # THE FIX under test (review finding): _run_uxn used to hand state.cutter straight to
-        # run_uxn_sequence without ever routing through engine.build_config, so the operator's
-        # env_pct/reverse_prob/Source B were silent no-ops in Uxn mode — cutter.config_automix's
-        # token-absent fallback reads whatever is cached on cutter.auto_mixer_config/cutter.audio2,
-        # and nothing wrote those caches. Drives the REAL seeding code against a REAL SampleCutter
-        # and asserts the cutter-side state the seeding wrote (not an injected expectation).
+    async def test_uxn_seeds_env_rv_and_source2_stays_unloaded(self):
+        # THE FIX under test (review findings, rounds 3+4): _run_uxn used to hand state.cutter
+        # straight to run_uxn_sequence without ever routing through engine.build_config, so the
+        # operator's env_pct/reverse_prob were silent no-ops in Uxn mode — cutter.config_automix's
+        # token-absent fallback reads whatever is cached on cutter.auto_mixer_config, and nothing
+        # wrote that cache. Round 4: Source B is structurally UNREACHABLE in Uxn mode (every ROM
+        # tick's `c` token rebuilds channels_config with source2=False — see
+        # UxnBandHonestyGuardTest), so the Uxn path must NOT load audio2 (dead weight that
+        # manufactures the false impression it is used) and must say loudly that Source B is inert.
+        # Drives the REAL seeding code against a REAL SampleCutter and asserts the cutter-side
+        # state (not an injected expectation).
         from unittest.mock import patch
+        from textual.widgets import RichLog
         cutter = _real_cutter()
         app = GrainTUI(output_dir=tempfile.mkdtemp(), session_path=_isolated_session())
         async with app.run_test() as pilot:
@@ -224,16 +229,24 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
             stub.assert_called_once()
             # Seeding must land BEFORE run_uxn_sequence ticks, so the ROM's per-tick config_automix
-            # (which never emits `env`/`rv`/`src2` tokens) falls back to these on EVERY tick.
+            # (which never emits `env`/`rv` tokens) falls back to these on EVERY tick.
             self.assertEqual(cutter.auto_mixer_config.env_pct, 22.0)
             self.assertEqual(cutter.auto_mixer_config.reverse_prob, 0.65)
-            self.assertIsNotNone(cutter.audio2)
+            # Source B must NOT be loaded by the Uxn path: no channel can ever have source2=True
+            # here (ROM owns the band string), so loading audio2 would only fake applicability.
+            self.assertIsNone(getattr(cutter, "audio2", None),
+                              "Uxn path must not load audio2 — Source B is unreachable in Uxn mode")
+            # And the operator who set Source B must be TOLD it is inert — even with no track
+            # tagged B (this test tags none), the note must fire because source2_path is set.
+            log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
+            self.assertIn("Source B", log_text)
+            self.assertIn("don't apply", log_text)
 
     async def test_uxn_logs_once_that_rom_owns_bands_when_a_track_tags_source2(self):
-        # THE FIX under test, part 2: per-track A/B tags CANNOT compose with Uxn mode (the ROM
-        # emits its own `c` band string every tick — bands are ROM-owned there), so silently
-        # dropping the tag would be a silent no-op again. The TUI must say so, loudly, once — not
-        # per tick.
+        # THE FIX under test, part 2: per-track A/B tags AND Source B CANNOT compose with Uxn
+        # mode (the ROM emits its own `c` band string every tick — bands are ROM-owned there),
+        # so silently dropping them would be a silent no-op again. The TUI must say so, loudly,
+        # once — not per tick.
         from unittest.mock import patch
         from textual.widgets import RichLog
         cutter = _real_cutter()
@@ -254,6 +267,9 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
             self.assertEqual(log_text.count("ROM owns the bands"), 1,
                               "the note must be logged exactly once, not per tick")
+            # Asserted in wrap-safe fragments — the RichLog word-wraps long lines across strips.
+            self.assertIn("per-track A/B tags and Source B don't apply", log_text)
+            self.assertIn("(env/rv do)", log_text)
 
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.
@@ -272,3 +288,27 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Source:", lines)
             self.assertIn("mode=q", lines)
             self.assertIn("E(3,8)", lines)
+
+
+class UxnBandHonestyGuardTest(unittest.TestCase):
+    """Structural guard for _run_uxn's honesty message (fix round 4).
+
+    The Uxn ROM (uxn_ctrl/paramgen.tal) emits exactly one `c` band token per tick (cstr0..cstr3),
+    and NONE carries a `2:` prefix — while `config_automix` rebuilds channels_config from scratch
+    on every `c` token, setting source2=True only for `2:`-prefixed bands. So in Uxn mode no
+    channel can ever pull from audio2, which is WHY _run_uxn does not load Source B and logs that
+    it does not apply. If this test ever fails (i.e. a ROM-shaped tick line yields a
+    source2=True channel), Source B has become reachable in Uxn mode: update _run_uxn's
+    user-facing message (and its no-load decision) to match the new reality.
+    """
+
+    def test_rom_tick_band_string_never_selects_source2(self):
+        cutter = _real_cutter()
+        # A representative full ROM tick line, exactly as run_uxn_sequence feeds it
+        # ("amc " + line): tokens l/w/s/c/ss, band string from paramgen.tal's cstr0.
+        cutter.config_automix("amc l 200 w 4 s 0.5 c 0,0;1000,15000 ss 0.5")
+        cfgs = cutter.auto_mixer_config.channels_config
+        self.assertTrue(cfgs, "the ROM tick's c token must yield parsed channel configs")
+        self.assertFalse(any(ch.source2 for ch in cfgs),
+                         "no ROM-emitted band selects source2 — if this ever fails, Source B has "
+                         "become reachable in Uxn mode and _run_uxn's message/no-load must change")
