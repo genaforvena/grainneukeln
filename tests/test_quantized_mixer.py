@@ -23,6 +23,7 @@ from pydub.silence import detect_nonsilent
 from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.mixers.quantized_mixer import QuantizedAutoMixer
 from automixer.iterators.grid import euclidean
+from automixer.utils import slice_source
 
 failures = []
 
@@ -234,6 +235,23 @@ class QuantizedMixerReverseCoherenceTest(unittest.TestCase):
             "reverse must be decided ONCE per grain and shared by every channel/band; got %d "
             "calls for a %d-channel config (a per-channel draw would scramble bands: one "
             "reversed, another forward, within the same grain)" % (len(calls), len(channels)))
+
+
+class QuantizedMixerDualSourceTest(unittest.TestCase):
+    def test_source2_channel_pulls_from_audio2(self):
+        primary = click_track(400, 5)
+        secondary = Sine(880).to_audio_segment(duration=2000)
+        beats = [0, 400, 800, 1200, 1600]
+        cfg = AutoMixerConfig(primary, beats, sample_length=100, mode="q", euclid_k=3, euclid_n=8,
+                               seed=7,
+                               channels_config=[ChannelConfig(0, 15000, bypass=True, source2=True)])
+        cfg.audio2 = secondary
+        with patch("automixer.mixers.quantized_mixer.slice_source",
+                   wraps=slice_source) as spy:
+            QuantizedAutoMixer().mix(cfg)
+        self.assertTrue(spy.called)
+        for call in spy.call_args_list:
+            self.assertTrue(call.args[1].source2)
 
 
 if __name__ == "__main__":
