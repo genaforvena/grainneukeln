@@ -100,19 +100,26 @@ def each_mode_config(seed=CANONICAL_SEED, bpf=True):
         channels = [ChannelConfig(0, 15000, bypass=True)]
     suffix = "" if bpf else "_nobpf"
 
+    # env_pct=0 pins every fixture config to the pre-2026-07-21 hard-cut boundary (grain envelope
+    # feature landed with a non-zero default of 8.0) -- these fixtures compare against a COMMITTED
+    # golden byte string (tests/fixtures/<mode>_seed0.txt), not a live render on the other side, so
+    # the new always-on-unless-zeroed envelope would otherwise drift every one of them. reverse_prob
+    # stays at its 0.0 default: `maybe_reverse` short-circuits before touching the RNG when prob<=0,
+    # so it draws exactly as many random numbers as before the feature existed and cannot drift the
+    # byte-identity contract on its own.
     configs = [
         ("rw", AutoMixerConfig(
             src, beats, sample_length=120, mode="rw", sample_speed=1.3, speed=1.1,
-            window_divider=4, channels_config=channels, seed=seed)),
+            window_divider=4, channels_config=channels, seed=seed, env_pct=0)),
         ("q", AutoMixerConfig(
             src, beats, sample_length=120, mode="q", euclid_k=3, euclid_n=8,
-            channels_config=channels, sample_speed=1.2, fill=True, seed=seed)),
+            channels_config=channels, sample_speed=1.2, fill=True, seed=seed, env_pct=0)),
         ("poly", AutoMixerConfig(
             src, beats, sample_length=120, mode="poly", sample_speed=1.2, speed=1.05,
-            streams=[{"ratio": 4}, {"ratio": 3}], channels_config=channels, seed=seed)),
+            streams=[{"ratio": 4}, {"ratio": 3}], channels_config=channels, seed=seed, env_pct=0)),
         ("lib", AutoMixerConfig(
             src, beats, sample_length=120, mode="lib", lib_policy="contrast", lib_clusters=4,
-            channels_config=channels, sample_speed=1.2, seed=seed)),
+            channels_config=channels, sample_speed=1.2, seed=seed, env_pct=0)),
     ]
     for mode, cfg in configs:
         yield mode + suffix, cfg
