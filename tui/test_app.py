@@ -3,6 +3,21 @@ import tempfile
 import unittest
 from tui.app import GrainTUI
 
+ASSET = os.path.join(os.path.dirname(__file__), "..", "assets", "test_audio.mp3")
+
+
+def _real_cutter():
+    """A genuine SampleCutter (not the bare-attribute _FakeCutter below) — the Uxn seeding fix
+    drives config_automix/_load_secondary_audio/auto_mixer_config/audio2, none of which the
+    duck-typed fake implements. Truncated post-load to a short clip, mirroring tui/test_engine.py
+    and cutter/test_series_cli.py's own convention (beat-detection already ran before truncation;
+    this just keeps any downstream render fast)."""
+    from cutter.sample_cut_tool import SampleCutter
+    c = SampleCutter(os.path.abspath(ASSET), os.path.abspath("output"))
+    c.audio = c.audio[:4000]
+    c.beats = c.beats[c.beats < 4000]
+    return c
+
 
 def _isolated_session():
     """Each test gets its own temp session file so the real ~/.mesh/grainneukeln-session.json
@@ -15,6 +30,26 @@ class _FakeCutter:
     beats = [0, 400, 800]
     step = 400
     audio_file_path = "/tmp/x.wav"
+
+    class _FakeAMC:
+        """Bare-attribute stand-in for AutoMixerConfig — enough for _run_uxn's seeding step
+        (config_automix("amc env <v> rv <v>")) to have somewhere real to write."""
+        env_pct = 8.0
+        reverse_prob = 0.0
+
+    def __init__(self):
+        self.auto_mixer_config = self._FakeAMC()
+        self.audio2 = None
+
+    def config_automix(self, command):
+        args = command.split(" ")
+        if "env" in args:
+            self.auto_mixer_config.env_pct = float(args[args.index("env") + 1])
+        if "rv" in args:
+            self.auto_mixer_config.reverse_prob = float(args[args.index("rv") + 1])
+
+    def _load_secondary_audio(self, path):
+        self.audio2 = path
 
 
 class AppWiringTest(unittest.IsolatedAsyncioTestCase):
@@ -157,6 +192,68 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
             self.assertIn("[uxn tick 2]", log_text)
             self.assertIn("3 tick(s) complete", log_text)
+
+    async def test_uxn_seeds_env_rv_and_source2_onto_cutter(self):
+        # THE FIX under test (review finding): _run_uxn used to hand state.cutter straight to
+        # run_uxn_sequence without ever routing through engine.build_config, so the operator's
+        # env_pct/reverse_prob/Source B were silent no-ops in Uxn mode — cutter.config_automix's
+        # token-absent fallback reads whatever is cached on cutter.auto_mixer_config/cutter.audio2,
+        # and nothing wrote those caches. Drives the REAL seeding code against a REAL SampleCutter
+        # and asserts the cutter-side state the seeding wrote (not an injected expectation).
+        from unittest.mock import patch
+        cutter = _real_cutter()
+        app = GrainTUI(output_dir=tempfile.mkdtemp(), session_path=_isolated_session())
+        async with app.run_test() as pilot:
+            from textual.widgets import Input
+            from tui.widgets.source_panel import SourcePanel
+            from tui.widgets.run_panel import RunPanel
+            app.query_one(SourcePanel).post_message(SourcePanel.Loaded(cutter))
+            await pilot.pause()
+            app.state.uxn_enabled = True
+            app.state.uxn_ticks = 2
+            # _threaded_runner calls ParamsPanel.apply_to_state() before dispatching to _run_uxn,
+            # which OVERWRITES state.env_pct/reverse_prob from the panel's live Input widgets — so
+            # the operator-facing seam under test is the widget value, not a direct state poke.
+            app.query_one("#env_pct", Input).value = "22.0"
+            app.query_one("#reverse_prob", Input).value = "0.65"
+            app.state.source2_path = ASSET
+            with patch("automixer.uxn_stream.run_uxn_sequence",
+                       return_value=["l 500 w 4"]) as stub:
+                app.query_one(RunPanel).start()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            stub.assert_called_once()
+            # Seeding must land BEFORE run_uxn_sequence ticks, so the ROM's per-tick config_automix
+            # (which never emits `env`/`rv`/`src2` tokens) falls back to these on EVERY tick.
+            self.assertEqual(cutter.auto_mixer_config.env_pct, 22.0)
+            self.assertEqual(cutter.auto_mixer_config.reverse_prob, 0.65)
+            self.assertIsNotNone(cutter.audio2)
+
+    async def test_uxn_logs_once_that_rom_owns_bands_when_a_track_tags_source2(self):
+        # THE FIX under test, part 2: per-track A/B tags CANNOT compose with Uxn mode (the ROM
+        # emits its own `c` band string every tick — bands are ROM-owned there), so silently
+        # dropping the tag would be a silent no-op again. The TUI must say so, loudly, once — not
+        # per tick.
+        from unittest.mock import patch
+        from textual.widgets import RichLog
+        cutter = _real_cutter()
+        app = GrainTUI(output_dir=tempfile.mkdtemp(), session_path=_isolated_session())
+        async with app.run_test() as pilot:
+            from tui.widgets.source_panel import SourcePanel
+            from tui.widgets.run_panel import RunPanel
+            app.query_one(SourcePanel).post_message(SourcePanel.Loaded(cutter))
+            await pilot.pause()
+            app.state.uxn_enabled = True
+            app.state.uxn_ticks = 3
+            app.state.tracks[0].source2 = True
+            with patch("automixer.uxn_stream.run_uxn_sequence",
+                       return_value=["l 500 w 4", "l 600 w 2", "l 700 w 8"]):
+                app.query_one(RunPanel).start()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
+            self.assertEqual(log_text.count("ROM owns the bands"), 1,
+                              "the note must be logged exactly once, not per tick")
 
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.

@@ -335,13 +335,38 @@ class GrainTUI(App):
     def _run_uxn(self, state, on_progress, on_log):
         """Drive renders from the Uxn param-sequencer ROM (issue #13), closing the TUI's own
         long-standing gap (this capability previously had zero TUI exposure). Runs on the same
-        worker-thread pattern as `_run_single`/`_run_series`."""
+        worker-thread pattern as `_run_single`/`_run_series`.
+
+        Review finding (2026-07-21): this used to hand ``state.cutter`` straight to
+        ``run_uxn_sequence`` without ever routing through ``engine.build_config`` — the ROM's
+        per-tick line only carries ``l w s c ss`` tokens, and ``cutter.config_automix`` only
+        overrides fields whose tokens are present, falling back to whatever is cached on
+        ``cutter.auto_mixer_config``/``cutter.audio2``. Nothing ever wrote those caches, so
+        env_pct/reverse_prob/Source B were silent no-ops in Uxn mode. Fix: seed the cutter's own
+        caches BEFORE the tick loop (same worker thread, so file I/O never blocks the UI) — a
+        single ``config_automix("amc env <v> rv <v>")`` call rebuilds ``cutter.auto_mixer_config``
+        with env/rv set explicitly while every other field falls back to what was already cached
+        (traced in cutter/sample_cut_tool.py:453-461), so each ROM tick's own token-absent fallback
+        picks these up for the rest of the run. Per-track A/B tags CANNOT compose this way — the
+        ROM emits its own `c` band string every tick, so bands are ROM-owned in this mode — so we
+        say that loudly, once, instead of silently dropping the tag."""
         from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
 
         rom = state.uxn_rom_path.strip() or DEFAULT_ROM
         ticks = max(1, int(state.uxn_ticks))
 
         def work():
+            if any(t.source2 for t in state.tracks):
+                on_log("Uxn mode: ROM owns the bands — per-track A/B tags don't apply "
+                       "(env/rv/Source B do)")
+            try:
+                if state.source2_path and state.source2_path.strip():
+                    state.cutter._load_secondary_audio(state.source2_path.strip())
+                state.cutter.config_automix(f"amc env {state.env_pct} rv {state.reverse_prob}")
+            except Exception as e:
+                on_log(f"Run failed: {e}")
+                self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
+                return None
             on_log(f"Uxn: driving {ticks} tick(s) from {rom}"
                     f"{' (closed-loop)' if state.uxn_feedback else ''}...")
             lines = run_uxn_sequence(state.cutter, ticks, rom_path=rom,
