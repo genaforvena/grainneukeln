@@ -25,7 +25,7 @@ from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
 from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.iterators.onsets import onset_positions
-from automixer.utils import beat_interval, apply_seed, overlay_bit_identical
+from automixer.utils import beat_interval, apply_seed, overlay_bit_identical, slice_source
 
 
 def _lcm(a, b):
@@ -126,15 +126,22 @@ class PolyphonicAutoMixer:
         start_cut = random.choice(candidates) if candidates else random.randint(0, max_start)
 
         reverse_prob, env_pct = grain_shape_params(config)
-        # Reverse is a property of the GRAIN, not of any one channel/band: every channel in this
-        # stream cuts the same source slice (only the band-pass differs below), so the reverse
-        # decision must be drawn ONCE here and reused for every channel -- never re-drawn inside
-        # the loop, or a multi-band config could reverse one band while leaving another forward,
-        # scrambling what's meant to be a single coherent grain.
-        base_chunk = maybe_reverse(audio[start_cut: start_cut + grain_len], reverse_prob, random)
+        # Reverse is a property of the GRAIN, not of any one channel/band: the decision is drawn
+        # ONCE here (on the primary-source slice) and never re-drawn inside the loop, or a
+        # multi-band config could reverse one band while leaving another forward, scrambling
+        # what's meant to be a single coherent grain. Dual-source grinding (2026-07-21): a channel
+        # in this stream may pull its own slice from a DIFFERENT source (``slice_source``, when
+        # tagged ``source2=True``), so the decision can no longer be reused as one shared
+        # ``AudioSegment`` -- ``reversed_grain`` captures that same one-per-grain decision,
+        # applied to whichever bytes each channel actually cuts.
+        primary_slice = audio[start_cut: start_cut + grain_len]
+        base_chunk = maybe_reverse(primary_slice, reverse_prob, random)
+        reversed_grain = base_chunk is not primary_slice
         grain = AudioSegment.silent(duration=grain_len)
         for channel in channels:
-            channel_chunk = base_chunk
+            channel_chunk = slice_source(config, channel, start_cut, grain_len)
+            if reversed_grain:
+                channel_chunk = channel_chunk.reverse()
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)

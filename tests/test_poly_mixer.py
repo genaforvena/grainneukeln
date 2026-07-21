@@ -24,6 +24,7 @@ from pydub.silence import detect_nonsilent
 
 from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.mixers.poly_mixer import PolyphonicAutoMixer
+from automixer.utils import slice_source
 
 failures = []
 
@@ -181,6 +182,24 @@ class PolyMixerReverseCoherenceTest(unittest.TestCase):
             "reverse must be decided ONCE per grain and shared by every channel/band; got %d "
             "calls for a %d-channel config (a per-channel draw would scramble bands: one "
             "reversed, another forward, within the same grain)" % (len(calls), len(channels)))
+
+
+class PolyMixerDualSourceTest(unittest.TestCase):
+    def test_source2_channel_pulls_from_audio2(self):
+        primary = click_track(400, 6)
+        secondary = Sine(880).to_audio_segment(duration=2400)
+        beats = [0, 400, 800, 1200, 1600, 2000]
+        cfg = AutoMixerConfig(
+            primary, beats, sample_length=100, mode="poly", seed=7,
+            streams=[{"ratio": 4, "channels": [ChannelConfig(0, 15000, bypass=True, source2=True)]}],
+        )
+        cfg.audio2 = secondary
+        with patch("automixer.mixers.poly_mixer.slice_source",
+                   wraps=slice_source) as spy:
+            PolyphonicAutoMixer().mix(cfg)
+        self.assertTrue(spy.called)
+        for call in spy.call_args_list:
+            self.assertTrue(call.args[1].source2)
 
 
 if __name__ == "__main__":
