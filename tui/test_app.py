@@ -130,6 +130,34 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(reloaded_paths, [])   # no reload when self-feed is off
 
+    async def test_uxn_worker_completion_reenables_run(self):
+        # Regression: the Uxn work() returns None (its renders have no single "last path"), and
+        # on_worker_state_changed only fires _on_finished on a TRUTHY result — so after a real
+        # successful Uxn run nothing re-enabled the Run button and the operator had to restart
+        # the TUI. Completion now happens inside the worker via _uxn_finished. This drives the
+        # REAL threaded-worker path (no injected sync runner).
+        from unittest.mock import patch
+        from textual.widgets import Button, RichLog
+        app = GrainTUI(output_dir=tempfile.mkdtemp(), session_path=_isolated_session())
+        async with app.run_test() as pilot:
+            from tui.widgets.source_panel import SourcePanel
+            from tui.widgets.run_panel import RunPanel
+            app.query_one(SourcePanel).post_message(SourcePanel.Loaded(_FakeCutter()))
+            await pilot.pause()
+            app.state.uxn_enabled = True
+            app.state.uxn_ticks = 3
+            with patch("automixer.uxn_stream.run_uxn_sequence",
+                       return_value=["l=100 s=1.0", "l=200 s=0.9", "l=300 s=1.1"]) as stub:
+                app.query_one(RunPanel).start()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            stub.assert_called_once()
+            btn = app.query_one("#run_btn", Button)
+            self.assertFalse(btn.disabled, "Run must re-enable after a successful Uxn run")
+            log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
+            self.assertIn("[uxn tick 2]", log_text)
+            self.assertIn("3 tick(s) complete", log_text)
+
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.
         app = GrainTUI(output_dir="output", session_path=_isolated_session())

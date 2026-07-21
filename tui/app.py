@@ -349,11 +349,23 @@ class GrainTUI(App):
             for i, line in enumerate(lines):
                 on_log(f"[uxn tick {i}] {line}")
                 self.call_from_thread(on_progress, (i + 1) / ticks)
-            return None  # renders were exported by run_uxn_sequence's own cutter.automix calls;
-                         # there is no single "last path" the way _run_single/_run_series track one
+            # Renders were exported by run_uxn_sequence's own cutter.automix calls — there is no
+            # single "last path" the way _run_single/_run_series track one, so completion is done
+            # HERE, not via on_worker_state_changed: that handler only fires _on_finished on a
+            # truthy result (load-bearing — _run_single returns None on its own already-handled
+            # error path), and _on_finished's Finished(path) would feed self-feed a fake path.
+            self.call_from_thread(self._uxn_finished, ticks)
+            return None
 
         self.run_worker(work, thread=True, exit_on_error=False, group="grind")
         return None
+
+    def _uxn_finished(self, ticks):
+        """UI-thread completion for the Uxn path: re-enable Run, show the new renders."""
+        panel = self.query_one(RunPanel)
+        panel._log(f"Uxn: {ticks} tick(s) complete")
+        panel.set_ready(True)
+        self.query_one(OutputPanel).refresh_list()
 
     def _run_single(self, state, on_progress, on_log):
         """One-shot grind — the legacy path. Returns the exported mp3 path (or None — completion
