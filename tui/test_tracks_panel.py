@@ -65,3 +65,36 @@ class TracksPanelTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual((panel.tracks[0].low, panel.tracks[0].high), (0, 15000))  # unchanged
             self.assertIn("invalid", panel.status_text.lower())
+
+    async def test_new_track_defaults_to_source_a(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.add_track()
+            await pilot.pause()
+            self.assertFalse(panel.tracks[-1].source2)
+
+    async def test_toggle_source_flips_selected_row(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            self.assertFalse(panel.tracks[0].source2)
+            panel.action_toggle_source()
+            await pilot.pause()
+            self.assertTrue(panel.tracks[0].source2)
+            table = panel.query_one("DataTable")
+            row = table.get_row_at(0)
+            self.assertEqual(row[3], "B")
+
+    async def test_toggle_source_twice_returns_to_a(self):
+        app = _Host([TrackSpec(0, 15000)])
+        async with app.run_test() as pilot:
+            panel = app.query_one(TracksPanel)
+            panel.action_toggle_source()
+            await pilot.pause()
+            panel.action_toggle_source()
+            await pilot.pause()
+            self.assertFalse(panel.tracks[0].source2)
+            table = panel.query_one("DataTable")
+            row = table.get_row_at(0)
+            self.assertEqual(row[3], "A")

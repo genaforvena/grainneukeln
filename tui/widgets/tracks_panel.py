@@ -10,7 +10,8 @@ class TracksPanel(Static):
     mix is the sum. 'a' adds a track, 'd' removes the selected one, and the low/high inputs + Set
     retune the selected row — so a real multi-band grind is buildable from the TUI, not just the CLI."""
 
-    BINDINGS = [("a", "add", "Add track"), ("d", "remove", "Remove track")]
+    BINDINGS = [("a", "add", "Add track"), ("d", "remove", "Remove track"),
+                ("t", "toggle_source", "Toggle source A/B")]
 
     class Changed(Message):
         def __init__(self, tracks):
@@ -24,7 +25,7 @@ class TracksPanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("Bands (multitrack)  —  a add · d remove · edit low/high + Set")
+            yield Label("Bands (multitrack)  —  a add · d remove · t toggle A/B · edit low/high + Set")
             yield DataTable(id="tracks_table", cursor_type="row")
             with Horizontal(id="track_edit"):
                 yield Input("0", id="track_low", type="integer")
@@ -34,7 +35,7 @@ class TracksPanel(Static):
 
     def on_mount(self):
         table = self.query_one(DataTable)
-        table.add_columns("#", "low Hz", "high Hz")
+        table.add_columns("#", "low Hz", "high Hz", "src")
         self._refresh()
 
     @property
@@ -46,7 +47,7 @@ class TracksPanel(Static):
         cursor = table.cursor_row or 0
         table.clear()
         for i, t in enumerate(self._tracks):
-            table.add_row(str(i + 1), str(t.low), str(t.high))
+            table.add_row(str(i + 1), str(t.low), str(t.high), "B" if t.source2 else "A")
         if self._tracks:
             table.move_cursor(row=min(cursor, len(self._tracks) - 1))
         self.border_title = f"◈ bands ({len(self._tracks)})"
@@ -104,6 +105,17 @@ class TracksPanel(Static):
         if idx is not None and 0 <= idx < len(self._tracks):
             self._tracks[idx] = TrackSpec(int(low), int(high))
             self._refresh()
+
+    def toggle_selected_source(self):
+        idx = self.query_one(DataTable).cursor_row
+        if idx is not None and 0 <= idx < len(self._tracks):
+            t = self._tracks[idx]
+            self._tracks[idx] = TrackSpec(t.low, t.high, not t.source2)
+            self._refresh()
+            self._set_status(f"Track {idx + 1} source → {'B' if self._tracks[idx].source2 else 'A'}")
+
+    def action_toggle_source(self):
+        self.toggle_selected_source()
 
     def action_add(self):
         self.add_track()
