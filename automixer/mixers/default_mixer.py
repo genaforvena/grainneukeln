@@ -8,7 +8,7 @@ from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
 from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.iterators.rolling_window import rolling_window
-from automixer.utils import calculate_step, apply_seed, concat_bit_identical
+from automixer.utils import calculate_step, apply_seed, concat_bit_identical, slice_source
 
 
 def _create_chunk(config, window):
@@ -24,7 +24,7 @@ def _create_chunk(config, window):
         start_cut = random.choice(window)
         if snap:
             cut_len = max(1, int(config.sample_length * random.uniform(0.6, 1.4)))
-            channel_chunk = config.audio[start_cut: start_cut + cut_len]
+            channel_chunk = slice_source(config, channel, start_cut, cut_len)
             channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
@@ -32,7 +32,7 @@ def _create_chunk(config, window):
                 channel_chunk = snap_to_length(channel_chunk, config.sample_length,
                                                 verbose=config.is_verbose_mode_enabled)
         else:
-            channel_chunk = config.audio[start_cut: start_cut + config.sample_length]
+            channel_chunk = slice_source(config, channel, start_cut, config.sample_length)
             channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
