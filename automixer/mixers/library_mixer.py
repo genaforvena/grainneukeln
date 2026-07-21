@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
-from automixer.effects.grain_shape import maybe_reverse, apply_envelope
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.features import measure_grain, calibrate, cluster, next_cluster
 from automixer.utils import beat_interval, apply_seed, concat_bit_identical
 
@@ -88,11 +88,25 @@ class LibraryAutoMixer:
         return out
 
     def _render_grain(self, config, grain):
-        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
-        env_pct = float(getattr(config, "env_pct", 8.0))
+        reverse_prob, env_pct = grain_shape_params(config)
+        # Reverse-gating uses a fresh, unseeded ``random.Random()`` here rather than the mixer's
+        # own seeded RNG, because grain SELECTION (which grain plays, in what order) is already
+        # fully determined by the seeded ``np.random.default_rng(seed)`` local in ``mix()`` before
+        # ``_render_grain`` is ever called (see the ``sequence`` list built there) -- reversing is
+        # a post-selection cosmetic pass over an already-chosen grain, so it cannot feed back into
+        # selection. That means this draw does NOT participate in the seed-reproducibility
+        # contract: the same seed can render a given grain forward on one run and reversed on
+        # another. That is an honest, known gap (not silently implied to be reproducible) --
+        # revisit only if a future task needs ``lib``-mode reversal itself to be seed-stable.
+        #
+        # Exactly ONE draw per grain (not one per channel/band): every channel below is the same
+        # already-selected ``grain``, differing only by which band-pass gets applied to it, so the
+        # reverse decision is a property of the grain as a whole -- drawing it again per channel
+        # would let one band reverse while another stays forward, an incoherent scrambled grain.
+        base_chunk = maybe_reverse(grain, reverse_prob, random.Random())
         out = AudioSegment.silent(duration=len(grain))
         for channel in config.channels_config:
-            channel_chunk = maybe_reverse(grain, reverse_prob, random.Random())
+            channel_chunk = base_chunk
             if channel.bypass:
                 out = out.overlay(channel_chunk)
             else:

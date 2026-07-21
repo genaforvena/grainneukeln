@@ -20,7 +20,7 @@ from pydub import AudioSegment
 from pydub.generators import Sine, WhiteNoise
 from pydub.silence import detect_nonsilent
 
-from automixer.config import AutoMixerConfig
+from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.mixers.quantized_mixer import QuantizedAutoMixer
 from automixer.iterators.grid import euclidean
 
@@ -203,6 +203,37 @@ class QuantizedMixerGrainShapeTest(unittest.TestCase):
         self.assertTrue(spy.called)
         for call in spy.call_args_list:
             self.assertEqual(call.args[1], 1.0)
+
+
+class QuantizedMixerReverseCoherenceTest(unittest.TestCase):
+    """Regression for the "reverse decided independently per channel/band" bug: a multi-band
+    ``channels_config`` (e.g. ``c 80,2000;2000,12000``) with ``0 < reverse_prob < 1`` must reverse
+    or not reverse the WHOLE grain -- never one band forward and another reversed. Before the fix,
+    ``maybe_reverse`` was called once per channel inside the loop; a 2-channel config would draw
+    the reverse decision twice for what is meant to be a single coherent grain."""
+
+    def test_reverse_decision_drawn_once_per_grain_not_per_channel(self):
+        src = click_track(400, 5)
+        channels = [ChannelConfig(80, 2000), ChannelConfig(2000, 12000)]
+        cfg = AutoMixerConfig(src, [0, 400], sample_length=100, mode="q", euclid_k=3, euclid_n=8,
+                               reverse_prob=0.5, seed=7, channels_config=channels)
+        calls = []
+
+        def spy(seg, prob, rng):
+            # Deterministic alternation regardless of prob/rng: if the bug were present (one
+            # call per channel), the two channels in this single grain would visibly disagree
+            # (first call reversed, second forward). The real assertion is the call COUNT.
+            calls.append(1)
+            return seg.reverse() if len(calls) % 2 == 1 else seg
+
+        with patch("automixer.mixers.quantized_mixer.maybe_reverse", side_effect=spy):
+            QuantizedAutoMixer()._create_grain(cfg, onsets=[0], grain_len=100, candidates=[0])
+
+        self.assertEqual(
+            len(calls), 1,
+            "reverse must be decided ONCE per grain and shared by every channel/band; got %d "
+            "calls for a %d-channel config (a per-channel draw would scramble bands: one "
+            "reversed, another forward, within the same grain)" % (len(calls), len(channels)))
 
 
 if __name__ == "__main__":

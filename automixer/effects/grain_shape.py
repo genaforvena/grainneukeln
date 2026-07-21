@@ -7,6 +7,16 @@ finished grain in hand (design doc 2026-07-21).
 """
 
 
+def grain_shape_params(config):
+    """Read ``(reverse_prob, env_pct)`` off a mixer config with the same defaults
+    ``AutoMixerConfig`` itself uses, via ``getattr`` so a config built without them (e.g. a bare
+    test fixture) still works. Shared by all 4 mixers so the defaults live in exactly one place."""
+    return (
+        float(getattr(config, "reverse_prob", 0.0)),
+        float(getattr(config, "env_pct", 8.0)),
+    )
+
+
 def maybe_reverse(seg, prob, rng):
     """Reverse ``seg`` with probability ``prob`` (0..1), decided by ``rng.random()``.
 

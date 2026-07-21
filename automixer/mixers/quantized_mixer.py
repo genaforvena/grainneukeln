@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
-from automixer.effects.grain_shape import maybe_reverse, apply_envelope
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.effects.groove import swing_offset
 from automixer.iterators.grid import euclidean, grid_slots
 from automixer.iterators.onsets import onset_positions
@@ -183,12 +183,16 @@ class QuantizedAutoMixer:
             cut_len = int(max(1, min(raw, len(audio) - start_cut)))
             cut_len = int(max(grain_len * 0.5, min(grain_len * 1.5, cut_len)))
 
-        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
-        env_pct = float(getattr(config, "env_pct", 8.0))
+        reverse_prob, env_pct = grain_shape_params(config)
+        # Reverse is a property of the GRAIN, not of any one channel/band: this cuts the same
+        # source slice for every channel (only the band-pass differs below), so the reverse
+        # decision must be drawn ONCE here and reused for every channel -- never re-drawn inside
+        # the loop, or a multi-band config (e.g. "c 80,2000;2000,12000") could reverse one band
+        # while leaving another forward, scrambling what's meant to be a single coherent grain.
+        base_chunk = maybe_reverse(audio[start_cut: start_cut + cut_len], reverse_prob, random)
         grain = AudioSegment.silent(duration=cut_len)
         for channel in config.channels_config:
-            channel_chunk = audio[start_cut: start_cut + cut_len]
-            channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
+            channel_chunk = base_chunk
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)

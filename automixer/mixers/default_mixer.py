@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo, snap_to_length
-from automixer.effects.grain_shape import maybe_reverse, apply_envelope
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.iterators.rolling_window import rolling_window
 from automixer.utils import calculate_step, apply_seed, concat_bit_identical
 
@@ -14,8 +14,12 @@ from automixer.utils import calculate_step, apply_seed, concat_bit_identical
 def _create_chunk(config, window):
     chunk = AudioSegment.silent(duration=config.sample_length)
     snap = bool(getattr(config, "snap", False))
-    reverse_prob = float(getattr(config, "reverse_prob", 0.0))
-    env_pct = float(getattr(config, "env_pct", 8.0))
+    reverse_prob, env_pct = grain_shape_params(config)
+    # NOTE: unlike quantized/poly/library, this mixer already draws an independent ``start_cut``
+    # per channel below (pre-existing, intentional design -- each channel can sample a different
+    # source position, not a single-grain multi-band split/reconstruct) -- so an independent
+    # per-channel reverse draw here is consistent with that existing character and is NOT the
+    # multi-band-coherence bug those other 3 mixers had. Do not "fix" this one to match them.
     for channel in config.channels_config:
         start_cut = random.choice(window)
         if snap:

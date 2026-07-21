@@ -20,7 +20,7 @@ import numpy as np
 from pydub import AudioSegment
 from pydub.generators import Sine, WhiteNoise
 
-from automixer.config import AutoMixerConfig
+from automixer.config import AutoMixerConfig, ChannelConfig
 from automixer.mixers.library_mixer import LibraryAutoMixer
 
 failures = []
@@ -135,6 +135,37 @@ class LibraryMixerGrainShapeTest(unittest.TestCase):
         self.assertGreater(spy.call_count, 1)
         for call in spy.call_args_list:
             self.assertEqual(call.args[1], 1.0)
+
+
+class LibraryMixerReverseCoherenceTest(unittest.TestCase):
+    """Regression for the "reverse decided independently per channel/band" bug (see the twin
+    tests in tests/test_quantized_mixer.py / tests/test_poly_mixer.py). ``_render_grain`` also
+    used a FRESH ``random.Random()`` per channel (not just per grain) -- doubly independent --
+    so a multi-band ``channels_config`` with ``0 < reverse_prob < 1`` could reverse one band and
+    leave another forward within the same grain."""
+
+    def test_reverse_decision_drawn_once_per_grain_not_per_channel(self):
+        track5, beats5 = varied_source(2)
+        channels = [ChannelConfig(80, 2000), ChannelConfig(2000, 12000)]
+        cfg = AutoMixerConfig(track5, beats5, sample_length=400, mode="lib",
+                               lib_policy="similarity", lib_clusters=4, reverse_prob=0.5,
+                               seed=7, channels_config=channels)
+        calls = []
+
+        def spy(seg, prob, rng):
+            calls.append(1)
+            return seg.reverse() if len(calls) % 2 == 1 else seg
+
+        grain = track5[:400]
+        with patch("automixer.mixers.library_mixer.maybe_reverse", side_effect=spy):
+            LibraryAutoMixer()._render_grain(cfg, grain)
+
+        self.assertEqual(
+            len(calls), 1,
+            "reverse must be decided ONCE per grain and shared by every channel/band; got %d "
+            "calls for a %d-channel config (a per-channel draw -- including the old fresh "
+            "random.Random() per channel -- would scramble bands within the same grain)"
+            % (len(calls), len(channels)))
 
 
 if __name__ == "__main__":

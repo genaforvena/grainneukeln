@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
-from automixer.effects.grain_shape import maybe_reverse, apply_envelope
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope, grain_shape_params
 from automixer.iterators.onsets import onset_positions
 from automixer.utils import beat_interval, apply_seed, overlay_bit_identical
 
@@ -125,12 +125,16 @@ class PolyphonicAutoMixer:
             candidates = [o for o in onsets if 0 <= o <= max_start]
         start_cut = random.choice(candidates) if candidates else random.randint(0, max_start)
 
-        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
-        env_pct = float(getattr(config, "env_pct", 8.0))
+        reverse_prob, env_pct = grain_shape_params(config)
+        # Reverse is a property of the GRAIN, not of any one channel/band: every channel in this
+        # stream cuts the same source slice (only the band-pass differs below), so the reverse
+        # decision must be drawn ONCE here and reused for every channel -- never re-drawn inside
+        # the loop, or a multi-band config could reverse one band while leaving another forward,
+        # scrambling what's meant to be a single coherent grain.
+        base_chunk = maybe_reverse(audio[start_cut: start_cut + grain_len], reverse_prob, random)
         grain = AudioSegment.silent(duration=grain_len)
         for channel in channels:
-            channel_chunk = audio[start_cut: start_cut + grain_len]
-            channel_chunk = maybe_reverse(channel_chunk, reverse_prob, random)
+            channel_chunk = base_chunk
             if not channel.bypass:
                 channel_chunk = band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk)
             grain = grain.overlay(channel_chunk)
