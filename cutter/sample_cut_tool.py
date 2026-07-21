@@ -78,20 +78,27 @@ class SampleCutter:
             print("Readline not available. You're probably using Windows.")
         print("Ready to cut samples")
 
-    def _load_audio(self, audio_file_path):
-        self.audio_file_path = audio_file_path
+    @staticmethod
+    def _decode_audio_file(audio_file_path):
+        """Format-dispatch decode shared by the primary and secondary (dual-source, 2026-07-21)
+        loaders, so a second source uses the exact same wav/mp3/webm/m4a handling without
+        duplicating the if/elif chain."""
         if not os.path.isfile(audio_file_path):
             raise Exception("File does not exist")
         if audio_file_path.endswith(".wav"):
-            self.audio = AudioSegment.from_wav(audio_file_path)
+            return AudioSegment.from_wav(audio_file_path)
         elif audio_file_path.endswith(".mp3"):
-            self.audio = AudioSegment.from_mp3(audio_file_path)
+            return AudioSegment.from_mp3(audio_file_path)
         elif audio_file_path.endswith(".webm"):
-            self.audio = AudioSegment.from_file(audio_file_path, "webm")
+            return AudioSegment.from_file(audio_file_path, "webm")
         elif audio_file_path.endswith(".m4a"):
-            self.audio = AudioSegment.from_file(audio_file_path, "m4a")
+            return AudioSegment.from_file(audio_file_path, "m4a")
         else:
             raise Exception("File is not wav or mp3 or webm or m4a")
+
+    def _load_audio(self, audio_file_path):
+        self.audio_file_path = audio_file_path
+        self.audio = self._decode_audio_file(audio_file_path)
         print("Loaded file: " + audio_file_path)
         self.current_position = 0
         self.beats = self._detect_beats()
@@ -108,6 +115,16 @@ class SampleCutter:
             is_verbose_mode_enabled=self.is_verbose_mode_enabled,
             low_memory=self.low_memory,
         )
+
+    def _load_secondary_audio(self, audio_file_path):
+        """Load a second source for dual-source grinding (`amc src2 <path>`), cached by path so
+        repeated `amc` calls don't re-decode. Does NOT touch beat detection — the beat grid always
+        comes from the primary source; source 2 only supplies raw material (design doc
+        2026-07-21)."""
+        if getattr(self, "_audio2_path", None) == audio_file_path and getattr(self, "audio2", None) is not None:
+            return
+        self.audio2 = self._decode_audio_file(audio_file_path)
+        self._audio2_path = audio_file_path
 
     def _detect_beats(self):
         import gc
@@ -442,6 +459,14 @@ class SampleCutter:
         if "rv" in args:
             reverse_prob = float(args[args.index("rv") + 1])
 
+        # Dual-source grinding (2026-07-21): `src2 <path>` loads a second file (cached by path);
+        # a `c` band prefixed `2:` pulls its grains from it instead of the primary source.
+        audio2 = getattr(self, "audio2", None)
+        if "src2" in args:
+            path = args[args.index("src2") + 1]
+            self._load_secondary_audio(path)
+            audio2 = self.audio2
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -449,10 +474,14 @@ class SampleCutter:
             low_highs = cutoffs.split(";")
             for low_high in low_highs:
                 print("low_high: " + low_high)
+                use_source2 = False
+                if low_high.startswith("2:"):
+                    use_source2 = True
+                    low_high = low_high[2:]
                 low, high = low_high.split(",")
                 print("low: " + low)
                 print("high: " + high)
-                channels_config.append(ChannelConfig(int(low), int(high)))
+                channels_config.append(ChannelConfig(int(low), int(high), source2=use_source2))
             print("channel_config: " + str(self.auto_mixer_config.channels_config))
 
         # Reproducibility (2026-07-19): `seed <int>` in the amc string seeds every mixer + the lib
@@ -497,6 +526,7 @@ class SampleCutter:
             seed=seed,
             env_pct=env_pct,
             reverse_prob=reverse_prob,
+            audio2=audio2,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

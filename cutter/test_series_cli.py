@@ -140,5 +140,34 @@ class EnvRvTokenParsingTest(unittest.TestCase):
         self.assertEqual(self.cutter.auto_mixer_config.reverse_prob, 0.0)
 
 
+class DualSourceCliTest(unittest.TestCase):
+    """Dual-source grinding (2026-07-21): `amc src2 <path>` loads a second file into
+    SampleCutter.audio2 (cached by path); a `c` band prefixed `2:` tags its ChannelConfig with
+    source2=True. Same os.path.abspath(ASSET) pattern as the rest of this file (see
+    EnvRvTokenParsingTest's docstring for why)."""
+
+    def setUp(self):
+        self.cutter = SampleCutter(os.path.abspath(ASSET), os.path.abspath("output"))
+
+    def test_src2_loads_and_stores(self):
+        self.cutter.config_automix("amc src2 " + ASSET)
+        self.assertIsNotNone(self.cutter.audio2)
+        self.assertEqual(self.cutter.auto_mixer_config.audio2, self.cutter.audio2)
+
+    def test_c_grammar_2_prefix_tags_source2(self):
+        self.cutter.config_automix("amc src2 " + ASSET + " c 0,250;2:1000,15000")
+        channels = self.cutter.auto_mixer_config.channels_config
+        self.assertEqual(len(channels), 2)
+        self.assertFalse(channels[0].source2)
+        self.assertTrue(channels[1].source2)
+        self.assertEqual((channels[1].low_pass, channels[1].high_pass), (1000, 15000))
+
+    def test_src2_is_cached_by_path(self):
+        self.cutter.config_automix("amc src2 " + ASSET)
+        first = self.cutter.audio2
+        self.cutter.config_automix("amc src2 " + ASSET)
+        self.assertIs(self.cutter.audio2, first)
+
+
 if __name__ == "__main__":
     unittest.main()
