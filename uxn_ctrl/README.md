@@ -18,13 +18,19 @@ part it's actually good at, keep the DSP in Python/numpy where it already works.
 
 ## What's here
 
-- **`paramgen.tal`** (44 lines of uxntal) / **`paramgen.rom`** (249 bytes, prebuilt & committed,
-  like the mesh's own `lease-gate.rom`/`band-gate.rom` pilots) — a deterministic sequencer.
-  Given one argv token (a tick, decimal ASCII, `uxncli` feeds it newline-terminated), it prints
-  one line: `l <ms> w <n>`. Selection is **table-lookup only** — `tick_lo & 3` picks among 4
-  `l` values, `(tick_lo >> 2) & 3` picks among 4 `w` values — the ROM never formats or computes
-  the values themselves; those are fixed ASCII strings baked into the ROM, the same
-  pool-quantization `grainneukeln`'s own recipe conventions already use. No floats anywhere.
+- **`paramgen.tal`** (uxntal) / **`paramgen.rom`** (496 bytes, prebuilt & committed, like the
+  mesh's own `lease-gate.rom`/`band-gate.rom` pilots) — a deterministic sequencer. Given one
+  argv token (a tick, decimal ASCII, `uxncli` feeds it newline-terminated), it prints one line:
+  `l <ms> w <n> s <ratio> c <lo>,<hi>;...`. Selection is **table-lookup only**, one 2-bit field
+  of the tick's low byte per parameter — `tick_lo & 3` picks among 4 `l` values,
+  `(tick_lo >> 2) & 3` among 4 `w` values, `(tick_lo >> 4) & 3` among 4 `s` values,
+  `(tick_lo >> 6) & 3` among 4 `c` band-pairs. All 8 bits of the tick byte are now spent, so the
+  sequence has a full 256-tick period (up from 16 when only `l`/`w` were wired) before it
+  repeats. The ROM never formats or computes the values themselves; those are fixed ASCII
+  strings baked into the ROM, the same pool-quantization `grainneukeln`'s own recipe conventions
+  already use. No floats anywhere — `s`'s ratios (`0.5`/`0.8`/`1.3`/`2.0`) and `c`'s band pairs
+  are baked-in text, parsed as a float/ints only on the Python side, exactly like `l`/`w` always
+  were.
 - **`build.sh`** — compiles the vendored `uxnasm`/`uxncli` (MIT, Devine Lu Linvega et al.,
   copyright headers preserved per-file) for the current platform and reassembles the ROM.
   `bin/` is gitignored; every machine (dev box, CI runner) builds its own ~26KB emulator, the
@@ -59,10 +65,11 @@ only its wire format.
 
 ## Scope / what's NOT done
 
-- Only `l` (grain length) and `w` (window divider) are sequenced — both natively integer.
-  `s`/`ss` (float speed ratios) and `c` (frequency bands) would need either a fixed-point
-  scaling scheme or (simpler, matching this ROM's existing approach) a bigger ASCII string
-  pool selected the same table-lookup way. Straightforward extension, not built yet.
+- `l`, `w`, `s`, `c` are sequenced (4x4x4x4 = 256-tick period). `ss` (per-sample speed, distinct
+  from `s`'s whole-track speed) is not — same bigger-string-pool approach would apply, but the
+  tick byte's 8 bits are now fully spent across the other four; a 5th field needs either a 2nd
+  input byte (e.g. hash the tick further, or read 2 argv tokens) or folding two params onto one
+  field's 4 slots.
 - No real-time/live control (Option B territory) — `grainneukeln` has no live audio thread to
   target. If that changes, Option A's IPC shape (stdout stream -> parser) ports over close to
   as-is; only the "one process per tick" plumbing would need to become "one persistent process,

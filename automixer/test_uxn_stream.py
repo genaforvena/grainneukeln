@@ -33,7 +33,7 @@ class UxnTickTest(unittest.TestCase):
     def test_tick_output_is_a_valid_amc_fragment(self):
         from automixer.uxn_stream import uxn_tick
         line = uxn_tick(0, rom_path=self.rom, uxncli_path=self.uxncli)
-        self.assertRegex(line, r"^l \d+ w \d+$")
+        self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)*$")
 
     def test_tick_is_deterministic(self):
         from automixer.uxn_stream import uxn_tick
@@ -55,6 +55,39 @@ class UxnTickTest(unittest.TestCase):
             line = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli)
             l = int(line.split()[1])
             self.assertTrue(120 <= l <= 2000, f"tick {t}: l={l} outside [120,2000]: {line}")
+
+    def test_s_and_c_vary_independently_of_l_and_w(self):
+        # l/w occupy tick_lo bits 0-3, s/c occupy bits 4-7 (one 2-bit field each, README#13
+        # extension). A ROM that only wired l/w (or aliased s/c onto the same bits) would hold
+        # s and c constant across this range -- assert real, independent variation, not just
+        # "the line parses".
+        from automixer.uxn_stream import uxn_tick
+        s_values = set()
+        c_values = set()
+        for t in range(0, 256, 16):  # fixes l/w's bits (tick % 16 == 0), sweeps s/c's bits
+            line = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli)
+            parts = line.split()
+            self.assertEqual(parts[0:2], ["l", "200"], f"tick {t} moved l/w: {line}")
+            s_values.add(parts[5])
+            c_values.add(parts[7])
+        self.assertEqual(len(s_values), 4, f"s did not cycle through 4 values: {s_values}")
+        self.assertEqual(len(c_values), 4, f"c did not cycle through 4 values: {c_values}")
+
+    def test_s_value_is_a_sane_speed_multiplier(self):
+        from automixer.uxn_stream import uxn_tick
+        for t in range(16):
+            line = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli)
+            s = float(line.split()[5])
+            self.assertTrue(0.1 <= s <= 4.0, f"tick {t}: s={s} outside [0.1,4.0]: {line}")
+
+    def test_c_value_parses_as_band_pairs(self):
+        from automixer.uxn_stream import uxn_tick
+        for t in range(16):
+            line = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli)
+            cutoffs = line.split()[7]
+            for low_high in cutoffs.split(";"):
+                low, high = low_high.split(",")
+                self.assertTrue(0 <= int(low) <= int(high), f"tick {t}: bad band {low_high}")
 
     def test_missing_rom_raises_not_silent_default(self):
         from automixer.uxn_stream import uxn_tick

@@ -3,8 +3,11 @@
 ( maps to (8-bit AND/SFT arithmetic, no floats) -- it never formats or computes the values )
 ( themselves; those are fixed ASCII strings baked into the ROM, matching grainneukeln's own )
 ( pool-quantized param convention. )
+( Sequences all 4 amc params the README's own scope note left for later: l, w, s, c -- one )
+( 2-bit field per param, spanning the whole 8-bit tick_lo byte (4x4x4x4 = 256 combos, up from )
+( the l/w-only ROM's period-16 cycle). )
 ( input  : argv "<tick>" (uxncli feeds it nl-terminated decimal ASCII; low byte selects) )
-( output : one line "l <N> w <M>\n" on stdout -- a valid grainneukeln `amc` param fragment. )
+( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N>\n" -- a valid grainneukeln `amc` fragment. )
 ( zero-page: acc=00 (short) )
 
 |0100
@@ -41,10 +44,32 @@
     DUP #01 EQU ,&w1 JCN
     #02 EQU ,&w2 JCN
     ,&w3 JMP
-    &w0 POP ;wstr0 ;emit JSR2 ,&halt JMP
-    &w1 POP ;wstr1 ;emit JSR2 ,&halt JMP
-    &w2 ;wstr2 ;emit JSR2 ,&halt JMP
+    &w0 POP ;wstr0 ;emit JSR2 ,&spart JMP
+    &w1 POP ;wstr1 ;emit JSR2 ,&spart JMP
+    &w2 ;wstr2 ;emit JSR2 ,&spart JMP
     &w3 ;wstr3 ;emit JSR2
+
+    &spart
+    #01 LDZ #04 SFT #03 AND  ( idx_s = (tick_lo >> 4) & 3 )
+    DUP #00 EQU ,&s0 JCN
+    DUP #01 EQU ,&s1 JCN
+    #02 EQU ,&s2 JCN
+    ,&s3 JMP
+    &s0 POP ;sstr0 ;emit JSR2 ,&cpart JMP
+    &s1 POP ;sstr1 ;emit JSR2 ,&cpart JMP
+    &s2 ;sstr2 ;emit JSR2 ,&cpart JMP
+    &s3 ;sstr3 ;emit JSR2
+
+    &cpart
+    #01 LDZ #06 SFT #03 AND  ( idx_c = (tick_lo >> 6) & 3 )
+    DUP #00 EQU ,&c0 JCN
+    DUP #01 EQU ,&c1 JCN
+    #02 EQU ,&c2 JCN
+    ,&c3 JMP
+    &c0 POP ;cstr0 ;emit JSR2 ,&halt JMP
+    &c1 POP ;cstr1 ;emit JSR2 ,&halt JMP
+    &c2 ;cstr2 ;emit JSR2 ,&halt JMP
+    &c3 ;cstr3 ;emit JSR2
 
     &halt
     #01 #0f DEO
@@ -63,7 +88,15 @@
 @lstr1 "l 20 "500 20 00
 @lstr2 "l 20 "900 20 00
 @lstr3 "l 20 "1600 20 00
-@wstr0 "w 20 "4 0a 00
-@wstr1 "w 20 "5 0a 00
-@wstr2 "w 20 "6 0a 00
-@wstr3 "w 20 "8 0a 00
+@wstr0 "w 20 "4 20 00
+@wstr1 "w 20 "5 20 00
+@wstr2 "w 20 "6 20 00
+@wstr3 "w 20 "8 20 00
+@sstr0 "s 20 "0.5 20 00
+@sstr1 "s 20 "0.8 20 00
+@sstr2 "s 20 "1.3 20 00
+@sstr3 "s 20 "2.0 20 00
+@cstr0 "c 20 "0,0;1000,15000 0a 00
+@cstr1 "c 20 "0,200;800,6000 0a 00
+@cstr2 "c 20 "0,500;2000,10000 0a 00
+@cstr3 "c 20 "0,1000;4000,18000 0a 00
