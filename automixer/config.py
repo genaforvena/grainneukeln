@@ -10,7 +10,9 @@ class ChannelConfig:
     ~87%-of-wall-clock BPF cost. Explicit ``c low,high`` in the amc string still constructs
     non-bypass channels (the slow, filtered path), so the operator opts INTO BPF by naming bands
     and opts OUT by omitting the ``c`` arg. The two paths are audibly distinct (filtered vs raw)
-    but each is internally bit-identical run-to-run under the same seed."""
+    but each is internally bit-identical run-to-run under the same seed. With ``source2=True``
+    (the ``2:`` band prefix in ``c``) the band pulls its grains from ``config.audio2`` instead of
+    the primary source — same beat grid, different raw material."""
 
     def __init__(self, low, high, bypass=False, source2=False):
         if high == 0:

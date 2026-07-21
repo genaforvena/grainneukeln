@@ -12,10 +12,11 @@ lines (``l 500 w 4``); this module feeds each line straight into ``SampleCutter`
 ``config_automix``/``automix`` methods -- the same entry points a human types at the REPL.
 The audio engine is untouched.
 
-The ROM sequences all 5 amc params (l/w/s/c/ss). l/w/s/c spend the whole 8-bit tick_lo byte of
-the first argv token (256-tick period); ``ss`` has no bits left there, so it reads a SECOND argv
-token -- a coarser "macro tick" (``tick // 256``) whose low 2 bits pick its pool entry. Net period
-1024 ticks before the whole sequence repeats. See uxn_ctrl/README.md.
+The ROM sequences all 5 amc params (l/w/s/c/ss) and reads THREE argv tokens, in this order: a
+``feedback`` byte (0 = open-loop no-op; ``--uxn-feedback`` measures a real one per tick and its
+low 2 bits XOR-perturb the ``c``-band index), a ``tick`` whose 8-bit tick_lo byte drives l/w/s/c
+(256-tick period), and a coarser "macro tick" (``tick // 256``) whose low 2 bits pick ``ss``'s
+pool entry. Net period 1024 ticks before the whole sequence repeats. See uxn_ctrl/README.md.
 """
 import os
 import shutil

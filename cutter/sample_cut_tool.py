@@ -552,10 +552,16 @@ class SampleCutter:
             "  l <length>: set the length of the samples. Example: amc l 0.5 sets the length of each sample to 0.5. But it is preferable to use divisions with w command instead "
         )
         print(
-            "  env <pct>: attack/release taper as %% of grain length (default 8, 0 disables). Example: amc env 15"
+            "  env <pct>: attack/release taper as % of grain length (default 8, 0 disables). Example: amc env 15"
         )
         print(
             "  rv <0..1>: probability each grain is reversed (default 0). Example: amc rv 0.3"
+        )
+        print(
+            "  src2 <path>: load a second source for dual-source grinding; bands tagged 2: in c pull grains from it. Example: amc src2 drums.mp3"
+        )
+        print(
+            "  2: (inside c): band prefix that cuts the band's grains from the src2 file, wrapping modulo its length. Example: amc c 0,250;2:250,15000"
         )
 
     def _save_mix(self, mix):
