@@ -44,9 +44,13 @@ TracksPanel, OutputPanel { height: 1fr; }
 TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
 TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
 
-/* --- params grid (2-col: label | field, one field per row) --- */
+/* --- params grid (2-col: label | field, one field per row) ---
+   Inputs are the compact 1-row style (same as ModePanel) — the tall bordered default made each
+   field row 3 rows high, and adding env/rv (2026-07-21) pushed the left column past the screen
+   (test_all_panels_fit_on_screen caught TracksPanel at y=46 on a 40-row screen). */
 ParamsPanel Grid { grid-size: 2; grid-rows: auto; grid-gutter: 0 1; height: auto; }
-ParamsPanel Grid Input { width: 1fr; }
+ParamsPanel Grid Input { width: 1fr; height: 1; border: none; background: $surface-lighten-1; }
+ParamsPanel Grid Input:focus { background: $surface-lighten-2; }
 ParamsPanel Grid Label { color: $foreground-darken-1; padding: 1 0 0 0; }
 
 /* --- mode/effects grid (4-col: label | field | label | field, two fields per row so the twelve
@@ -89,7 +93,13 @@ DataTable > .datatable--hover  { background: $panel-lighten-1; }
 
 /* --- run panel --- */
 RunPanel #run_options { height: auto; margin: 0 0 1 0; }
+RunPanel #uxn_options { height: auto; }  /* Horizontal defaults to 1fr — it swallowed 12 rows */
 RunPanel #run_options Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; }
+/* compact 1-row inputs (series / Source B / Uxn rom+ticks) — the tall bordered default made the
+   Uxn+source2 additions (2026-07-21) push OutputPanel off a 40-row screen */
+RunPanel Input { height: 1; border: none; background: $surface-lighten-1; }
+RunPanel Input:focus { background: $surface-lighten-2; }
+RunPanel Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; height: 1; }
 RunPanel #run_progress { margin: 1 0; }
 RunPanel #run_log {
     height: 8;
