@@ -28,7 +28,16 @@ locked to the source's groove.
   overview of the terminal interface.
 - **Uxn external control layer** (issue #13, Option A): `--uxn-ctrl` drives a sequence of
   renders from a tiny portable [Uxn](https://wiki.xxiivv.com/site/uxn.html) ROM instead of
-  hand-written params. See [uxn_ctrl/README.md](uxn_ctrl/README.md).
+  hand-written params. See [uxn_ctrl/README.md](uxn_ctrl/README.md). Add `--uxn-feedback`
+  (2026-07-21) to close the loop: each tick's ROM call is fed a byte measured from the source's
+  own rhythm density, so the sequencer's `c`-band choice reacts to the actual audio
+  (`feedback=0` — the default — is byte-identical to the open-loop behaviour).
+- **Grain shaping, dual-source grinding + an HPSS axis** (2026-07-21): every grain now gets an
+  attack/release taper (`env`, default 8% of the grain's length — `env 0` disables) and an
+  optional per-grain reverse (`rv 0.3`); `src2 <path>` loads a **second source** and any `c` band
+  prefixed `2:` pulls its grains from it (same beat grid, different raw material); `lib` mode's
+  clustering gained a 4th measurement axis (harmonic-vs-percussive ratio via librosa HPSS). See
+  the parameter table below and [docs/ALGORITHMS.md](docs/ALGORITHMS.md).
 
 
 ---
@@ -176,6 +185,10 @@ python main.py song.mp3 output/ amc seed 42 l /2 ss 1.2
 | `nofill` `fg` | gap-fill (mode `q`) | `nofill`, `fg -12` | the euclidean pattern leaves `n−k` rest slots silent; by default they're filled with off-grid remnant grains `fg` dB (default −6) below the hits. `nofill` restores the pure silent-rest grid. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
 | `seed` | RNG seed | `seed 42` | **Reproducibility.** Seeds every mixer's RNG so two runs with the same params produce byte-identical output. Also available as `--seed 42` CLI flag. Default: unseeded (runs differ as before). |
+| `env` | envelope taper % | `env 15` | attack/release fade on **every grain**: `pct`% of the grain's own length faded on each edge (clamped to at most half the grain). **Default 8** — always on, since a hard-cut grain boundary is an audible click; `env 0` disables (restores the hard-cut boundaries). |
+| `rv` | reverse probability | `rv 0.3` | each grain plays reversed with this probability, `0..1`. **Default 0** (off — today's character unchanged). Decided once per grain, so in multi-band configs all bands share the same forward/reversed state (`rw` draws per channel — each of its channels already cuts from its own position). |
+| `src2` | second source | `src2 other.mp3` | **Dual-source grinding.** Loads a second audio file (decoded once, cached by path); bands tagged `2:` in `c` pull their grains from it. The beat grid always comes from the primary source — source 2 only supplies raw material. |
+| `2:` | source-2 band prefix (inside `c`) | `c 0,250;2:250,15000` | prefix any `c` band with `2:` and that band's grains are cut from the `src2` file at the same grid positions, **wrapping modulo source 2's length** (a shorter/longer second source never truncates). Untagged bands stay on the primary; a `2:` band without `src2` loaded falls back to the primary. *(Does not apply under `--uxn-ctrl` — the ROM owns the `c` string; see [uxn_ctrl/README.md](uxn_ctrl/README.md).)* |
 | `[a,b,c]` / `[lo:hi:step]` | series sweep | `l [/2,/3,/4]`, `s [0.8:1.2:0.2]`, `m [rw,q]` | Wrap any sweepable param's value in brackets to render the **cartesian product** — one render per combination. `[a,b,c]` is a list; `[start:stop:step]` is a numeric range (inclusive). See [Series runs](#series-runs--abcc-startstopstep--sweep--cartesian-combos). |
 
 #### Quantized mode (`m q`) — designed grooves instead of a uniform fill
@@ -210,7 +223,8 @@ python main.py song.mp3 output/ amc m poly pr 4@80:1-2000;3@120:6000-15000  # st
 #### Library mode (`m lib`) — sequenced selection instead of random
 
 Every other mode picks grains at random (memoryless). `lib` first builds a **library** of beat-grid
-grains, measures each on three axes — spectral centroid, RMS, and rhythm-density (onsets/sec) —
+grains, measures each on four axes — spectral centroid, RMS, rhythm-density (onsets/sec), and
+harmonic-vs-percussive ratio (librosa HPSS) —
 **rank-calibrated against the actual grain set** (so no axis can saturate), clusters them, and then
 **sequences** grains with a Markov policy over the clusters:
 

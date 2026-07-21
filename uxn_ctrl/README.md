@@ -43,9 +43,18 @@ part it's actually good at, keep the DSP in Python/numpy where it already works.
 band-pair a tick selects. `feedback=0` is a true no-op (`x EOR 0 == x`), so the open-loop
 behaviour above is exactly what you get when the host doesn't compute a real feedback value.
 `automixer.uxn_stream.run_uxn_sequence(..., closed_loop=True)` (CLI: `--uxn-feedback`) computes a
-real feedback byte each tick from the current source's measured rhythm density (see
-`_measure_feedback_byte`'s docstring for the calibration this rests on), so the sequencer's
-`c`-band choice reacts to the actual audio instead of ticking through the table open-loop.
+real feedback byte each tick via `_measure_feedback_byte`: up to 8 evenly-spaced 2000ms beat-grid
+grains from the current source, average `rhythm_density` (the one existing measure tract,
+`automixer.features.measure_grain` — no new analyzer), scaled 0–5 onsets/sec → 0–255. Only the
+byte's low 2 bits reach `idx_c`, so it is a coarse perturbation key, not a precision control
+signal — and it is pure deterministic arithmetic over already-loaded audio (no RNG touched, the
+seed-reproducibility contract is unaffected). So the sequencer's `c`-band choice reacts to the
+actual audio instead of ticking through the table open-loop. Known rough edge: **dense material
+can still saturate the 0–5 onsets/sec ceiling** (measured 2026-07-21: 5/8 sampled offsets of a
+busy passage → byte 255) — the byte varies across regions of ordinary songs, but recalibrate the
+headroom before leaning on closed-loop for uniformly busy sources. (The original 300ms measure
+window saturated on *everything* — a single onset in 300ms already extrapolates past 3/sec —
+fixed by the 2000ms window.)
 - **`build.sh`** — compiles the vendored `uxnasm`/`uxncli` (MIT, Devine Lu Linvega et al.,
   copyright headers preserved per-file) for the current platform and reassembles the ROM.
   `bin/` is gitignored; every machine (dev box, CI runner) builds its own ~26KB emulator, the
@@ -57,8 +66,8 @@ real feedback byte each tick from the current source's measured rhythm density (
 ```python
 from automixer.uxn_stream import uxn_tick, run_uxn_sequence
 
-uxn_tick(0)                                  # -> "l 200 w 4"  (feedback=0, open-loop, deterministic)
-uxn_tick(0, feedback=3)                      # same tick, c-band perturbed by the feedback byte
+uxn_tick(0)                    # -> "l 200 w 4 s 0.5 c 0,0;1000,15000 ss 0.5"  (feedback=0, open-loop)
+uxn_tick(0, feedback=3)        # -> "l 200 w 4 s 0.5 c 0,1000;4000,18000 ss 0.5"  (c-band perturbed)
 run_uxn_sequence(cutter, 8)                  # drives 8 renders of `cutter` from ticks 0..7, open-loop
 run_uxn_sequence(cutter, 8, closed_loop=True)  # each tick's feedback is measured from `cutter`'s audio
 ```
@@ -81,6 +90,25 @@ Any ROM works as long as it prints `l <ms> w <n>` (or any other `amc`-grammar to
 stdout per tick — `--uxn-ctrl` doesn't hardcode `paramgen.rom`'s specific sequencing logic,
 only its wire format.
 
+## Composing with the rest of the `amc` grammar (env/rv: yes · src2/Source B: no)
+
+Each tick's ROM line carries only `l w s c ss` tokens, and `config_automix` only overrides fields
+whose tokens are present — everything else falls back to the cutter's cached config. Two opposite
+consequences:
+
+- **Params the ROM never emits compose.** Seed them once before the run and they hold for every
+  tick: the TUI's Uxn path does exactly this for the grain-shaping params (`env`/`rv`) via a
+  single `config_automix("amc env <v> rv <v>")` call before the tick loop, and every subsequent
+  ROM tick falls back to those cached values.
+- **Anything the ROM DOES emit is ROM-owned — dual-source grinding does not apply.** The full `c`
+  band string is rewritten from scratch on every tick, and none of `paramgen.rom`'s band strings
+  carries a `2:` prefix, so no band can ever be tagged `source2` under ROM control: `src2`, `2:`
+  band tags, and the TUI's per-track A/B toggle are all inert in Uxn mode (structural guard:
+  `tui/test_app.py::UxnBandHonestyGuardTest`). The TUI does not load Source B in Uxn mode and
+  says so loudly, once per run: "Uxn mode: ROM owns the bands — per-track A/B tags and Source B
+  don't apply (env/rv do)". Do not document or script these as composable — they structurally
+  cannot be, short of building your own ROM that emits `2:`-prefixed bands.
+
 ## Scope / what's NOT done
 
 - `l`, `w`, `s`, `c`, `ss` are all sequenced now. `l`/`w`/`s`/`c` spend the whole 8-bit tick_lo
@@ -90,6 +118,10 @@ only its wire format.
   5-param sequence repeats: 256 x 4 = 1024 ticks.
 - Closed-loop feedback is done too (see above) — a host-measured byte perturbs `idx_c` each tick;
   `feedback=0` keeps the open-loop behaviour byte-for-byte.
+- TUI exposure is done (Run panel: enable checkbox, ROM path, ticks, closed-loop checkbox — same
+  `run_uxn_sequence` worker). Rough edge from the live smoke test (2026-07-21): per-tick renders
+  surface via the run log (`[uxn tick N] …`) and the Outputs panel's directory scan — there is no
+  single "last artifact" completion line per tick the way single/series runs report one.
 - No real-time/live control (Option B territory) — `grainneukeln` has no live audio thread to
   target. If that changes, Option A's IPC shape (stdout stream -> parser) ports over close to
   as-is; only the "one process per tick" plumbing would need to become "one persistent process,

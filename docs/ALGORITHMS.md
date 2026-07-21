@@ -308,7 +308,7 @@ positions = [b for b in sorted(beats) if 0 <= b <= total_ms-grain_len]          
             (fallback: tile range(0, total_ms-grain_len, grain_len) if <2 positions)
 grains    = [audio[p:p+grain_len] for p in positions]        # one grain per fitting beat         :44
 
-feats     = [measure_grain(g) for g in grains]               # 3 axes                             :47
+feats     = [measure_grain(g) for g in grains]               # 4 axes                             :47
 norm      = calibrate(feats)                                 # rank-normalize to [0,1] vs corpus  :48
 labels, centroids = cluster(norm, k = lib_clusters)          # k-means (scipy kmeans2)            :51
 
@@ -325,13 +325,20 @@ out = concatenation of grains[sequence]                                         
 
 ### 6.2 Measurement (`automixer/features.py`)
 
-Each grain is measured on **three axes** (`AXES`, `:11`), via `measure_grain` (`:26-45`):
+Each grain is measured on **four axes** (`AXES`, `:11`), via `measure_grain` (`:26-56`):
 
 | axis | librosa feature | meaning |
 |---|---|---|
 | `centroid` | `spectral_centroid` (mean) | brightness |
 | `rms` | `rms` (mean) | loudness |
 | `rhythm_density` | `len(onset_detect) / duration` | onsets per second — a single transient → ~0, a busy grain → high |
+| `hpss_ratio` | `effects.hpss` energy split | percussive share of total energy, `p/(h+p)` ∈ [0,1] — a pure tone → ~0, noisy/transient material → ~1. Gives `lib con` a real tonal-vs-percussive dimension to jump across, not just a loudness/brightness/density proxy. |
+
+The `hpss_ratio` axis (added 2026-07-21) required **zero changes to `library_mixer.py` itself**:
+the mixer calls `calibrate(feats)`, which rank-normalizes whatever `AXES` names (its default),
+and `cluster`/`next_cluster` operate on the calibrated rows' shape — the new dimension flows
+straight through rank-calibration into clustering. Same measure tract (librosa, already imported)
+— no second analyzer.
 
 Grains under 128 samples measure as all-zeros. Audio is peak-normalized to mono float first
 (`_to_mono_float`, `:14-23`).
@@ -410,6 +417,66 @@ identical straight placement) and `sw 66 → 0.32·sub_ms`, a 2:1 shuffle. `groo
 `groove_template` cyclically when present (winning over swing), else per-slot `swing_offset`. Only `q`
 consumes these.
 
+### 7.5 Grain shaping — envelope + reverse (`automixer/effects/grain_shape.py`)
+
+Two per-grain primitives (2026-07-21), applied by **every** mixer at the point it already holds a
+finished grain — there is no single shared grain loop to hook once, so each mixer calls them in its
+own grain function:
+
+- **`apply_envelope(seg, pct)`** — symmetric `fade_in`/`fade_out` taper, `pct`% of the grain's own
+  length per edge, clamped to at most half the grain. `pct <= 0` is a true no-op. Driven by
+  `env` (default **8.0** — always on: a hard-cut grain boundary is an audible click, not a
+  creative choice; `amc env 0` restores the hard-cut path, which is how the bit-identity fixtures
+  pin the pre-envelope byte streams).
+- **`maybe_reverse(seg, prob, rng)`** — reverses the grain with probability `prob` (`rv`, default
+  **0.0**). `prob <= 0` short-circuits **without touching the RNG at all**, so an `rv 0` render
+  draws exactly as many random numbers as before the feature existed — the seed-reproducibility
+  contract holds unchanged for every pre-existing config.
+
+Where each mixer applies them:
+
+| mixer | reverse drawn | envelope applied |
+|---|---|---|
+| `rw` — `default_mixer._create_chunk` | per **channel**, right after each channel's slice (each channel already cuts from its own random `start_cut`, so an independent per-channel draw is consistent with the mixer's existing character — deliberately *not* "fixed" to match the others) | once, on the finished chunk, after `ss` |
+| `q` — `quantized_mixer._create_grain` | **once per grain**, on the primary slice before the channel loop; the single decision is re-applied to each channel's own slice | once, on the finished grain, after snap + `ss` |
+| `poly` — `poly_mixer._create_grain` | once per grain, same pattern as `q` | once, after `ss` |
+| `lib` — `library_mixer._render_grain` | once per grain, via a **fresh unseeded** `random.Random()` — grain *selection* is fully seed-determined before `_render_grain` runs, but the reverse coin itself is **not seed-reproducible** (honest, documented gap; see §9) | once, after `ss` |
+
+In the multi-band mixers reverse is a property of the **grain as a whole**: one coin per grain,
+every band shares the outcome. (A per-channel redraw could reverse the low band while the highs
+play forward — an incoherent scrambled grain; that was a real fix-round bug, now pinned by
+`test_reverse_decision_drawn_once_per_grain_not_per_channel` in each mixer's test file.)
+
+### 7.6 Dual-source grinding (`slice_source`, `automixer/utils.py:171-206`)
+
+`amc src2 <path>` decodes a second source into `config.audio2` (cached by path, re-decoded only
+when the path changes), and any `c` band prefixed `2:` sets `ChannelConfig(source2=True)`. Every
+mixer's per-channel cut routes through `slice_source(config, channel, start_ms, length_ms)`, which
+picks the source per band:
+
+- **Primary path** — untagged bands, and `source2=True` bands when no `audio2` is loaded: the
+  legacy plain slice `audio[start:start+length]`, which **truncates at the source's tail and never
+  wraps** (wrapping the track's opening onto its own tail would be an audible regression of the
+  ordinary single-source path — review-scoped deliberately).
+- **Source-2 path** — `start % len(audio2)`, then a **modulo-wrap** slice: every call returns
+  exactly `length_ms` of real audio even when source 2 is shorter (or longer) than the primary.
+  Beat detection, grain positions, and windows always come from the **primary** source; source 2
+  only supplies raw material.
+
+The only mixer that required restructuring was **`lib`**: `_render_grain` used to receive an
+already-cut grain and had no position to re-slice from, so it is now **position-aware**
+(`_render_grain(config, grain, position_ms)`), letting each channel re-cut the same grid position
+from whichever source it names. `poly`'s per-stream `:low-high` bands (from `pr`) construct their
+own channels and are always primary-source — the `2:` tag lives only in the `c` grammar.
+
+**Uxn control mode (`--uxn-ctrl`): dual-source does not apply.** The ROM owns the full `c` band
+string every tick (none of `paramgen.rom`'s band strings carries a `2:` prefix), and
+`config_automix` rebuilds `channels_config` from scratch on every `c` token — so no band can ever
+read `audio2` under ROM control. The TUI does not even load Source B in Uxn mode and logs, once:
+"Uxn mode: ROM owns the bands — per-track A/B tags and Source B don't apply (env/rv do)". `env`
+and `rv` **do** apply there (seeded once per run; ROM lines never emit `env`/`rv` tokens, so every
+tick's `config_automix` falls back to the seeded values). See `../uxn_ctrl/README.md`.
+
 ---
 
 ## 8. Loudness & export
@@ -440,9 +507,12 @@ recursive granular resynthesis. (Note: self-feed length-amplifies; feed short.)
   subdivision steps are fixed by the params; *which onset/grain* fills each slot is a random pick. So
   two runs with identical params share a groove but differ in texture. This is the design (README:
   "two runs give two different tracks").
-- **No mode is reproducible run-to-run without external seeding.** `rw`/`q`/`poly` use the global
-  `random` module; `lib` uses an **unseeded** `np.random.default_rng()` (`library_mixer.py:57`). There
-  is no `--seed`; set `random.seed()` / seed the rng in-process if you need bit-identical reruns.
+- **No mode is reproducible run-to-run without seeding.** Unseeded (the default), `rw`/`q`/`poly`
+  use the global `random` module and `lib` an unseeded `np.random.default_rng()`. `amc seed <N>`
+  (or the `--seed N` CLI flag) seeds every mixer's RNG (`apply_seed`, `automixer/utils.py`) —
+  same seed + same params → byte-identical output. One documented exception: `lib` mode's
+  per-grain **reverse** coin (`rv`) uses a fresh unseeded `random.Random()` even under `seed`
+  (§7.5) — grain selection stays seed-stable, the reverse decisions do not.
 - **No beat floor anywhere.** Every mixer grinds on the detected grid, real or hallucinated, and none
   can report "this source has no rhythm." Check the printed beat count if an output comes back empty or
   dead — 0 detected beats is the only true "nothing to build on" case.

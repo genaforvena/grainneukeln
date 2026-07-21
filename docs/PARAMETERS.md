@@ -21,7 +21,30 @@ as its value (`config_automix`, `cutter/sample_cut_tool.py:276-404`). A fresh co
 | `s` | float | `1.0` | **whole-mix** speed, applied once to the finished mix (pitch-preserving). `<1` slower, `>1` faster. Post-process, not part of grain selection. |
 | `ss` | float | `1.0` | **per-grain** speed, applied to each grain as it's cut (pitch-preserving). Warps micro-texture. |
 | `l` | `/N`, `*N`, or `<int>` | 1 beat | grain length. `/N` = beat ÷ N (subdivide), `*N` = beat × N (multiply), bare int = **absolute ms**. See the foot-gun note below. |
-| `c` | `low,high;low,high;…` (Hz) | `0,15000` | band-pass channels. Each `low,high` band pulls its **own** grain; bands are layered. `;`-separated. A `0` cutoff is coerced to `1`. |
+| `c` | `[2:]low,high;[2:]low,high;…` (Hz) | `0,15000` | band-pass channels. Each `low,high` band pulls its **own** grain; bands are layered. `;`-separated. A `0` cutoff is coerced to `1`. A band prefixed `2:` pulls its grains from the `src2` source (see the `2:` prefix note below). |
+| `env` | float % | `8.0` | attack/release taper on **every** grain: `pct`% of the grain's own length faded on each edge, clamped to at most half the grain. Always on by default (a hard-cut grain boundary is an audible click); `env 0` disables. Applies in all 4 modes. |
+| `rv` | float `0..1` | `0.0` | per-grain reverse probability. Decided **once per grain** in `q`/`poly`/`lib` (all bands share the outcome); `rw` draws per channel (each of its channels already cuts from its own random position). `rv 0` draws no random numbers at all, preserving seeded byte-identity for existing configs. In `lib` mode the reverse coin is **not** seed-reproducible (documented gap — see `ALGORITHMS.md` §7.5). Applies in all 4 modes. |
+| `src2` | file path | unset | **dual-source grinding**: load a second source (decoded once, cached by path). Only `c` bands tagged `2:` read it; the beat grid always comes from the primary source. |
+
+### The `c` `2:` prefix — dual-source bands
+
+With `src2 <path>` loaded, any `c` band written `2:low,high` cuts its grains from the **second**
+source instead of the primary — e.g. `amc src2 drums.mp3 c 0,250;2:250,15000` layers the primary's
+bass under the second file's top end, on the primary's beat grid. Semantics (`slice_source`,
+`automixer/utils.py`):
+
+- Grain positions are always drawn from the **primary** source's beat grid/windows; a `2:` band
+  re-reads the same position in source 2 **modulo source 2's length** — a second source shorter
+  (or longer) than the primary wraps instead of truncating, so every source-2 grain comes back
+  full-length.
+- Untagged bands keep the legacy plain slice, which truncates at the primary's tail and never
+  wraps. A `2:` band with no `src2` loaded falls back to that same primary path.
+- In `poly` mode, per-stream `:low-high` bands (from `pr`) build their own channels and are always
+  primary-source; the `2:` tag lives only in the `c` grammar (read when a stream has no band of
+  its own).
+- **Uxn control mode (`--uxn-ctrl`): `src2`/`2:` do not apply.** The ROM owns the full `c` band
+  string every tick and never emits a `2:` prefix, so no band can read source 2 under ROM control
+  (`env`/`rv` do apply there — see `../uxn_ctrl/README.md`).
 
 ### The `l` foot-gun
 
@@ -90,7 +113,8 @@ python main.py song.mp3 out/ amc m poly pr 4@80;3@120                 # staccato
 | `lib` | `sim` \| `con` | `similarity` | Markov policy: `sim` stays near the current cluster (coherent), `con` jumps far (glitchy). `con` matches any value starting `con`. |
 | `lk` | int | `6` | k-means cluster count |
 
-Grains are measured on brightness / loudness / rhythm-density, rank-calibrated against the grain set,
+Grains are measured on brightness / loudness / rhythm-density / harmonic-vs-percussive ratio
+(librosa HPSS), rank-calibrated against the grain set,
 k-means clustered, then sequenced by a distance-weighted Markov walk. Fewer than `max(4, lk)` grains →
 honest degraded run (reported on stdout).
 
@@ -119,6 +143,9 @@ the runner for all modes; a grain's `sample_speed ss` and band-pass `c` are hono
 | `snap` | ✓ | ✓ | — | — |
 | `sw` (swing) | — | ✓ | — | — |
 | `nofill` / `fg` (gap-fill) | — | ✓ | — | — |
+| `env` (grain envelope) | ✓ | ✓ | ✓ | ✓ |
+| `rv` (grain reverse) | ✓ per channel | ✓ per grain | ✓ per grain | ✓ per grain |
+| `src2` / `2:` bands | ✓ | ✓ | ✓ (via `c` only) | ✓ |
 
 Passing a parameter to a mode that ignores it is harmless — it's simply not read.
 
