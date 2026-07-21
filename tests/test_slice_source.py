@@ -55,6 +55,26 @@ class SliceSourceTest(unittest.TestCase):
         expected = bytes(secondary[250:300]._data) + bytes(secondary[0:50]._data)
         self.assertEqual(bytes(out._data), expected)
 
+    # -- Review finding 1: unconditional wraparound regressed ordinary single-source (primary
+    # path) behaviour on the default/rw mixer. The wrap must be SOURCE-2-ONLY.
+
+    def test_primary_source_near_tail_slice_truncates_no_wrap(self):
+        primary = Sine(220).to_audio_segment(duration=1000)
+        cfg = _cfg(primary, audio2=None)
+        ch = ChannelConfig(0, 15000, bypass=True)  # default channel -> primary source
+        out = slice_source(cfg, ch, 950, 200)
+        # Legacy plain pydub slice: audio[950:1150] truncates to 50ms, never wraps the opening in.
+        self.assertEqual(len(out), 50)
+        self.assertEqual(bytes(out._data), bytes(primary[950:1150]._data))
+
+    def test_source2_true_without_audio2_falls_back_and_truncates_near_tail(self):
+        primary = Sine(220).to_audio_segment(duration=1000)
+        cfg = _cfg(primary, audio2=None)
+        ch = ChannelConfig(0, 15000, bypass=True, source2=True)
+        out = slice_source(cfg, ch, 950, 200)
+        self.assertEqual(len(out), 50)
+        self.assertEqual(bytes(out._data), bytes(primary[950:1150]._data))
+
 
 if __name__ == "__main__":
     unittest.main()

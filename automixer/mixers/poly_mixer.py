@@ -134,6 +134,12 @@ class PolyphonicAutoMixer:
         # tagged ``source2=True``), so the decision can no longer be reused as one shared
         # ``AudioSegment`` -- ``reversed_grain`` captures that same one-per-grain decision,
         # applied to whichever bytes each channel actually cuts.
+        # (Review finding 2 considered replacing this with a length-only reverse draw to skip
+        # the throwaway ``primary_slice`` copy, but tests/test_poly_mixer.py patches
+        # ``maybe_reverse`` directly to assert the once-per-grain contract
+        # (``test_reverse_decision_drawn_once_per_grain_not_per_channel``,
+        # ``test_reverse_prob_one_reverses_every_grain``) -- removing the call breaks that
+        # contract test, so the minor waste is kept rather than risk it.)
         primary_slice = audio[start_cut: start_cut + grain_len]
         base_chunk = maybe_reverse(primary_slice, reverse_prob, random)
         reversed_grain = base_chunk is not primary_slice

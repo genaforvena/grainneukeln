@@ -173,20 +173,32 @@ def slice_source(config, channel, start_ms, length_ms):
     names — ``config.audio2`` when the channel is tagged ``source2=True`` AND a second source was
     actually loaded, else the primary ``config.audio``.
 
-    Positions always come from the PRIMARY source's beat grid regardless of which source supplies
-    the material — a source 2 shorter or longer than that grid is handled by wrapping ``start_ms``
-    modulo ITS OWN length, so every call still returns exactly ``length_ms`` of real audio (never
-    truncated, never silence-padded). Same beat grid throughout; only the raw material differs
-    (dual-source grinding, design doc 2026-07-21)."""
+    The modulo-wrap ("every call still returns exactly ``length_ms`` of real audio, never
+    truncated") is SOURCE-2-ONLY semantics: it exists to handle a secondary source that is
+    shorter/longer than the primary beat grid the positions are drawn from. The primary-source
+    path (including a ``source2=True`` channel that falls back here because ``config.audio2`` is
+    ``None``) keeps the pre-existing, legacy plain-pydub-slice behaviour — ``audio[start_ms:
+    start_ms + length_ms]`` — which truncates at the source's own end instead of wrapping. A grain
+    starting near the tail of the primary source (e.g. the last 50ms of a 1000ms track requested
+    at length 200) must still come back shorter, exactly as it did before ``slice_source`` existed;
+    wrapping it would splice the track's own opening onto its own tail on the mesh's most-used
+    (rw/default) mixer's ordinary path — an audible regression the plan never called for (dual-
+    source grinding, design doc 2026-07-21; wraparound scoping fix, review finding 1)."""
     from pydub import AudioSegment
 
-    src = config.audio
-    if getattr(channel, "source2", False) and getattr(config, "audio2", None) is not None:
-        src = config.audio2
-    n = len(src)
     length_ms = int(length_ms)
-    if n <= 0 or length_ms <= 0:
+    if length_ms <= 0:
         return AudioSegment.silent(duration=max(0, length_ms))
+
+    use_source2 = getattr(channel, "source2", False) and getattr(config, "audio2", None) is not None
+    if not use_source2:
+        start_ms = int(start_ms)
+        return config.audio[start_ms:start_ms + length_ms]
+
+    src = config.audio2
+    n = len(src)
+    if n <= 0:
+        return AudioSegment.silent(duration=length_ms)
     start_ms = int(start_ms) % n
     end_ms = start_ms + length_ms
     if end_ms <= n:
