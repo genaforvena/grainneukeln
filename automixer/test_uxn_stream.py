@@ -33,7 +33,7 @@ class UxnTickTest(unittest.TestCase):
     def test_tick_output_is_a_valid_amc_fragment(self):
         from automixer.uxn_stream import uxn_tick
         line = uxn_tick(0, rom_path=self.rom, uxncli_path=self.uxncli)
-        self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)*$")
+        self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+$")
 
     def test_tick_is_deterministic(self):
         from automixer.uxn_stream import uxn_tick
@@ -88,6 +88,30 @@ class UxnTickTest(unittest.TestCase):
             for low_high in cutoffs.split(";"):
                 low, high = low_high.split(",")
                 self.assertTrue(0 <= int(low) <= int(high), f"tick {t}: bad band {low_high}")
+
+    def test_ss_varies_across_macro_ticks_while_l_w_s_c_hold(self):
+        # README#13's remaining scope note: the tick_lo byte is fully spent on l/w/s/c (256-tick
+        # period), so ss needs a SECOND input byte -- a macro tick (tick // 256) that only rolls
+        # over once every 256 micro-ticks. Fix tick % 256 == 0 (so l/w/s/c never move) and sweep
+        # the macro tick: a ROM that ignored the 2nd argv token (or aliased it onto tick_lo) would
+        # hold ss constant here too.
+        from automixer.uxn_stream import uxn_tick
+        ss_values = set()
+        for macro in range(4):
+            line = uxn_tick(macro * 256, rom_path=self.rom, uxncli_path=self.uxncli)
+            parts = line.split()
+            self.assertEqual(parts[0:8], ["l", "200", "w", "4", "s", "0.5", "c", "0,0;1000,15000"],
+                              f"macro tick {macro} moved l/w/s/c: {line}")
+            self.assertEqual(parts[8], "ss")
+            ss_values.add(parts[9])
+        self.assertEqual(len(ss_values), 4, f"ss did not cycle through 4 values: {ss_values}")
+
+    def test_ss_value_is_a_sane_speed_multiplier(self):
+        from automixer.uxn_stream import uxn_tick
+        for macro in range(4):
+            line = uxn_tick(macro * 256, rom_path=self.rom, uxncli_path=self.uxncli)
+            ss = float(line.split()[9])
+            self.assertTrue(0.1 <= ss <= 4.0, f"macro {macro}: ss={ss} outside [0.1,4.0]: {line}")
 
     def test_missing_rom_raises_not_silent_default(self):
         from automixer.uxn_stream import uxn_tick

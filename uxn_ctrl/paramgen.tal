@@ -3,12 +3,15 @@
 ( maps to (8-bit AND/SFT arithmetic, no floats) -- it never formats or computes the values )
 ( themselves; those are fixed ASCII strings baked into the ROM, matching grainneukeln's own )
 ( pool-quantized param convention. )
-( Sequences all 4 amc params the README's own scope note left for later: l, w, s, c -- one )
-( 2-bit field per param, spanning the whole 8-bit tick_lo byte (4x4x4x4 = 256 combos, up from )
-( the l/w-only ROM's period-16 cycle). )
-( input  : argv "<tick>" (uxncli feeds it nl-terminated decimal ASCII; low byte selects) )
-( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N>\n" -- a valid grainneukeln `amc` fragment. )
-( zero-page: acc=00 (short) )
+( Sequences all 5 amc params the README's own scope note left for later: l, w, s, c, ss -- one )
+( 2-bit field per param. l/w/s/c spend the whole 8-bit tick_lo byte of the FIRST argv token )
+( (4x4x4x4 = 256 combos). ss needs a 5th field and the tick byte has no bits left, so it reads a )
+( SECOND argv token (a coarser "macro tick") and picks ss from its low 2 bits -- the README's own )
+( "read 2 argv tokens" option. Net period: 256 (micro) x 4 (macro) = 1024 ticks before repeat. )
+( input  : argv "<tick>" "<macro-tick>" (uxncli feeds each nl-terminated decimal ASCII in turn) )
+( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N> ss <N>\n" -- a valid grainneukeln `amc` )
+( fragment. )
+( zero-page: acc=00 (short), token=02 (0 = awaiting 1st token, 1 = awaiting 2nd) )
 
 |0100
     ;on-console #10 DEO2
@@ -18,7 +21,8 @@
     #12 DEI
     DUP #0a NEQ ,&digit JCN
     POP
-    ,&decide JMP
+    #02 LDZ #00 EQU ,&decide JCN
+    ;&decide-ss JMP2
     &digit
     #30 SUB
     #00 SWP
@@ -66,10 +70,28 @@
     DUP #01 EQU ,&c1 JCN
     #02 EQU ,&c2 JCN
     ,&c3 JMP
-    &c0 POP ;cstr0 ;emit JSR2 ,&halt JMP
-    &c1 POP ;cstr1 ;emit JSR2 ,&halt JMP
-    &c2 ;cstr2 ;emit JSR2 ,&halt JMP
+    &c0 POP ;cstr0 ;emit JSR2 ,&arm-ss JMP
+    &c1 POP ;cstr1 ;emit JSR2 ,&arm-ss JMP
+    &c2 ;cstr2 ;emit JSR2 ,&arm-ss JMP
     &c3 ;cstr3 ;emit JSR2
+
+    &arm-ss
+    ( 1st token's line is done (no trailing newline yet -- cstrN now ends in a space, see below). )
+    ( reset acc so the 2nd argv token accumulates cleanly, then arm the token flag. )
+    #0000 #00 STZ2
+    #01 #02 STZ
+    BRK
+
+    &decide-ss
+    #01 LDZ #03 AND         ( idx_ss = macro_tick_lo & 3 )
+    DUP #00 EQU ,&ss0 JCN
+    DUP #01 EQU ,&ss1 JCN
+    #02 EQU ,&ss2 JCN
+    ,&ss3 JMP
+    &ss0 POP ;ssstr0 ;emit JSR2 ,&halt JMP
+    &ss1 POP ;ssstr1 ;emit JSR2 ,&halt JMP
+    &ss2 ;ssstr2 ;emit JSR2 ,&halt JMP
+    &ss3 ;ssstr3 ;emit JSR2
 
     &halt
     #01 #0f DEO
@@ -96,7 +118,11 @@
 @sstr1 "s 20 "0.8 20 00
 @sstr2 "s 20 "1.3 20 00
 @sstr3 "s 20 "2.0 20 00
-@cstr0 "c 20 "0,0;1000,15000 0a 00
-@cstr1 "c 20 "0,200;800,6000 0a 00
-@cstr2 "c 20 "0,500;2000,10000 0a 00
-@cstr3 "c 20 "0,1000;4000,18000 0a 00
+@cstr0 "c 20 "0,0;1000,15000 20 00
+@cstr1 "c 20 "0,200;800,6000 20 00
+@cstr2 "c 20 "0,500;2000,10000 20 00
+@cstr3 "c 20 "0,1000;4000,18000 20 00
+@ssstr0 "ss 20 "0.5 0a 00
+@ssstr1 "ss 20 "0.75 0a 00
+@ssstr2 "ss 20 "1.25 0a 00
+@ssstr3 "ss 20 "2.0 0a 00

@@ -12,10 +12,10 @@ lines (``l 500 w 4``); this module feeds each line straight into ``SampleCutter`
 ``config_automix``/``automix`` methods -- the same entry points a human types at the REPL.
 The audio engine is untouched.
 
-Scope note: the current ROM only sequences ``l`` (grain length) and ``w`` (window divider),
-both natively integer params. ``s``/``ss`` (float speed ratios) and ``c`` (frequency bands)
-would need a fixed-point or string-pool extension to the ROM -- straightforward given the same
-table-lookup pattern, just not built yet (see uxn_ctrl/README.md).
+The ROM sequences all 5 amc params (l/w/s/c/ss). l/w/s/c spend the whole 8-bit tick_lo byte of
+the first argv token (256-tick period); ``ss`` has no bits left there, so it reads a SECOND argv
+token -- a coarser "macro tick" (``tick // 256``) whose low 2 bits pick its pool entry. Net period
+1024 ticks before the whole sequence repeats. See uxn_ctrl/README.md.
 """
 import os
 import shutil
@@ -47,10 +47,14 @@ def uxn_tick(tick, rom_path=DEFAULT_ROM, uxncli_path=None):
     on any failure to load/run the ROM -- empty output is a real failure, never a silent
     default (uxncli always exits 0 even when it fails to load a ROM, so the exit code itself
     is not a usable signal; non-empty stdout is the actual success predicate).
+
+    Passes two argv tokens: `tick` itself (its low byte drives l/w/s/c) and `tick // 256` (its
+    low 2 bits drive ss) -- the ROM's own 2nd-input-byte extension for a 5th param once the
+    first token's 8 bits were fully spent (see uxn_ctrl/README.md).
     """
     cli = find_uxncli(uxncli_path)
     result = subprocess.run(
-        [cli, rom_path, str(tick)],
+        [cli, rom_path, str(tick), str(tick // 256)],
         capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL,
     )
     line = result.stdout.strip()

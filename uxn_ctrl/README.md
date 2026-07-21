@@ -18,19 +18,21 @@ part it's actually good at, keep the DSP in Python/numpy where it already works.
 
 ## What's here
 
-- **`paramgen.tal`** (uxntal) / **`paramgen.rom`** (496 bytes, prebuilt & committed, like the
-  mesh's own `lease-gate.rom`/`band-gate.rom` pilots) — a deterministic sequencer. Given one
-  argv token (a tick, decimal ASCII, `uxncli` feeds it newline-terminated), it prints one line:
-  `l <ms> w <n> s <ratio> c <lo>,<hi>;...`. Selection is **table-lookup only**, one 2-bit field
-  of the tick's low byte per parameter — `tick_lo & 3` picks among 4 `l` values,
+- **`paramgen.tal`** (uxntal) / **`paramgen.rom`** (619 bytes, prebuilt & committed, like the
+  mesh's own `lease-gate.rom`/`band-gate.rom` pilots) — a deterministic sequencer. Given two argv
+  tokens (a tick and a macro-tick, decimal ASCII, `uxncli` feeds each newline-terminated in
+  turn), it prints one line: `l <ms> w <n> s <ratio> c <lo>,<hi>;... ss <ratio>`. Selection is
+  **table-lookup only**, one 2-bit field per parameter — `tick_lo & 3` picks among 4 `l` values,
   `(tick_lo >> 2) & 3` among 4 `w` values, `(tick_lo >> 4) & 3` among 4 `s` values,
-  `(tick_lo >> 6) & 3` among 4 `c` band-pairs. All 8 bits of the tick byte are now spent, so the
-  sequence has a full 256-tick period (up from 16 when only `l`/`w` were wired) before it
-  repeats. The ROM never formats or computes the values themselves; those are fixed ASCII
-  strings baked into the ROM, the same pool-quantization `grainneukeln`'s own recipe conventions
-  already use. No floats anywhere — `s`'s ratios (`0.5`/`0.8`/`1.3`/`2.0`) and `c`'s band pairs
-  are baked-in text, parsed as a float/ints only on the Python side, exactly like `l`/`w` always
-  were.
+  `(tick_lo >> 6) & 3` among 4 `c` band-pairs — spending all 8 bits of the first token (a
+  256-tick period). `ss` reads the second token's low 2 bits (`macro_tick_lo & 3`) among 4 `ss`
+  values, since the first token had no bits left — a 1024-tick period overall before the full
+  5-param sequence repeats. The ROM never formats or computes the values themselves; those are
+  fixed ASCII strings baked into the ROM, the same pool-quantization `grainneukeln`'s own recipe
+  conventions already use. No floats anywhere — `s`'s ratios (`0.5`/`0.8`/`1.3`/`2.0`), `ss`'s
+  ratios (`0.5`/`0.75`/`1.25`/`2.0`, the same distance-from-1.0 pool `mesh-sound-reflex` quantizes
+  to) and `c`'s band pairs are baked-in text, parsed as a float/ints only on the Python side,
+  exactly like `l`/`w` always were.
 - **`build.sh`** — compiles the vendored `uxnasm`/`uxncli` (MIT, Devine Lu Linvega et al.,
   copyright headers preserved per-file) for the current platform and reassembles the ROM.
   `bin/` is gitignored; every machine (dev box, CI runner) builds its own ~26KB emulator, the
@@ -65,11 +67,11 @@ only its wire format.
 
 ## Scope / what's NOT done
 
-- `l`, `w`, `s`, `c` are sequenced (4x4x4x4 = 256-tick period). `ss` (per-sample speed, distinct
-  from `s`'s whole-track speed) is not — same bigger-string-pool approach would apply, but the
-  tick byte's 8 bits are now fully spent across the other four; a 5th field needs either a 2nd
-  input byte (e.g. hash the tick further, or read 2 argv tokens) or folding two params onto one
-  field's 4 slots.
+- `l`, `w`, `s`, `c`, `ss` are all sequenced now. `l`/`w`/`s`/`c` spend the whole 8-bit tick_lo
+  byte of the first argv token (4x4x4x4 = 256-tick period); `ss` had no bits left there, so it
+  reads a **second argv token** — a coarser "macro tick" (`tick // 256`, host-computed in
+  `uxn_stream.uxn_tick`) whose low 2 bits pick its pool entry. Net period before the whole
+  5-param sequence repeats: 256 x 4 = 1024 ticks.
 - No real-time/live control (Option B territory) — `grainneukeln` has no live audio thread to
   target. If that changes, Option A's IPC shape (stdout stream -> parser) ports over close to
   as-is; only the "one process per tick" plumbing would need to become "one persistent process,
