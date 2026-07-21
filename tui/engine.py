@@ -92,8 +92,15 @@ def _record_crash(config, source_path, exc_type, exc_msg, tb):
 
 
 def build_config(cutter, state):
-    """Map a SessionState onto the existing AutoMixerConfig. DSP untouched."""
-    channels = [ChannelConfig(t.low, t.high) for t in state.tracks]
+    """Map a SessionState onto the existing AutoMixerConfig. DSP untouched.
+
+    Dual-source grinding (2026-07-21): a non-blank ``state.source2_path`` triggers a load of the
+    second source onto the cutter (idempotent — ``_load_secondary_audio`` no-ops if the same path
+    is already loaded) BEFORE the config is built, so ``audio2`` is populated for any channel that
+    tags ``source2=True``."""
+    if state.source2_path and state.source2_path.strip():
+        cutter._load_secondary_audio(state.source2_path.strip())
+    channels = [ChannelConfig(t.low, t.high, source2=t.source2) for t in state.tracks]
     low_memory = getattr(cutter, "low_memory", False)
     return AutoMixerConfig(
         audio=cutter.audio,
@@ -115,6 +122,9 @@ def build_config(cutter, state):
         fill=state.fill,
         fill_gain_db=state.fill_gain_db,
         low_memory=low_memory,
+        env_pct=state.env_pct,
+        reverse_prob=state.reverse_prob,
+        audio2=getattr(cutter, "audio2", None),
     )
 
 

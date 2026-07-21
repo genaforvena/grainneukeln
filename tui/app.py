@@ -325,17 +325,51 @@ class GrainTUI(App):
         self.query_one(ParamsPanel).apply_to_state()
         self.query_one(ModePanel).apply_to_state()
 
+        if state.uxn_enabled:
+            return self._run_uxn(state, on_progress, on_log)
         spec = (state.series_spec or "").strip()
         if spec:
             return self._run_series(state, spec, on_progress, on_log)
         return self._run_single(state, on_progress, on_log)
 
-    def _run_single(self, state, on_progress, on_log):
-        """One-shot grind — the legacy path. Returns the exported mp3 path (or None — completion
-        arrives async via the worker message for the real engine; tests inject a sync runner)."""
-        cfg = engine.build_config(state.cutter, state)
+    def _run_uxn(self, state, on_progress, on_log):
+        """Drive renders from the Uxn param-sequencer ROM (issue #13), closing the TUI's own
+        long-standing gap (this capability previously had zero TUI exposure). Runs on the same
+        worker-thread pattern as `_run_single`/`_run_series`."""
+        from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
+
+        rom = state.uxn_rom_path.strip() or DEFAULT_ROM
+        ticks = max(1, int(state.uxn_ticks))
 
         def work():
+            on_log(f"Uxn: driving {ticks} tick(s) from {rom}"
+                    f"{' (closed-loop)' if state.uxn_feedback else ''}...")
+            lines = run_uxn_sequence(state.cutter, ticks, rom_path=rom,
+                                     closed_loop=state.uxn_feedback)
+            for i, line in enumerate(lines):
+                on_log(f"[uxn tick {i}] {line}")
+                self.call_from_thread(on_progress, (i + 1) / ticks)
+            return None  # renders were exported by run_uxn_sequence's own cutter.automix calls;
+                         # there is no single "last path" the way _run_single/_run_series track one
+
+        self.run_worker(work, thread=True, exit_on_error=False, group="grind")
+        return None
+
+    def _run_single(self, state, on_progress, on_log):
+        """One-shot grind — the legacy path. Returns the exported mp3 path (or None — completion
+        arrives async via the worker message for the real engine; tests inject a sync runner).
+
+        ``build_config`` is called INSIDE ``work()`` (on the worker thread), not before it — it may
+        do secondary-source file I/O (``cutter._load_secondary_audio``) that must not block the UI
+        thread, and a bad ``source2_path`` must surface as a logged error, not an unhandled
+        exception on the caller's thread."""
+        def work():
+            try:
+                cfg = engine.build_config(state.cutter, state)
+            except Exception as e:
+                on_log(f"Run failed: {e}")
+                self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
+                return None
             return engine.run(
                 cfg, state.output_dir,
                 on_progress=lambda f: self.call_from_thread(on_progress, f),
@@ -376,7 +410,12 @@ class GrainTUI(App):
                 # Clone the live state so the panels are not mutated as a side-effect of the sweep.
                 clone = _copy.copy(state)
                 apply_amc_to_state(clone, combo[1:])  # strip leading "amc"
-                cfg = engine.build_config(clone.cutter, clone)
+                try:
+                    cfg = engine.build_config(clone.cutter, clone)
+                except Exception as e:
+                    on_log(f"Run failed: {e}")
+                    self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
+                    return last_path_holder["path"]
                 label = describe_combination(combo[1:]) or f"combo-{i}"
                 on_log(f"[{i}/{n}] {label}  (l={clone.sample_length_ms}ms  s={clone.speed}"
                        f"  ss={clone.sample_speed}  w={clone.window_divider}  m={clone.mode})")

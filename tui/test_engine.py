@@ -70,6 +70,54 @@ class BuildConfigTest(unittest.TestCase):
         state.verbose = False
         self.assertFalse(engine.build_config(self.cutter, state).is_verbose_mode_enabled)
 
+    def test_env_pct_and_reverse_prob_map(self):
+        state = SessionState(cutter=self.cutter, sample_length_ms=480,
+                             env_pct=15.0, reverse_prob=0.3)
+        cfg = engine.build_config(self.cutter, state)
+        self.assertEqual(cfg.env_pct, 15.0)
+        self.assertEqual(cfg.reverse_prob, 0.3)
+
+    def test_track_source2_maps_to_channel_config(self):
+        state = SessionState(cutter=self.cutter, sample_length_ms=480,
+                             tracks=[TrackSpec(0, 100, source2=True), TrackSpec(100, 200)])
+        cfg = engine.build_config(self.cutter, state)
+        self.assertTrue(cfg.channels_config[0].source2)
+        self.assertFalse(cfg.channels_config[1].source2)
+
+
+class _FakeCutter:
+    """A minimal stand-in exposing exactly the surface build_config touches — no real audio I/O,
+    so the test stays fast and does not depend on a loadable second file existing on disk."""
+    def __init__(self):
+        self.audio = "fake-audio"
+        self.beats = "fake-beats"
+        self.low_memory = False
+        self.audio2 = None
+        self.load_calls = []
+
+    def _load_secondary_audio(self, path):
+        self.load_calls.append(path)
+        self.audio2 = f"audio2:{path}"
+
+
+class BuildConfigSource2LoadTest(unittest.TestCase):
+    """Dual-source grinding (2026-07-21): build_config triggers the secondary-source load itself,
+    since every run path (single/series/uxn) already calls it."""
+
+    def test_source2_path_triggers_secondary_load(self):
+        cutter = _FakeCutter()
+        state = SessionState(cutter=cutter, sample_length_ms=480, source2_path="/tmp/second.wav")
+        cfg = engine.build_config(cutter, state)
+        self.assertEqual(cutter.load_calls, ["/tmp/second.wav"])
+        self.assertEqual(cfg.audio2, "audio2:/tmp/second.wav")
+
+    def test_blank_source2_path_does_not_load(self):
+        cutter = _FakeCutter()
+        state = SessionState(cutter=cutter, sample_length_ms=480, source2_path="")
+        cfg = engine.build_config(cutter, state)
+        self.assertEqual(cutter.load_calls, [])
+        self.assertIsNone(cfg.audio2)
+
 
 class RunTest(unittest.TestCase):
     @classmethod

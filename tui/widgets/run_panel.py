@@ -33,6 +33,19 @@ class RunPanel(Static):
                         id="series_label")
             yield Input(self.state.series_spec, id="series_spec",
                         placeholder="blank = one render;  l [/2,/3,/4]  → 3 renders")
+            yield Label("Source B (optional, dual-source grinding)")
+            yield Input(self.state.source2_path, id="source2_path",
+                        placeholder="blank = single-source;  local file path")
+            with Horizontal(id="uxn_options"):
+                yield Checkbox("Uxn ctrl", value=self.state.uxn_enabled, id="opt_uxn_enabled",
+                               tooltip="Drive renders from the Uxn param-sequencer ROM (issue #13) "
+                                       "instead of a normal/series grind")
+                yield Input(self.state.uxn_rom_path, id="uxn_rom_path",
+                            placeholder="blank = vendored paramgen.rom")
+                yield Input(str(self.state.uxn_ticks), id="uxn_ticks")
+                yield Checkbox("Closed-loop", value=self.state.uxn_feedback, id="opt_uxn_feedback",
+                               tooltip="Feed each tick a measured feedback byte (closed-loop Uxn "
+                                       "control) instead of pure open-loop ticking")
             yield Button("Run grind — load a source first", id="run_btn",
                          variant="primary", disabled=True)
             yield ProgressBar(total=100, show_eta=False, id="run_progress")
@@ -52,15 +65,25 @@ class RunPanel(Static):
     def on_checkbox_changed(self, event):
         """Sync the three render-option checkboxes straight onto state — they take effect on the
         next Run, no separate apply step needed (they are booleans, nothing to validate)."""
-        cmap = {"opt_wav": "wav_export", "opt_verbose": "verbose", "opt_self_feed": "self_feed"}
+        cmap = {"opt_wav": "wav_export", "opt_verbose": "verbose", "opt_self_feed": "self_feed",
+                "opt_uxn_enabled": "uxn_enabled", "opt_uxn_feedback": "uxn_feedback"}
         attr = cmap.get(event.checkbox.id)
         if attr:
             setattr(self.state, attr, event.value)
 
     def on_input_changed(self, event):
-        # Persist the series spec as the operator types — a crash mid-typing should not lose it.
+        # Persist these as the operator types — a crash mid-typing should not lose them.
         if event.input.id == "series_spec":
             self.state.series_spec = event.value
+        elif event.input.id == "source2_path":
+            self.state.source2_path = event.value
+        elif event.input.id == "uxn_rom_path":
+            self.state.uxn_rom_path = event.value
+        elif event.input.id == "uxn_ticks":
+            try:
+                self.state.uxn_ticks = int(event.value)
+            except ValueError:
+                pass  # leave the last valid value; the field still shows what was typed
 
     def on_button_pressed(self, event):
         if event.button.id == "run_btn":
@@ -70,6 +93,19 @@ class RunPanel(Static):
         ok, reason = self.state.is_runnable()
         if not ok:
             self._log(f"Cannot run: {reason}")
+            return
+        if self.state.uxn_enabled:
+            self.query_one("#run_btn", Button).disabled = True
+            self._log(f"Running Uxn control ({self.state.uxn_ticks} ticks"
+                      f"{', closed-loop' if self.state.uxn_feedback else ''})...")
+            try:
+                path = self._runner(self.state, self._on_progress, self._log)
+            except Exception as e:
+                self._log(f"Run failed: {e}")
+                self.query_one("#run_btn", Button).disabled = False
+                return
+            if path is not None:
+                self._on_finished(path)
             return
         # Validate the series spec before kicking off — a malformed bracket ([1:5] / unknown param
         # / zero step) should surface as an actionable error, not blow up the worker thread.

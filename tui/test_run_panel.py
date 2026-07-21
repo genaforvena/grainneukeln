@@ -46,6 +46,26 @@ class RunPanelTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(app.finished, "/tmp/out.mp3")
 
+    async def test_uxn_enabled_calls_runner_and_skips_series_validation(self):
+        """When uxn_enabled is set, start() must delegate straight to the runner and NEVER reach
+        the series-spec validation path — an intentionally malformed series_spec (which would
+        normally raise a SeriesError and log it) must be silently ignored."""
+        calls = []
+        state = SessionState(cutter=object(), sample_length_ms=300, uxn_enabled=True,
+                             uxn_ticks=4, series_spec="l [100:200:0]")  # zero step -> SeriesError
+
+        def spy_runner(s, on_progress, on_log):
+            calls.append(s)
+            return "/tmp/uxn-out.mp3"
+
+        app = _Host(state, spy_runner)
+        async with app.run_test() as pilot:
+            panel = app.query_one(RunPanel)
+            panel.start()
+            await pilot.pause()
+            self.assertEqual(len(calls), 1)          # runner invoked exactly once
+            self.assertEqual(app.finished, "/tmp/uxn-out.mp3")
+
     async def test_render_option_checkboxes_sync_to_state(self):
         """WAV / Verbose / Self-feed checkboxes are the TUI's parity surface for the CLI's
         set_wav_enabled / set_verbose_enabled / aminf — toggling one writes straight to state."""
@@ -54,7 +74,9 @@ class RunPanelTest(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             for cid, attr in (("opt_wav", "wav_export"),
                               ("opt_verbose", "verbose"),
-                              ("opt_self_feed", "self_feed")):
+                              ("opt_self_feed", "self_feed"),
+                              ("opt_uxn_enabled", "uxn_enabled"),
+                              ("opt_uxn_feedback", "uxn_feedback")):
                 cb = app.query_one(f"#{cid}", Checkbox)
                 self.assertFalse(getattr(state, attr))   # default off
                 cb.value = True
