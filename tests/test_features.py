@@ -24,11 +24,11 @@ failures = []
 # centroid values look saturated near the top (four near-max, one low) — rank calibration must still
 # map min->0, max->1 and separate the low one, instead of collapsing to a constant.
 raw = [
-    {"centroid": 1.0, "rms": 0.5, "rhythm_density": 2.0},
-    {"centroid": 1.0, "rms": 0.4, "rhythm_density": 2.0},
-    {"centroid": 0.99, "rms": 0.3, "rhythm_density": 2.0},
-    {"centroid": 0.98, "rms": 0.2, "rhythm_density": 2.0},
-    {"centroid": 0.20, "rms": 0.1, "rhythm_density": 2.0},
+    {"centroid": 1.0, "rms": 0.5, "rhythm_density": 2.0, "hpss_ratio": 0.5},
+    {"centroid": 1.0, "rms": 0.4, "rhythm_density": 2.0, "hpss_ratio": 0.6},
+    {"centroid": 0.99, "rms": 0.3, "rhythm_density": 2.0, "hpss_ratio": 0.4},
+    {"centroid": 0.98, "rms": 0.2, "rhythm_density": 2.0, "hpss_ratio": 0.3},
+    {"centroid": 0.20, "rms": 0.1, "rhythm_density": 2.0, "hpss_ratio": 0.7},
 ]
 norm = calibrate(raw)
 cen = norm[:, AXES.index("centroid")]
