@@ -31,6 +31,15 @@ if __name__ == "__main__":
     parser.add_argument("source_path", nargs="?", help="Path to mp3 file to cut or YouTube URL")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
+    parser.add_argument("--uxn-ctrl", nargs="?", const="__default__", default=None,
+                        metavar="ROM_PATH",
+                        help="Drive a sequence of renders from a Uxn param-sequencer ROM "
+                             "(external control layer, issue #13). Bare flag uses the vendored "
+                             "uxn_ctrl/paramgen.rom; or pass a path to your own ROM that emits "
+                             "'l <ms> w <n>' lines on stdout. Combine with --uxn-ticks. Bypasses "
+                             "the positional `commands` list.")
+    parser.add_argument("--uxn-ticks", type=int, default=8,
+                        help="Number of ticks (renders) to drive from --uxn-ctrl (default 8).")
 
     args = parser.parse_args()
 
@@ -56,6 +65,17 @@ if __name__ == "__main__":
             print("Downloading audio from YouTube")
             import youtube.downloader as downloader
             args.source_path = downloader.download_video(args.source_path, args.destination_path)
+
+        if args.uxn_ctrl is not None:
+            from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
+            rom = DEFAULT_ROM if args.uxn_ctrl == "__default__" else args.uxn_ctrl
+            print("Starting cut tool with file: " + args.source_path)
+            cutter = sample_cut_tool.SampleCutter(args.source_path, args.destination_path,
+                                                   low_memory=args.low_memory)
+            lines = run_uxn_sequence(cutter, args.uxn_ticks, rom_path=rom)
+            for i, line in enumerate(lines):
+                print(f"[uxn tick {i}] {line}")
+            sys.exit(0)
 
         # Inject `seed N` right after the leading `amc` token when --seed is passed and the user
         # didn't already write `seed M` in the command. Lets `--seed 5` make any automix reproducible

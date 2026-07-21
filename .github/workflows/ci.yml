@@ -30,4 +30,4 @@ jobs:
     - name: Run tests
       env:
         PYTHONPATH: ${{ github.workspace }}
-      run: pytest tests/ cutter/test_normalize_loudness.py automixer/test_utils.py -v
+      run: pytest tests/ cutter/test_normalize_loudness.py automixer/test_utils.py automixer/test_uxn_stream.py -v

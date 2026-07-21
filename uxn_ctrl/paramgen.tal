@@ -1,0 +1,69 @@
+( paramgen.tal -- Uxn grain-parameter sequencer for grainneukeln, Option A external control layer )
+( genaforvena/grainneukeln#13. Deterministic table-lookup ONLY: Uxn picks WHICH pool entry a tick )
+( maps to (8-bit AND/SFT arithmetic, no floats) -- it never formats or computes the values )
+( themselves; those are fixed ASCII strings baked into the ROM, matching grainneukeln's own )
+( pool-quantized param convention. )
+( input  : argv "<tick>" (uxncli feeds it nl-terminated decimal ASCII; low byte selects) )
+( output : one line "l <N> w <M>\n" on stdout -- a valid grainneukeln `amc` param fragment. )
+( zero-page: acc=00 (short) )
+
+|0100
+    ;on-console #10 DEO2
+    BRK
+
+@on-console
+    #12 DEI
+    DUP #0a NEQ ,&digit JCN
+    POP
+    ,&decide JMP
+    &digit
+    #30 SUB
+    #00 SWP
+    #00 LDZ2 #000a MUL2
+    ADD2
+    #00 STZ2
+    BRK
+
+    &decide
+    #01 LDZ #03 AND          ( idx_l = tick_lo & 3 )
+    DUP #00 EQU ,&l0 JCN
+    DUP #01 EQU ,&l1 JCN
+    #02 EQU ,&l2 JCN
+    ,&l3 JMP
+    &l0 POP ;lstr0 ;emit JSR2 ,&wpart JMP
+    &l1 POP ;lstr1 ;emit JSR2 ,&wpart JMP
+    &l2 ;lstr2 ;emit JSR2 ,&wpart JMP
+    &l3 ;lstr3 ;emit JSR2
+
+    &wpart
+    #01 LDZ #02 SFT #03 AND  ( idx_w = (tick_lo >> 2) & 3 )
+    DUP #00 EQU ,&w0 JCN
+    DUP #01 EQU ,&w1 JCN
+    #02 EQU ,&w2 JCN
+    ,&w3 JMP
+    &w0 POP ;wstr0 ;emit JSR2 ,&halt JMP
+    &w1 POP ;wstr1 ;emit JSR2 ,&halt JMP
+    &w2 ;wstr2 ;emit JSR2 ,&halt JMP
+    &w3 ;wstr3 ;emit JSR2
+
+    &halt
+    #01 #0f DEO
+    BRK
+
+@emit ( str* -- )
+    &loop
+    LDAk #00 EQU ,&done JCN
+    LDAk #18 DEO
+    INC2 ,&loop JMP
+    &done
+    POP2
+    JMP2r
+
+@lstr0 "l 20 "200 20 00
+@lstr1 "l 20 "500 20 00
+@lstr2 "l 20 "900 20 00
+@lstr3 "l 20 "1600 20 00
+@wstr0 "w 20 "4 0a 00
+@wstr1 "w 20 "5 0a 00
+@wstr2 "w 20 "6 0a 00
+@wstr3 "w 20 "8 0a 00

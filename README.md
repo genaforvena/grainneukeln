@@ -13,6 +13,10 @@ locked to the source's groove.
 
 ## What's new (2026-07-19)
 
+- **Series runs (ranges + combos)**: bracket any sweepable param's value — `l [/2,/3,/4]`,
+  `s [0.8:1.2:0.2]`, `m [rw,q]` — and `amc` renders the cartesian product of every bracketed
+  param, one file per combination. Works in the CLI, the TUI (Run panel **Series** field), and
+  the interactive shell. See [Series runs](#series-runs--abcc-startstopstep--sweep--cartesian-combos).
 - **4-5× faster default path**: band-pass filtering is now opt-in via `c low,high`. Default (no `c`
   arg) uses raw grains — preserves full source spectrum, renders 4-5× faster. See
   [Performance](#performance) for benchmarks.
@@ -22,6 +26,10 @@ locked to the source's groove.
   dramatically faster even with band-pass filtering enabled.
 - **TUI screenshot**: see the [TUI section](#tui-recommended-headless-friendly) for a visual
   overview of the terminal interface.
+- **Uxn external control layer** (issue #13, Option A): `--uxn-ctrl` drives a sequence of
+  renders from a tiny portable [Uxn](https://wiki.xxiivv.com/site/uxn.html) ROM instead of
+  hand-written params. See [uxn_ctrl/README.md](uxn_ctrl/README.md).
+
 
 ---
 
@@ -168,6 +176,7 @@ python main.py song.mp3 output/ amc seed 42 l /2 ss 1.2
 | `nofill` `fg` | gap-fill (mode `q`) | `nofill`, `fg -12` | the euclidean pattern leaves `n−k` rest slots silent; by default they're filled with off-grid remnant grains `fg` dB (default −6) below the hits. `nofill` restores the pure silent-rest grid. Only used by `m q`. |
 | `pr` | poly streams (mode `poly`) | `pr 4;3`, `pr 4:1-2000;3:6000-15000` | `ratio[@length][:low-high]` stream specs separated by `;`. Each stream fires `ratio` grains per beat; `4;3` is a 3-against-4 polyrhythm. Optional per-stream grain length (ms) and band-pass. Only used by `m poly`. |
 | `seed` | RNG seed | `seed 42` | **Reproducibility.** Seeds every mixer's RNG so two runs with the same params produce byte-identical output. Also available as `--seed 42` CLI flag. Default: unseeded (runs differ as before). |
+| `[a,b,c]` / `[lo:hi:step]` | series sweep | `l [/2,/3,/4]`, `s [0.8:1.2:0.2]`, `m [rw,q]` | Wrap any sweepable param's value in brackets to render the **cartesian product** — one render per combination. `[a,b,c]` is a list; `[start:stop:step]` is a numeric range (inclusive). See [Series runs](#series-runs--abcc-startstopstep--sweep--cartesian-combos). |
 
 #### Quantized mode (`m q`) — designed grooves instead of a uniform fill
 
@@ -228,6 +237,55 @@ python main.py song.mp3 output/ amc m q ek 3 en 8 snap sw 66   # tresillo, snapp
 python main.py song.mp3 output/ amc snap                       # snap composed onto the rw baseline
 ```
 
+#### Series runs (`[a,b,c]`, `[start:stop:step]`) — sweep + cartesian combos
+
+Wrap any sweepable param's value in square brackets and `amc` renders the **cartesian product** of
+every bracketed param — one render per combination, each written to its own file. Without brackets,
+`amc` stays the legacy one-shot path; with brackets, it iterates. The bracket grammar is the only
+amc extension — there is no conflict with `c`'s `low,high;...` or `pr`'s `4;3` (those commas and
+semicolons live *inside* a single value, never inside `[...]`).
+
+Two forms inside the brackets:
+
+| form | meaning | example |
+|------|---------|---------|
+| `[a,b,c]` | explicit list (numbers, `/N`, `*N`, mode words, `sim`/`con`) | `l [/2,/3,/4]` · `m [rw,q]` |
+| `[start:stop:step]` | numeric range, inclusive endpoints | `l [100:300:50]` → 100,150,200,250,300 |
+
+Sweepable params: `l` `s` `ss` `w` `m` `ek` `en` `sw` `fg` `lk` `lib` `seed`. Parameters *not*
+bracketed stay constant across every render in the sweep (their value is held while the bracketed
+ones vary). Ratios inside a list (`/2`, `*3`) resolve against the current base at expand time,
+exactly as a single `l /2` would.
+
+```bash
+# 3 renders — same recipe, only grain length varies
+python main.py song.mp3 output/ amc l [/2,/3,/4]
+
+# 5 renders — numeric range, 50ms step
+python main.py song.mp3 output/ amc l [100:300:50]
+
+# 6 renders — cartesian sweep of speed × sample-speed
+python main.py song.mp3 output/ amc s [0.8,1.0,1.2] ss [1.0,1.5]
+
+# 4 renders — vary mode + window together (l held constant)
+python main.py song.mp3 output/ amc l 300 m [rw,q] w [2,4]
+
+# 5 renders — same recipe, only RNG differs (the "variance pack": same params, different grain picks)
+python main.py song.mp3 output/ amc seed [1,2,3,4,5]
+```
+
+Each render's filename encodes its own params (e.g. `l150_w4_s0.9_…`) so you can tell combinations
+apart at a glance. Quote the bracket in the shell to defeat globbing:
+
+```bash
+python main.py song.mp3 output/ amc 'l' '[/2,/3,/4]'   # quotes are safest
+```
+
+The TUI exposes the same grammar in the Run panel — type e.g. `l [/2,/3] s [0.8,1.0]` into the
+**Series** field and `Ctrl+R` runs every combination, with `i/n` progress per render. The
+**interactive shell** arms the series on `amc …` and runs all combinations on `am`; `am 3` runs
+only the third combination (1-based), useful for re-rendering one entry from a sweep.
+
 ### Interactive shell
 
 Run **without** automix params to drop into an interactive cutter
@@ -242,7 +300,8 @@ Run **without** automix params to drop into an interactive cutter
 | `cut` / `cut -a` | export the current selection (`-a` snaps to a nearby amplitude peak) |
 | `autocut [n]` | export many cuts automatically |
 | `am` | automix the whole track |
-| `amc …` / `amc info` | set automix params / show the current config |
+| `am N` | after a series `amc l [/2,/3,/4]`, render only combination #N (1-based) |
+| `amc …` / `amc info` | set automix params / show the current config (a series spec arms `am`) |
 | `load <file>` | load a different track |
 | `plot` / `info` | view amplitude / current settings |
 | `set_wav_enabled` / `set_wav_disabled` | also export WAV alongside MP3 |
