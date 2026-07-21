@@ -46,6 +46,12 @@ if __name__ == "__main__":
                              "the positional `commands` list.")
     parser.add_argument("--uxn-ticks", type=int, default=8,
                         help="Number of ticks (renders) to drive from --uxn-ctrl (default 8).")
+    parser.add_argument("--uxn-feedback", action="store_true",
+                        help="Closed-loop Uxn control (issue #13 extension): each tick's ROM call "
+                             "is fed a feedback byte measured from the current source's rhythm "
+                             "density, so the sequencer's channel-band choice reacts to the actual "
+                             "audio instead of ticking open-loop. Only meaningful with --uxn-ctrl; "
+                             "default off (byte-identical to today's open-loop behaviour).")
 
     args = parser.parse_args()
 
@@ -102,7 +108,8 @@ if __name__ == "__main__":
             print("Starting cut tool with file: " + args.source_path)
             cutter = sample_cut_tool.SampleCutter(args.source_path, args.destination_path,
                                                    low_memory=args.low_memory)
-            lines = run_uxn_sequence(cutter, args.uxn_ticks, rom_path=rom)
+            lines = run_uxn_sequence(cutter, args.uxn_ticks, rom_path=rom,
+                                     closed_loop=args.uxn_feedback)
             for i, line in enumerate(lines):
                 print(f"[uxn tick {i}] {line}")
             sys.exit(0)
