@@ -104,3 +104,38 @@ if failures:
     sys.exit(1)
 print("ok: similarity keeps grains close, contrast pushes them apart (measurably different), "
       "and too-few-grains degrades honestly")
+
+
+# ---- Grain shaping wiring (2026-07-21): env_pct/reverse_prob reach _render_grain -----------------
+import unittest
+from unittest.mock import patch
+
+
+class LibraryMixerGrainShapeTest(unittest.TestCase):
+    def test_env_zero_never_calls_fade(self):
+        # varied_source(5) -> 20 beat-grid grains (>1) so apply_envelope is provably called more
+        # than once, not just on a single degenerate grain.
+        track5, beats5 = varied_source(5)
+        cfg = AutoMixerConfig(track5, beats5, sample_length=400, mode="lib",
+                               lib_policy="similarity", lib_clusters=4, env_pct=0.0)
+        with patch("automixer.mixers.library_mixer.apply_envelope",
+                   side_effect=lambda seg, pct: seg) as spy:
+            LibraryAutoMixer().mix(cfg)
+        self.assertGreater(spy.call_count, 1)
+        for call in spy.call_args_list:
+            self.assertEqual(call.args[1], 0.0)
+
+    def test_reverse_prob_one_reverses_every_grain(self):
+        track5, beats5 = varied_source(5)
+        cfg = AutoMixerConfig(track5, beats5, sample_length=400, mode="lib",
+                               lib_policy="similarity", lib_clusters=4, reverse_prob=1.0, seed=1)
+        with patch("automixer.mixers.library_mixer.maybe_reverse",
+                   wraps=lambda seg, prob, rng: seg.reverse() if prob >= 1.0 else seg) as spy:
+            LibraryAutoMixer().mix(cfg)
+        self.assertGreater(spy.call_count, 1)
+        for call in spy.call_args_list:
+            self.assertEqual(call.args[1], 1.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

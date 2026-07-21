@@ -10,11 +10,14 @@ space, then **sequences** grains with a Markov policy over the clusters:
 The two policies produce measurably different grain-to-grain feature distances (that's the acceptance
 gate — not "both modes run"). Degrades honestly: too few grains to cluster is reported, never faked.
 """
+import random
+
 from pydub import AudioSegment
 from tqdm import tqdm
 
 from automixer.effects.band_pass import band_pass_filer
 from automixer.effects.change_tempo import change_audioseg_tempo
+from automixer.effects.grain_shape import maybe_reverse, apply_envelope
 from automixer.features import measure_grain, calibrate, cluster, next_cluster
 from automixer.utils import beat_interval, apply_seed, concat_bit_identical
 
@@ -85,12 +88,16 @@ class LibraryAutoMixer:
         return out
 
     def _render_grain(self, config, grain):
+        reverse_prob = float(getattr(config, "reverse_prob", 0.0))
+        env_pct = float(getattr(config, "env_pct", 8.0))
         out = AudioSegment.silent(duration=len(grain))
         for channel in config.channels_config:
+            channel_chunk = maybe_reverse(grain, reverse_prob, random.Random())
             if channel.bypass:
-                out = out.overlay(grain)
+                out = out.overlay(channel_chunk)
             else:
-                out = out.overlay(band_pass_filer(channel.low_pass, channel.high_pass, grain))
+                out = out.overlay(band_pass_filer(channel.low_pass, channel.high_pass, channel_chunk))
         if config.sample_speed != 1.0:
             out = change_audioseg_tempo(out, config.sample_speed, verbose=config.is_verbose_mode_enabled)
+        out = apply_envelope(out, env_pct)
         return out
