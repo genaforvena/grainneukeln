@@ -8,7 +8,7 @@ and silently drops out of the distance metric). Clustering + a Markov policy ove
 sequenced (non-random) grain selection.
 """
 
-AXES = ("centroid", "rms", "rhythm_density")
+AXES = ("centroid", "rms", "rhythm_density", "hpss_ratio")
 
 
 def _to_mono_float(seg):
@@ -24,16 +24,19 @@ def _to_mono_float(seg):
 
 
 def measure_grain(seg):
-    """Measure one grain (a pydub ``AudioSegment``) on the three axes.
+    """Measure one grain (a pydub ``AudioSegment``) on the four axes.
 
     ``rhythm_density`` is onsets per second *within the grain* — it discriminates real, rhythmic
-    material (many onsets/sec) from an isolated impulse (a single transient in the window → ~0)."""
+    material (many onsets/sec) from an isolated impulse (a single transient in the window → ~0).
+    ``hpss_ratio`` is percussive energy / (harmonic + percussive energy) via
+    ``librosa.effects.hpss`` — the SAME measure tract (no second analyzer), giving `lib con`
+    (contrast) a real percussive-vs-tonal axis to jump across, not just loudness/brightness/density."""
     import numpy as np
     import librosa
 
     y, sr = _to_mono_float(seg)
     if y.size < 128:
-        return {"centroid": 0.0, "rms": 0.0, "rhythm_density": 0.0}
+        return {"centroid": 0.0, "rms": 0.0, "rhythm_density": 0.0, "hpss_ratio": 0.0}
     centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
     rms = float(np.mean(librosa.feature.rms(y=y)))
     dur = len(y) / float(sr)
@@ -42,7 +45,15 @@ def measure_grain(seg):
     except Exception:
         onsets = []
     rhythm_density = (len(onsets) / dur) if dur > 0 else 0.0
-    return {"centroid": centroid, "rms": rms, "rhythm_density": float(rhythm_density)}
+    harmonic, percussive = librosa.effects.hpss(y)
+    h_energy = float(np.sum(harmonic ** 2))
+    p_energy = float(np.sum(percussive ** 2))
+    total_energy = h_energy + p_energy
+    hpss_ratio = (p_energy / total_energy) if total_energy > 0 else 0.0
+    return {
+        "centroid": centroid, "rms": rms, "rhythm_density": float(rhythm_density),
+        "hpss_ratio": float(hpss_ratio),
+    }
 
 
 def calibrate(feature_dicts, axes=AXES):
