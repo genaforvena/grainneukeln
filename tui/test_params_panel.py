@@ -76,3 +76,43 @@ class ParamsPanelTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any("speed" in e.lower() for e in errs))
             self.assertTrue(any("divider" in e.lower() for e in errs))
             self.assertEqual(state.speed, 1.0)               # unchanged
+
+    async def test_env_rv_inputs_render_current_state_values(self):
+        state = SessionState(env_pct=12.0, reverse_prob=0.25)
+        app = _Host(state)
+        async with app.run_test() as pilot:
+            panel = app.query_one(ParamsPanel)
+            self.assertEqual(panel.query_one("#env_pct", Input).value, "12.0")
+            self.assertEqual(panel.query_one("#reverse_prob", Input).value, "0.25")
+
+    async def test_env_rv_apply_to_state(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test() as pilot:
+            panel = app.query_one(ParamsPanel)
+            panel.query_one("#env_pct", Input).value = "20"
+            panel.query_one("#reverse_prob", Input).value = "0.6"
+            errs = panel.apply_to_state()
+            self.assertEqual(errs, [])
+            self.assertEqual(state.env_pct, 20.0)
+            self.assertEqual(state.reverse_prob, 0.6)
+
+    async def test_env_pct_out_of_range_reported_not_written(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test() as pilot:
+            panel = app.query_one(ParamsPanel)
+            panel.query_one("#env_pct", Input).value = "80"   # > 50
+            errs = panel.apply_to_state()
+            self.assertTrue(any("envelope" in e.lower() for e in errs))
+            self.assertEqual(state.env_pct, 8.0)              # unchanged (default)
+
+    async def test_reverse_prob_out_of_range_reported_not_written(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test() as pilot:
+            panel = app.query_one(ParamsPanel)
+            panel.query_one("#reverse_prob", Input).value = "1.5"   # > 1.0
+            errs = panel.apply_to_state()
+            self.assertTrue(any("reverse" in e.lower() for e in errs))
+            self.assertEqual(state.reverse_prob, 0.0)         # unchanged (default)

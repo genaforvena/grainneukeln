@@ -47,6 +47,10 @@ class ParamsPanel(Static):
             yield Input(str(self.state.window_divider), id="window_divider")
             yield Label("Sample length (ms) · /2 /3 *2", id="sample_length_label")
             yield Input(str(self.state.sample_length_ms), id="sample_length")
+            yield Label("Envelope taper %% (0-50)")
+            yield Input(str(self.state.env_pct), id="env_pct")
+            yield Label("Reverse probability (0-1)")
+            yield Input(str(self.state.reverse_prob), id="reverse_prob")
 
     def set_beat(self, beat_ms):
         """Show the beat period in the label so /2 /3 *2 have a visible base."""
@@ -101,6 +105,8 @@ class ParamsPanel(Static):
         speed = _float("speed", 0.1, 10.0, "Speed")
         ss = _float("sample_speed", 0.1, 10.0, "Sample speed")
         wd = _int("window_divider", 1, 10, "Window divider")
+        env_pct = _float("env_pct", 0.0, 50.0, "Envelope taper %%")
+        reverse_prob = _float("reverse_prob", 0.0, 1.0, "Reverse probability")
 
         # Sample length accepts /N *N (transform current) as well as a bare number, matching the
         # on-Enter handler — so a value left as "/2" at Run time still resolves instead of erroring.
@@ -118,6 +124,10 @@ class ParamsPanel(Static):
             self.state.sample_speed = ss
         if wd is not None:
             self.state.window_divider = wd
+        if env_pct is not None:
+            self.state.env_pct = env_pct
+        if reverse_prob is not None:
+            self.state.reverse_prob = reverse_prob
         if sl is not None:
             self.state.sample_length_ms = sl
             sl_input.value = str(sl)
