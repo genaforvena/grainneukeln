@@ -33,5 +33,23 @@ class ParseStreamSpecTest(unittest.TestCase):
             parse_stream_spec("notaratio")
 
 
+from automixer.config import AutoMixerConfig
+
+
+class GrainShapeDefaultsTest(unittest.TestCase):
+    def test_env_pct_defaults_on(self):
+        cfg = AutoMixerConfig(audio=None, beats=[], sample_length=200)
+        self.assertEqual(cfg.env_pct, 8.0)
+
+    def test_reverse_prob_defaults_off(self):
+        cfg = AutoMixerConfig(audio=None, beats=[], sample_length=200)
+        self.assertEqual(cfg.reverse_prob, 0.0)
+
+    def test_both_are_overridable(self):
+        cfg = AutoMixerConfig(audio=None, beats=[], sample_length=200, env_pct=0, reverse_prob=0.4)
+        self.assertEqual(cfg.env_pct, 0.0)
+        self.assertEqual(cfg.reverse_prob, 0.4)
+
+
 if __name__ == "__main__":
     unittest.main()

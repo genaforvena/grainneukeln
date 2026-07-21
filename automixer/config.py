@@ -86,7 +86,9 @@ class AutoMixerConfig:
                  fill=True,
                  fill_gain_db=-6.0,
                  seed=None,
-                 low_memory=False):
+                 low_memory=False,
+                 env_pct=8.0,
+                 reverse_prob=0.0):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -131,6 +133,11 @@ class AutoMixerConfig:
         self.fill_gain_db = fill_gain_db
         self.seed = seed
         self.low_memory = low_memory
+        # Grain shaping (2026-07-21): attack/release taper (% of grain length, always-on unless
+        # explicitly zeroed -- a hard-cut boundary is a defect, not a creative choice) and
+        # per-grain reverse probability (0..1, default off -- today's character unchanged).
+        self.env_pct = float(env_pct)
+        self.reverse_prob = float(reverse_prob)
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
