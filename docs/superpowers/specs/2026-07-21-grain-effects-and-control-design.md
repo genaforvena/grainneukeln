@@ -103,14 +103,22 @@ beyond passing the new axis through.
 
 ### 5. Closed-loop Uxn control
 
-- `paramgen.tal`'s argv contract becomes **always 3 tokens** (`tick`, `macro_tick`, `feedback`),
-  read via a 3rd token-state in the existing zero-page state machine. `feedback`'s low 2 bits
-  perturb channel-band selection: `idx_c = ((tick_lo >> 6) & 3) EOR (feedback_lo & 3)`. Because
+- `paramgen.tal`'s argv contract becomes **always 3 tokens, in the order `feedback`, `tick`,
+  `macro_tick`** — feedback must arrive **first**, not last: `c`'s string is emitted while
+  processing the *first* line the ROM reads, so a feedback value read *after* `c` has already
+  been printed could never influence it. Reading order is what the state machine keys off (each
+  token is a full newline-terminated line; there is no way to "peek ahead"), so feedback owns
+  token-state 0 (stash-only, no emit), tick owns state 1 (existing `l`/`w`/`s`/`c` logic), macro_tick
+  keeps state 2 (existing `ss` logic + halt).
+- `feedback`'s low 2 bits perturb channel-band selection: at `&cpart`,
+  `idx_c = ((tick_lo >> 6) & 3) EOR (feedback_lo & 3)` (a new persistent zero-page byte at `03`
+  holds the stashed feedback value across the token-0 → token-1 transition). Because
   `x EOR 0 == x`, passing `feedback=0` is a **true no-op** — today's ROM output is byte-for-byte
   unchanged for any tick when feedback is 0, preserving every existing `test_uxn_stream.py`
   assertion.
-- `automixer/uxn_stream.py::uxn_tick` gains a `feedback=0` parameter, always passed as the 3rd
-  argv token (so the ROM's contract is uniform whether or not closed-loop is in use).
+- `automixer/uxn_stream.py::uxn_tick` gains a `feedback=0` parameter, always passed as the
+  **first** argv token, ahead of `tick`/`macro_tick` (so the ROM's contract is uniform whether or
+  not closed-loop is in use).
 - `run_uxn_sequence` gains a `closed_loop=False` flag. When `True`, each tick computes a real
   feedback byte from the *current* source: sample a handful of evenly-spaced beat-grid grains,
   measure via the existing `features.measure_grain` (reusing the one measure tract — no new
