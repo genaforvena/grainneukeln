@@ -116,5 +116,29 @@ class SeriesCLITest(unittest.TestCase):
             self.assertEqual(len(os.listdir(d)), 1)
 
 
+class EnvRvTokenParsingTest(unittest.TestCase):
+    """Grain shaping (2026-07-21): `amc env <pct>` / `amc rv <0..1>` token parsing into
+    AutoMixerConfig.env_pct / .reverse_prob. Uses the same os.path.abspath(ASSET) pattern as the
+    rest of this file — cutter/test_sample_cut_tool.py's bare "../assets/..." path only resolves
+    when cwd is cutter/, which is not true under `pytest` run from the repo root (4 pre-existing,
+    unrelated failures there, commit 4906246)."""
+
+    def setUp(self):
+        self.cutter = SampleCutter(os.path.abspath(ASSET), os.path.abspath("output"))
+
+    def test_env_token_sets_env_pct(self):
+        self.cutter.config_automix("amc env 15")
+        self.assertEqual(self.cutter.auto_mixer_config.env_pct, 15.0)
+
+    def test_rv_token_sets_reverse_prob(self):
+        self.cutter.config_automix("amc rv 0.3")
+        self.assertEqual(self.cutter.auto_mixer_config.reverse_prob, 0.3)
+
+    def test_defaults_when_absent(self):
+        self.cutter.config_automix("amc l 200")
+        self.assertEqual(self.cutter.auto_mixer_config.env_pct, 8.0)
+        self.assertEqual(self.cutter.auto_mixer_config.reverse_prob, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

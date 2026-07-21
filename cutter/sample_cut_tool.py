@@ -433,6 +433,15 @@ class SampleCutter:
         if "fg" in args:
             fill_gain_db = float(args[args.index("fg") + 1])
 
+        # Grain shaping (2026-07-21): `env <pct>` attack/release taper (0 disables, default 8);
+        # `rv <0..1>` per-grain reverse probability (default 0, off).
+        env_pct = getattr(self.auto_mixer_config, "env_pct", 8.0)
+        if "env" in args:
+            env_pct = float(args[args.index("env") + 1])
+        reverse_prob = getattr(self.auto_mixer_config, "reverse_prob", 0.0)
+        if "rv" in args:
+            reverse_prob = float(args[args.index("rv") + 1])
+
         channels_config = self.auto_mixer_config.channels_config
         if "c" in args:
             channels_config = []
@@ -486,6 +495,8 @@ class SampleCutter:
             fill=fill,
             fill_gain_db=fill_gain_db,
             seed=seed,
+            env_pct=env_pct,
+            reverse_prob=reverse_prob,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
@@ -509,6 +520,12 @@ class SampleCutter:
         )
         print(
             "  l <length>: set the length of the samples. Example: amc l 0.5 sets the length of each sample to 0.5. But it is preferable to use divisions with w command instead "
+        )
+        print(
+            "  env <pct>: attack/release taper as %% of grain length (default 8, 0 disables). Example: amc env 15"
+        )
+        print(
+            "  rv <0..1>: probability each grain is reversed (default 0). Example: amc rv 0.3"
         )
 
     def _save_mix(self, mix):
