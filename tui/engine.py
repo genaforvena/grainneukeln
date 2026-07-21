@@ -118,11 +118,15 @@ def build_config(cutter, state):
     )
 
 
-def run(config, out_dir, on_progress=None, wav_export=False, source_path=""):
+def run(config, out_dir, on_progress=None, wav_export=False, source_path="", name_suffix=""):
     """Render one grind and export an audible mp3 (and optionally a WAV alongside).
 
     Returns the output mp3 path. WAV is written next to the mp3 when ``wav_export`` is set,
     matching the CLI's ``set_wav_enabled`` — the .mp3 is always written, the .wav is the extra.
+
+    ``name_suffix`` is an optional short label appended to the base filename — used by the TUI's
+    series runner so each combination's export is distinguishable (e.g. ``..._w2_s0.9.mp3``).
+    Empty (the default) preserves the legacy ``grain_cut<N>_<stamp>`` name for single renders.
 
     Crash contract: if the grind raises, the recipe + source + traceback are appended to
     ``CRASH_LOG`` BEFORE the exception re-raises — so a process-killing OOM or segfault still
@@ -141,7 +145,13 @@ def run(config, out_dir, on_progress=None, wav_export=False, source_path=""):
         mix = normalize_loudness(mix)
 
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        base = f"grain_cut{int(config.sample_length)}_{stamp}"
+        # When a series suffix is present, embed it in the filename so the operator can correlate
+        # output file ↔ recipe at a glance. Sanitize: keep it short and filename-safe.
+        safe_suffix = ""
+        if name_suffix:
+            safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name_suffix)[:80]
+            safe_suffix = f"_{safe}"
+        base = f"grain_cut{int(config.sample_length)}{safe_suffix}_{stamp}"
         mp3_path = os.path.join(out_dir, base + ".mp3")
         mix.export(mp3_path, format="mp3")
         if wav_export:

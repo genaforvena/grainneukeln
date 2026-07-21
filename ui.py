@@ -10,6 +10,7 @@ from cutter.sample_cut_tool import SampleCutter
 from automixer.config import AutoMixerConfig
 from automixer.runner import AutoMixerRunner
 from youtube.downloader import download_video
+import youtube.search as yts
 from ui.main_window import MainWindow
 
 def main():
@@ -26,9 +27,22 @@ def main():
     window = MainWindow()
     
     if args.source:
-        if args.source.startswith("https://www.youtube.com/"):
+        if yts.is_url(args.source):
             window.output_text.append("Downloading audio from YouTube")
             file_path = download_video(args.source, args.destination)
+        elif not yts.is_local_path(args.source):
+            # Free-text → search → auto-pick #1 (the ranker's official-upload pick).
+            # Same convenience as the CLI/TUI: type "artist + track", get the track.
+            window.output_text.append(f"Searching YouTube for “{args.source}”…")
+            results = yts.search(args.source)
+            if not results:
+                window.output_text.append(f"No results for “{args.source}”.")
+                file_path = None
+            else:
+                chosen = results[0]
+                window.output_text.append(
+                    f"Loading: {chosen['title']}  ({chosen['channel']})")
+                file_path = download_video(chosen["url"], args.destination)
         else:
             file_path = args.source
         

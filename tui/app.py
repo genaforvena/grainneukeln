@@ -248,6 +248,7 @@ class GrainTUI(App):
             "  Tracks (Ctrl+4 first): a add · d remove · type low/high + Enter.\n"
             "  Outputs (Ctrl+6 first): space play/pause · s stop · . ff 10s · , back 10s · g refresh.\n"
             "  Run: Ctrl+R · Info: i · Crash log: Ctrl+T · Help: ? · Quit: q.\n"
+            "  Series: in Run (Ctrl+5), type e.g. `l [/2,/3] s [0.8,1.0]` to render the cartesian product.\n"
             "Crash-tolerant: state is saved before every grind — restart after a crash restores it.",
             title="How to grind", timeout=14)
 
@@ -323,6 +324,15 @@ class GrainTUI(App):
     def _threaded_runner(self, state, on_progress, on_log):
         self.query_one(ParamsPanel).apply_to_state()
         self.query_one(ModePanel).apply_to_state()
+
+        spec = (state.series_spec or "").strip()
+        if spec:
+            return self._run_series(state, spec, on_progress, on_log)
+        return self._run_single(state, on_progress, on_log)
+
+    def _run_single(self, state, on_progress, on_log):
+        """One-shot grind — the legacy path. Returns the exported mp3 path (or None — completion
+        arrives async via the worker message for the real engine; tests inject a sync runner)."""
         cfg = engine.build_config(state.cutter, state)
 
         def work():
@@ -336,6 +346,58 @@ class GrainTUI(App):
         on_log(f"Rendering {len(state.tracks)} track(s), cut {state.sample_length_ms}ms…")
         self.run_worker(work, thread=True, exit_on_error=False, group="grind")
         return None  # completion arrives async via on_worker_state_changed
+
+    def _run_series(self, state, spec, on_progress, on_log):
+        """Series grind (2026-07-19): expand the series spec to a cartesian product of amc token
+        lists, render one grind per combination against a CLONE of the live state (so the visible
+        params panels are untouched), and return the last exported path. Each combination is logged
+        so the operator can correlate file ↔ recipe.
+
+        The live state's panel params form the BASE; the series tokens override the sweepable ones
+        per combination. Non-sweepable params (multitrack, snap/fill flags, groove) stay constant
+        across the series, exactly as the CLI does.
+        """
+        import copy as _copy
+        from automixer.series import expand_amc_series, apply_amc_to_state, describe_combination, SeriesError
+
+        tokens = ["amc"] + spec.split()
+        try:
+            combos = expand_amc_series(tokens)
+        except SeriesError as e:
+            on_log(f"Series error: {e}")
+            return None
+        n = len(combos)
+        on_log(f"Series: {n} combination(s) queued.")
+
+        last_path_holder = {"path": None}
+
+        def work():
+            for i, combo in enumerate(combos, 1):
+                # Clone the live state so the panels are not mutated as a side-effect of the sweep.
+                clone = _copy.copy(state)
+                apply_amc_to_state(clone, combo[1:])  # strip leading "amc"
+                cfg = engine.build_config(clone.cutter, clone)
+                label = describe_combination(combo[1:]) or f"combo-{i}"
+                on_log(f"[{i}/{n}] {label}  (l={clone.sample_length_ms}ms  s={clone.speed}"
+                       f"  ss={clone.sample_speed}  w={clone.window_divider}  m={clone.mode})")
+                # Per-combination progress: scale the engine's 0..1 fraction into the i-th slice of
+                # n. So the bar advances smoothly across the whole series, not jumping per render.
+                base = (i - 1) / n
+                span = 1.0 / n
+                path = engine.run(
+                    cfg, state.output_dir,
+                    on_progress=lambda f, b=base, s=span:
+                        self.call_from_thread(on_progress, b + s * f),
+                    wav_export=state.wav_export,
+                    source_path=state.source_path,
+                    name_suffix=label,
+                )
+                last_path_holder["path"] = path
+                on_log(f"[{i}/{n}] done → {os.path.basename(path)}")
+            return last_path_holder["path"]
+
+        self.run_worker(work, thread=True, exit_on_error=False, group="grind")
+        return None
 
     def on_worker_state_changed(self, event):
         # Only the grind worker feeds the run panel — the SourcePanel load worker also raises these

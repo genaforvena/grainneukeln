@@ -55,6 +55,11 @@ class SessionState:
     wav_export: bool = False         # also write the .wav alongside the .mp3
     verbose: bool = False            # pass is_verbose_mode_enabled through to the mixers
     self_feed: bool = False          # after a grind, reload the exported mp3 as the source (aminf)
+    # Series runs (2026-07-19): sweep one or more amc params across a list/range and render the
+    # cartesian product from a single Run. Empty (the default) = single-shot grind — the legacy
+    # behaviour. Non-empty = the runner expands the spec and iterates one render per combination,
+    # using the params above as the constant base. See automixer/series.py for the grammar.
+    series_spec: str = ""
     # Crash-tolerance (operator 2026-07-19: "let it crash, but don't lose session/data; record what
     # caused it"). ``source_path`` is the path/URL last loaded into ``cutter`` — persisted so a
     # crashed session can re-load the SAME source on restart without the operator retyping it.
@@ -84,7 +89,7 @@ class SessionState:
         "speed", "sample_speed", "window_divider", "sample_length_ms",
         "tracks", "output_dir", "mode", "euclid_k", "euclid_n", "streams_spec",
         "lib_policy", "lib_clusters", "snap", "swing", "fill", "fill_gain_db",
-        "wav_export", "verbose", "self_feed", "source_path",
+        "wav_export", "verbose", "self_feed", "source_path", "series_spec",
     )
 
     def to_dict(self):

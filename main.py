@@ -28,9 +28,15 @@ if __name__ == "__main__":
     parser.add_argument("--low-memory", action="store_true",
                         help="Enable aggressive garbage collection for memory-constrained nodes. "
                              "Slower but uses ~30%% less peak RAM on long sources.")
-    parser.add_argument("source_path", nargs="?", help="Path to mp3 file to cut or YouTube URL")
+    parser.add_argument("source_path", nargs="?",
+                        help="Path to mp3 file to cut, YouTube URL, or free-text search "
+                             "(artist + track → loads the official upload).")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
+    parser.add_argument("--pick", type=int, default=None,
+                        help="When source_path is a search query, pick result N (1-based) instead of "
+                             "the ranker's #1. The list is printed before download so you can re-run "
+                             "with the right N without re-searching.")
     parser.add_argument("--uxn-ctrl", nargs="?", const="__default__", default=None,
                         metavar="ROM_PATH",
                         help="Drive a sequence of renders from a Uxn param-sequencer ROM "
@@ -61,10 +67,34 @@ if __name__ == "__main__":
 
         args.destination_path = os.path.abspath(args.destination_path)
 
-        if args.source_path.startswith("https://www.youtube.com/"):
+        # Free-text that isn't a URL or local path is treated as a YouTube search
+        # for "artist + track". The ranker (youtube.search) biases #1 toward the
+        # official Topic/VEVO upload — so `gnk "Radiohead - Karma Police" out/ amc`
+        # pulls the studio track, not a fan cover. ``--pick N`` overrides.
+        import youtube.search as yts
+        if yts.is_url(args.source_path):
             print("Downloading audio from YouTube")
             import youtube.downloader as downloader
             args.source_path = downloader.download_video(args.source_path, args.destination_path)
+        elif not yts.is_local_path(args.source_path):
+            query = args.source_path
+            print(f"Searching YouTube for “{query}”…")
+            results = yts.search(query)
+            if not results:
+                print(f"No results for “{query}”.")
+                sys.exit(1)
+            pick = args.pick - 1 if args.pick and args.pick > 0 else 0
+            if pick >= len(results):
+                print(f"--pick {args.pick} is out of range (only {len(results)} results).")
+                sys.exit(1)
+            for i, r in enumerate(results, 1):
+                marker = "▶" if i - 1 == pick else " "
+                print(f"  {marker} {i}. {r['title']}")
+                print(f"       {r['channel']} · {yts._format_duration(r.get('duration'))}")
+            chosen = results[pick]
+            print(f"Loading #{pick + 1}: {chosen['title']}")
+            import youtube.downloader as downloader
+            args.source_path = downloader.download_video(chosen["url"], args.destination_path)
 
         if args.uxn_ctrl is not None:
             from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
