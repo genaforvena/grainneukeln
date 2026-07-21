@@ -67,7 +67,8 @@ class SessionStatePersistenceTest(unittest.TestCase):
     def test_tracks_serialize_as_list_of_dicts(self):
         s = SessionState(tracks=[TrackSpec(80, 2000), TrackSpec(2000, 12000)])
         d = s.to_dict()
-        self.assertEqual(d["tracks"], [{"low": 80, "high": 2000}, {"low": 2000, "high": 12000}])
+        self.assertEqual(d["tracks"], [{"low": 80, "high": 2000, "source2": False},
+                                        {"low": 2000, "high": 12000, "source2": False}])
 
     def test_roundtrip_preserves_every_persisted_field(self):
         original = SessionState(
@@ -135,4 +136,36 @@ class SessionStatePersistenceTest(unittest.TestCase):
         """A write failure (permissions, full disk) must not crash the TUI — return False."""
         s = SessionState()
         self.assertFalse(s.save("/nonexistent/dir/deep/session.json"))
+
+
+class GrainEffectsSource2AndUxnPersistenceTest(unittest.TestCase):
+    """Task 5 (TUI parity): env/rv, source2, and Uxn control fields must round-trip exactly like
+    every other persisted field — the crash-tolerance contract doesn't get a new-field exemption."""
+
+    def test_tracks_source2_roundtrips(self):
+        s = SessionState(tracks=[TrackSpec(0, 100, source2=True), TrackSpec(100, 200)])
+        restored = SessionState.from_dict(s.to_dict())
+        self.assertTrue(restored.tracks[0].source2)
+        self.assertFalse(restored.tracks[1].source2)
+
+    def test_grain_effects_and_uxn_fields_roundtrip(self):
+        original = SessionState(env_pct=15.0, reverse_prob=0.4, uxn_enabled=True, uxn_ticks=12)
+        restored = SessionState.from_dict(original.to_dict())
+        for field in ("env_pct", "reverse_prob", "uxn_enabled", "uxn_ticks"):
+            self.assertEqual(getattr(original, field), getattr(restored, field),
+                             f"roundtrip drift on {field}")
+
+    def test_missing_new_keys_default_on_load(self):
+        """An old session file (pre-Task-5) has none of the new keys — loading it must still
+        construct a valid state with the new fields at their documented defaults."""
+        d = {"speed": 2.0, "tracks": [{"low": 0, "high": 100}]}
+        s = SessionState.from_dict(d)
+        self.assertEqual(s.env_pct, 8.0)
+        self.assertEqual(s.reverse_prob, 0.0)
+        self.assertEqual(s.source2_path, "")
+        self.assertFalse(s.uxn_enabled)
+        self.assertEqual(s.uxn_rom_path, "")
+        self.assertEqual(s.uxn_ticks, 8)
+        self.assertFalse(s.uxn_feedback)
+        self.assertFalse(s.tracks[0].source2)
 

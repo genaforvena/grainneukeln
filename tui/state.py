@@ -7,6 +7,7 @@ import os
 class TrackSpec:
     low: int
     high: int
+    source2: bool = False
 
     def valid(self) -> bool:
         return 0 <= self.low < self.high
@@ -65,6 +66,20 @@ class SessionState:
     # crashed session can re-load the SAME source on restart without the operator retyping it.
     # ``cutter`` itself is the in-memory audio (megabytes of PCM) and is never serialized.
     source_path: str = ""
+    # Grain shaping (2026-07-21): attack/release taper %% (0 disables; default matches
+    # AutoMixerConfig's own 8.0) and per-grain reverse probability (0..1, default off).
+    env_pct: float = 8.0
+    reverse_prob: float = 0.0
+    # Dual-source grinding (2026-07-21): path/URL of an optional second source; per-track
+    # `source2` (added to TrackSpec above) tags which bands pull from it.
+    source2_path: str = ""
+    # Closed-loop Uxn control (2026-07-21) -- issue #13's TUI gap, closed alongside the new
+    # feedback capability. `uxn_enabled` switches the Run button to drive `run_uxn_sequence`
+    # instead of a normal/series grind.
+    uxn_enabled: bool = False
+    uxn_rom_path: str = ""            # blank = vendored default ROM
+    uxn_ticks: int = 8
+    uxn_feedback: bool = False
 
     def is_runnable(self) -> tuple[bool, str]:
         if self.cutter is None:
@@ -90,12 +105,14 @@ class SessionState:
         "tracks", "output_dir", "mode", "euclid_k", "euclid_n", "streams_spec",
         "lib_policy", "lib_clusters", "snap", "swing", "fill", "fill_gain_db",
         "wav_export", "verbose", "self_feed", "source_path", "series_spec",
+        "env_pct", "reverse_prob", "source2_path",
+        "uxn_enabled", "uxn_rom_path", "uxn_ticks", "uxn_feedback",
     )
 
     def to_dict(self):
         """JSON-safe view of every persisted field. ``cutter`` is excluded."""
         d = asdict(self)
-        d["tracks"] = [{"low": t.low, "high": t.high} for t in self.tracks]
+        d["tracks"] = [{"low": t.low, "high": t.high, "source2": t.source2} for t in self.tracks]
         d.pop("cutter", None)
         return {k: d[k] for k in self.SERIAL_FIELDS if k in d}
 
@@ -106,7 +123,8 @@ class SessionState:
         clean = {k: v for k, v in d.items() if k in known}
         if "tracks" in clean:
             clean["tracks"] = [
-                TrackSpec(t["low"], t["high"]) if isinstance(t, dict) else TrackSpec(t.low, t.high)
+                TrackSpec(t["low"], t["high"], t.get("source2", False)) if isinstance(t, dict)
+                else TrackSpec(t.low, t.high, getattr(t, "source2", False))
                 for t in clean["tracks"]
             ]
         return cls(**clean)
