@@ -17,8 +17,13 @@ The ROM sequences all 6 amc params (l/w/s/c/ss/m) and reads FOUR argv tokens, in
 -- a per-tick regional rhythm_density scaled by the source's own adaptive ceiling, whose low 2
 bits XOR-perturb the ``c``-band index), a ``tick`` whose 8-bit tick_lo byte drives l/w/s/c
 (256-tick period), a coarser "macro tick" (``tick // 256``) whose low 2 bits pick ``ss``, and a
-"mode tick" (``tick // _MODE_PERIOD``, default 4) whose low 2 bits pick the mixer MODE ``m``
-(rw/q/poly/lib -- which algorithm cuts the grains). See uxn_ctrl/README.md.
+"mode tick" (``tick // _MODE_PERIOD``, default 4) whose low byte MOD 3 picks the mixer MODE ``m``
+(q/poly/lib -- which algorithm cuts the grains; rw is off the table, operator 2026-07-24). See
+uxn_ctrl/README.md.
+
+NOTE the packing, because it decides what a short run can actually reach: l/w/s/c are two bits
+EACH of the single ``tick_lo`` byte, so consecutive ticks move only ``l``. Drive a run with a
+``stride`` (see ``tick_numbers``) or every render past the first differs in grain length alone.
 """
 import os
 import shutil
@@ -28,7 +33,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ROM = os.path.join(_HERE, "..", "uxn_ctrl", "paramgen.rom")
 _VENDORED_UXNCLI = os.path.join(_HERE, "..", "uxn_ctrl", "bin", "uxncli")
 
-# Mode changes every _MODE_PERIOD ticks. The mode is the whole cutting ALGORITHM (rw/q/poly/lib),
+# Mode changes every _MODE_PERIOD ticks. The mode is the whole cutting ALGORITHM (q/poly/lib),
 # so a per-tick flip would be chaos, not music; 4 lets each algorithm settle across a few renders
 # before the ROM moves on. The macro-tick (ss) has its own coarser 256 period -- different params,
 # different cadences, exactly like ss itself was added on its own token because tick_lo was spent.
@@ -62,7 +67,7 @@ def uxn_tick(tick, feedback=0, rom_path=DEFAULT_ROM, uxncli_path=None):
     for byte on every axis EXCEPT `m`, which is appended as a new sequenced axis in 2026-07-24;
     the feedback no-op is scoped to idx_c, which it is the only thing that touches), `tick`
     (its low byte drives l/w/s/c), ``tick // 256`` (its low 2 bits drive ss), and
-    ``tick // _MODE_PERIOD`` (its low 2 bits drive the mixer MODE m). Feedback MUST come first:
+    ``tick // _MODE_PERIOD`` (its low byte MOD 3 drives the mixer MODE m). Feedback MUST come first:
     the ROM emits `c`'s string while processing the SECOND line it reads, so a feedback value
     arriving any later could never influence that selection (see uxn_ctrl/paramgen.tal's header
     comment and uxn_ctrl/README.md).
@@ -82,8 +87,35 @@ def uxn_tick(tick, feedback=0, rom_path=DEFAULT_ROM, uxncli_path=None):
     return line
 
 
+def tick_numbers(ticks, stride=1, start=0):
+    """The actual tick numbers a run of ``ticks`` renders will use: start, start+stride, ...
+
+    WHY A STRIDE EXISTS. The ROM packs FOUR axes into the single ``tick_lo`` byte at two bits
+    each -- ``l`` in bits 0-1, ``w`` in 2-3, ``s`` in 4-5, ``c`` in 6-7. So consecutive ticks
+    only ever move the LOWEST axis: a contiguous 12-tick run walks ``l`` through its whole table
+    and holds ``s`` and ``c`` at table entry 0 the entire time (``ss``, on ``tick // 256``, cannot
+    move at all before tick 256). The sequence looks varied in the log because ``l`` is moving,
+    and is in fact one speed and one band-split from end to end.
+
+    A stride co-prime with 256 carries into the high bits every tick, so all four axes advance
+    together. 461 puts all 4 values of all 4 axes, and all 3 modes, inside 12
+    ticks -- verified in ``test_uxn_stream``, which also pins the stride-1 degeneracy so this
+    cannot silently regress. stride=1 remains the default in the API for byte-identical
+    reproduction of pre-2026-07-24 runs.
+
+    ``start`` offsets the walk. Two sources ground with the same ticks+stride get the SAME param
+    sequence -- fine when comparing materials, wrong when the point is a varied batch. Giving each
+    source a start that continues where the last one stopped makes the batch one long
+    non-repeating walk instead of N copies of the same 12 recipes.
+    """
+    n = max(0, int(ticks))
+    s = max(1, int(stride))
+    b = max(0, int(start))
+    return [b + k * s for k in range(n)]
+
+
 def preview_uxn_sequence(ticks, rom_path=DEFAULT_ROM, uxncli_path=None, cutter=None,
-                         closed_loop=False):
+                         closed_loop=False, stride=1, start=0):
     """Return the param lines the ROM WOULD emit for ticks 0..ticks-1 — without rendering anything.
 
     A ROM-driven run is N full grinds; before 2026-07-24 the only way to find out what a ROM would
@@ -96,7 +128,7 @@ def preview_uxn_sequence(ticks, rom_path=DEFAULT_ROM, uxncli_path=None, cutter=N
     presenting an open-loop preview as if it were the closed-loop plan.
     """
     lines = []
-    for tick in range(max(0, int(ticks))):
+    for tick in tick_numbers(ticks, stride, start):
         feedback = (_measure_feedback_byte(cutter, tick=tick)
                     if (closed_loop and cutter is not None) else 0)
         lines.append(uxn_tick(tick, feedback=feedback, rom_path=rom_path,
@@ -109,7 +141,7 @@ def describe_line(line):
 
     Used by the TUI preview to show WHICH axis moved between ticks (the `m` mode axis especially —
     the 2026-07-24 addition that makes a run move through cutting ALGORITHMS, not just their knobs;
-    reading that off a raw `l 200 w 4 s 0.5 c 0,0;1000,15000 ss 0.5 m rw` string is needless work).
+    reading that off a raw `l 450 w 12 s 0.55 c 0,1500;5000,18000 ss 0.9 m poly` string is needless work).
     """
     toks = (line or "").split()
     out = {}
@@ -121,7 +153,7 @@ def describe_line(line):
 
 
 def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, closed_loop=False,
-                     on_tick=None):
+                     on_tick=None, stride=1, start=0):
     """Drive `ticks` renders of `cutter` from the Uxn param stream.
 
     Each tick's line is handed to config_automix/automix exactly as a human-typed `amc ...`
@@ -143,16 +175,16 @@ def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, clos
     the interval the operator most wants to see moving.
     """
     lines = []
-    for tick in range(ticks):
+    for i, tick in enumerate(tick_numbers(ticks, stride, start)):
         feedback = _measure_feedback_byte(cutter, tick=tick) if closed_loop else 0
         line = uxn_tick(tick, feedback=feedback, rom_path=rom_path, uxncli_path=uxncli_path)
         if on_tick:
-            on_tick(tick, line, "start")
+            on_tick(i, line, "start")
         cutter.config_automix("amc " + line)
         cutter.automix("am")
         lines.append(line)
         if on_tick:
-            on_tick(tick, line, "done")
+            on_tick(i, line, "done")
     return lines
 
 

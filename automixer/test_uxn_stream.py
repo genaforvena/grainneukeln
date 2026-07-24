@@ -66,12 +66,16 @@ class UxnTickTest(unittest.TestCase):
         from automixer.uxn_stream import uxn_tick
         s_values = set()
         c_values = set()
+        lw_values = set()
         for t in range(0, 256, 16):  # fixes l/w's bits (tick % 16 == 0), sweeps s/c's bits
             line = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli)
             parts = line.split()
-            self.assertEqual(parts[0:2], ["l", "200"], f"tick {t} moved l/w: {line}")
+            # assert l/w HELD, without pinning the table's literal entries — the claim in the name
+            # is "independently of l and w", and a hardcoded "200" only rots when the pool is retuned
+            lw_values.add(tuple(parts[0:4]))
             s_values.add(parts[5])
             c_values.add(parts[7])
+        self.assertEqual(len(lw_values), 1, f"l/w moved while sweeping s/c's bits: {lw_values}")
         self.assertEqual(len(s_values), 4, f"s did not cycle through 4 values: {s_values}")
         self.assertEqual(len(c_values), 4, f"c did not cycle through 4 values: {c_values}")
 
@@ -99,13 +103,15 @@ class UxnTickTest(unittest.TestCase):
         # hold ss constant here too.
         from automixer.uxn_stream import uxn_tick
         ss_values = set()
+        lwsc_values = set()
         for macro in range(4):
             line = uxn_tick(macro * 256, rom_path=self.rom, uxncli_path=self.uxncli)
             parts = line.split()
-            self.assertEqual(parts[0:8], ["l", "200", "w", "4", "s", "0.5", "c", "0,0;1000,15000"],
-                              f"macro tick {macro} moved l/w/s/c: {line}")
+            # held-constant, not pinned to literal table entries (see the note in the s/c test)
+            lwsc_values.add(tuple(parts[0:8]))
             self.assertEqual(parts[8], "ss")
             ss_values.add(parts[9])
+        self.assertEqual(len(lwsc_values), 1, f"l/w/s/c moved across macro ticks: {lwsc_values}")
         self.assertEqual(len(ss_values), 4, f"ss did not cycle through 4 values: {ss_values}")
 
     def test_ss_value_is_a_sane_speed_multiplier(self):
@@ -243,25 +249,81 @@ class UxnModeTest(unittest.TestCase):
         cls.uxncli = _ensure_uxn_toolchain()
         cls.rom = os.path.join(UXN_CTRL, "paramgen.rom")
 
-    def test_mode_cycles_through_all_four_modes(self):
-        # tick // 4 -> 0,1,2,3 across ticks 0,4,8,12, so m must take all 4 known mode values.
-        # A ROM that ignored the mode-tick token (or aliased it onto an already-spent byte) would
-        # hold m constant here.
+    def test_mode_cycles_through_all_three_modes(self):
+        # mode-tick = tick // 4, selected MOD 3 -> ticks 0,4,8 cover every mode. rw is off the
+        # table (operator 2026-07-24); the remaining three must ALL appear, and equally --
+        # dropping rw from the old 4-slot `& 3` table would have re-weighted one survivor 2:1:1.
         from automixer.uxn_stream import uxn_tick
-        modes = set()
-        for t in (0, 4, 8, 12):
+        modes = []
+        for t in (0, 4, 8):
             parts = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()
             self.assertEqual(parts[-2], "m", f"tick {t}: line missing trailing 'm' token: {parts}")
-            modes.add(parts[-1])
-        self.assertEqual(modes, {"rw", "q", "poly", "lib"},
-                         f"m did not cycle through all 4 modes: {modes}")
+            modes.append(parts[-1])
+        self.assertEqual(set(modes), {"q", "poly", "lib"},
+                         f"m did not cycle through all 3 modes: {modes}")
+        # equal weighting: over 12 mode-periods each mode lands exactly 4 times
+        counts = {}
+        for t in range(0, 48, 4):
+            m = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()[-1]
+            counts[m] = counts.get(m, 0) + 1
+        self.assertEqual(counts, {"q": 4, "poly": 4, "lib": 4},
+                         f"modes are not equally weighted: {counts}")
+
+    def test_rw_is_never_emitted(self):
+        # The operator asked for q/lib/poly and NOT rw. A mode table that still carries rw would
+        # slip it in every 4th mode-period, which is invisible in a log nobody reads to the end.
+        from automixer.uxn_stream import uxn_tick
+        for t in range(64):
+            mode = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()[-1]
+            self.assertNotEqual(mode, "rw", f"tick {t}: ROM emitted rw, which is off the table")
 
     def test_mode_value_is_a_known_mixer(self):
         from automixer.uxn_stream import uxn_tick
         for t in range(20):
             parts = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()
-            self.assertIn(parts[-1], {"rw", "q", "poly", "lib"},
+            self.assertIn(parts[-1], {"q", "poly", "lib"},
                           f"tick {t}: ROM emitted an unknown mode {parts[-1]!r}")
+
+    def _axis_values(self, ticks, stride):
+        """{axis: set(values)} the ROM emits over a run of `ticks` renders at `stride`."""
+        from automixer.uxn_stream import uxn_tick, tick_numbers, describe_line
+        seen = {}
+        for t in tick_numbers(ticks, stride):
+            for k, v in describe_line(uxn_tick(t, rom_path=self.rom,
+                                               uxncli_path=self.uxncli)).items():
+                seen.setdefault(k, set()).add(v)
+        return seen
+
+    def test_stride_1_moves_only_l_across_a_short_run(self):
+        # THE DEGENERACY, pinned so it cannot be mistaken for variety. l/w/s/c are two bits each of
+        # one byte, so consecutive ticks carry only into l. A 12-render run at stride 1 is ONE
+        # speed and ONE band-split from end to end, however varied its log looks.
+        seen = self._axis_values(12, 1)
+        self.assertEqual(len(seen["l"]), 4, "l should still walk its whole table at stride 1")
+        self.assertEqual(len(seen["s"]), 1, f"stride 1 should hold s constant, got {seen['s']}")
+        self.assertEqual(len(seen["c"]), 1, f"stride 1 should hold c constant, got {seen['c']}")
+        self.assertEqual(len(seen["ss"]), 1, f"stride 1 should hold ss constant, got {seen['ss']}")
+
+    def test_stride_461_moves_every_axis_within_12_ticks(self):
+        # The fix: a stride co-prime with 256 carries into the high bits every tick, so all four
+        # tick_lo axes AND the macro-tick ss axis advance inside a run someone would actually sit
+        # through. This is the gate that makes "diverse params" a measured claim.
+        seen = self._axis_values(12, 461)
+        for axis in ("l", "w", "s", "c"):
+            self.assertEqual(len(seen[axis]), 4,
+                             f"stride 461 should cover all 4 {axis} values, got {seen[axis]}")
+        self.assertGreaterEqual(len(seen["ss"]), 3,
+                                f"stride 461 should move ss too, got {seen['ss']}")
+        self.assertEqual(seen["m"], {"q", "poly", "lib"},
+                         f"stride 461 should still cover all 3 modes, got {seen['m']}")
+
+    def test_tick_numbers_defaults_to_consecutive(self):
+        from automixer.uxn_stream import tick_numbers
+        self.assertEqual(tick_numbers(5), [0, 1, 2, 3, 4])
+        self.assertEqual(tick_numbers(4, 461), [0, 461, 922, 1383])
+        # start offsets the walk so a multi-source batch does not repeat one recipe list
+        self.assertEqual(tick_numbers(3, 461, start=1383), [1383, 1844, 2305])
+        self.assertEqual(tick_numbers(3, 1, start=5), [5, 6, 7])
 
     def test_mode_holds_within_a_mode_period(self):
         # mode-tick = tick // 4, so ticks within the same 4-wide period (0,1,2,3) MUST share a

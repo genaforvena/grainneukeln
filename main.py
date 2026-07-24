@@ -48,6 +48,17 @@ if __name__ == "__main__":
     # said" — an always-set 8 would override the restored session's tick count on every launch.
     parser.add_argument("--uxn-ticks", type=int, default=None,
                         help="Number of ticks (renders) to drive from --uxn-ctrl (default 8).")
+    parser.add_argument("--uxn-stride", type=int, default=1,
+                        help="Step between tick numbers (default 1 = consecutive). The ROM packs "
+                             "l/w/s/c into two bits each of one byte, so CONSECUTIVE ticks only "
+                             "move `l` — a 12-tick run at stride 1 holds s and c at their first "
+                             "table entry throughout and never moves ss at all. A stride co-prime "
+                             "with 256 (try 461) carries into the high bits every tick, so all "
+                             "four axes advance together.")
+    parser.add_argument("--uxn-start", type=int, default=0,
+                        help="First tick number (default 0). Two sources run with the same "
+                             "ticks/stride get the SAME recipes; give each a start that continues "
+                             "the previous run so a multi-source batch is one non-repeating walk.")
     parser.add_argument("--uxn-feedback", action="store_true",
                         help="Closed-loop Uxn control (issue #13 extension): each tick's ROM call "
                              "is fed a feedback byte measured from the current source's rhythm "
@@ -121,7 +132,8 @@ if __name__ == "__main__":
             cutter = sample_cut_tool.SampleCutter(args.source_path, args.destination_path,
                                                    low_memory=args.low_memory)
             lines = run_uxn_sequence(cutter, args.uxn_ticks or 8, rom_path=rom,
-                                     closed_loop=args.uxn_feedback)
+                                     closed_loop=args.uxn_feedback, stride=args.uxn_stride,
+                                     start=args.uxn_start)
             for i, line in enumerate(lines):
                 print(f"[uxn tick {i}] {line}")
             sys.exit(0)

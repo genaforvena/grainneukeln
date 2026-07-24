@@ -123,15 +123,19 @@
     BRK
 
     &decide-mode
-    #01 LDZ #03 AND         ( idx_m = mode_tick_lo & 3 )
+    ( idx_m = mode_tick_lo MOD 3. The grind runs on q/poly/lib only -- rw is off the table )
+    ( (operator 2026-07-24: "use q or lib or poly, not rw"). A `#03 AND` mask can only ever )
+    ( select 1-of-4, so dropping one mode from a 4-slot table would silently re-weight the )
+    ( three survivors 2:1:1 -- a table with a repeat in it is not an equal choice. MOD 3 )
+    ( gives each remaining algorithm exactly one third of the mode-ticks. )
+    #01 LDZ
+    DUP #03 DIV #03 MUL SUB
     DUP #00 EQU ,&m0 JCN
     DUP #01 EQU ,&m1 JCN
-    #02 EQU ,&m2 JCN
-    ,&m3 JMP
+    ( x is 2 by construction -- MOD 3 admits no other value )
+    POP ;mstr2 ;emit JSR2 ,&halt JMP
     &m0 POP ;mstr0 ;emit JSR2 ,&halt JMP
-    &m1 POP ;mstr1 ;emit JSR2 ,&halt JMP
-    &m2 ;mstr2 ;emit JSR2 ,&halt JMP
-    &m3 ;mstr3 ;emit JSR2
+    &m1 POP ;mstr1 ;emit JSR2
 
     &halt
     #01 #0f DEO
@@ -146,29 +150,38 @@
     POP2
     JMP2r
 
-@lstr0 "l 20 "200 20 00
-@lstr1 "l 20 "500 20 00
-@lstr2 "l 20 "900 20 00
-@lstr3 "l 20 "1600 20 00
-@wstr0 "w 20 "4 20 00
-@wstr1 "w 20 "5 20 00
-@wstr2 "w 20 "6 20 00
-@wstr3 "w 20 "8 20 00
-@sstr0 "s 20 "0.5 20 00
-@sstr1 "s 20 "0.8 20 00
-@sstr2 "s 20 "1.3 20 00
-@sstr3 "s 20 "2.0 20 00
+( THE TABLES ARE THE RANGE THE SEQUENCER CAN REACH -- a narrow table is a narrow run, however )
+( many ticks it takes. Widened 2026-07-24 on operator direction ("more interesting and diverse )
+( params ... different lengths speeds etc"): grain length spans a 20x range (stutter -> drone), )
+( speed and stretch each straddle 1.0 in both directions instead of hugging it. The previous )
+( s/ss tables had been narrowed to 0.8-1.2, which is four ways of saying "about normal". )
+@lstr0 "l 20 "120 20 00
+@lstr1 "l 20 "450 20 00
+@lstr2 "l 20 "1100 20 00
+( 2000 is the ceiling, not a round number: mesh-sound-reflex's derive() clamps l to [120,2000]ms )
+( and the ROM's pool must stay inside the same contract -- gated by test_l_value_stays_within_* )
+@lstr3 "l 20 "2000 20 00
+@wstr0 "w 20 "2 20 00
+@wstr1 "w 20 "4 20 00
+@wstr2 "w 20 "7 20 00
+@wstr3 "w 20 "12 20 00
+@sstr0 "s 20 "0.55 20 00
+@sstr1 "s 20 "0.85 20 00
+@sstr2 "s 20 "1.35 20 00
+@sstr3 "s 20 "2.1 20 00
+( c bands: full-range, a narrow dark split, a mid split, and a bright/wide split. Gong bronze )
+( lives 1.4-2.8 kHz (measured), so these straddle it rather than sitting under it. )
 @cstr0 "c 20 "0,0;1000,15000 20 00
-@cstr1 "c 20 "0,200;800,6000 20 00
-@cstr2 "c 20 "0,500;2000,10000 20 00
-@cstr3 "c 20 "0,1000;4000,18000 20 00
-@ssstr0 "ss 20 "0.5 20 00
-@ssstr1 "ss 20 "0.75 20 00
-@ssstr2 "ss 20 "1.25 20 00
-@ssstr3 "ss 20 "2.0 20 00
-( m selects the cutting ALGORITHM (config.py AutoMixerConfig.modes): rw=random-window, )
-( q=quantized beat-grid, poly=polyrhythmic streams, lib=library/cluster. Low 2 bits of mode-tick. )
-@mstr0 "m 20 "rw 0a 00
-@mstr1 "m 20 "q 0a 00
-@mstr2 "m 20 "poly 0a 00
-@mstr3 "m 20 "lib 0a 00
+@cstr1 "c 20 "0,120;700,7000 20 00
+@cstr2 "c 20 "0,600;2500,11000 20 00
+@cstr3 "c 20 "0,1500;5000,18000 20 00
+@ssstr0 "ss 20 "0.6 20 00
+@ssstr1 "ss 20 "0.9 20 00
+@ssstr2 "ss 20 "1.3 20 00
+@ssstr3 "ss 20 "1.8 20 00
+( m selects the cutting ALGORITHM (config.py AutoMixerConfig.modes): q=quantized beat-grid, )
+( poly=polyrhythmic streams, lib=library/cluster. Selected by mode-tick MOD 3 -- see )
+( &decide-mode. rw=random-window is deliberately NOT in this table (operator 2026-07-24). )
+@mstr0 "m 20 "q 0a 00
+@mstr1 "m 20 "poly 0a 00
+@mstr2 "m 20 "lib 0a 00
