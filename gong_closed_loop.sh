@@ -62,7 +62,12 @@ for src in "${SOURCES[@]}"; do
   start=$(( i * TICKS * STRIDE ))
   i=$((i+1))
 
-  stage="$OUT/.stage-$src"; rm -rf "$stage"; mkdir -p "$stage"
+  # STAGE OUTSIDE $OUTDIR. mesh-grind-deliver scans ~/grainneukeln/output RECURSIVELY every 3
+  # minutes, so a stage dir under output/ races the rename: the reflex ships the render under its
+  # raw auto-generated name (l2000_w4_ss0.9_..._m-lib.mp3) before this loop renames it, and the
+  # sent-ledger then holds a name that no longer exists on disk. Cost 3 of 18 renders their
+  # readable filename on the 2026-07-24 batch — delivered, but unidentifiable in the ledger.
+  stage="${TMPDIR:-/tmp}/gong-cl-stage-$$-$src"; rm -rf "$stage"; mkdir -p "$stage"
   printf -- '--- %s (%.0fs) start=%d\n' "$src" "$sdur" "$start" | tee -a "$LOG"
 
   if ! timeout 3600 $PY main.py "$wav" "$stage" --uxn-ctrl --uxn-feedback \
@@ -105,7 +110,7 @@ for src in "${SOURCES[@]}"; do
     printf '%-4s %-30s SRC %3.0fs  ACT %4.0fs  PRED %4.0fs   %s\n      %s\n' \
       "$tag" "$(basename "$final")" "$sdur" "$odur" "$pred" "$line" "$verdict" | tee -a "$LOG"
   done
-  rmdir "$stage" 2>/dev/null
+  rm -rf "$stage"
 done
 
 printf '=== %d song / %d dropped / %d short / %d unverifiable ===\n' \
