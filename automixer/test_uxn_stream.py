@@ -33,7 +33,9 @@ class UxnTickTest(unittest.TestCase):
     def test_tick_output_is_a_valid_amc_fragment(self):
         from automixer.uxn_stream import uxn_tick
         line = uxn_tick(0, rom_path=self.rom, uxncli_path=self.uxncli)
-        self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+$")
+        # The trailing `m <mode>` is the ROM-driven mixer-mode token (issue #13 extension): the
+        # sequencer now drives WHICH algorithm cuts the grains, not just its params.
+        self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+ m (rw|q|poly|lib)$")
 
     def test_tick_is_deterministic(self):
         from automixer.uxn_stream import uxn_tick
@@ -127,11 +129,12 @@ class UxnFeedbackTest(unittest.TestCase):
 
     def test_feedback_zero_reproduces_existing_output_exactly(self):
         # The no-op guarantee: feedback=0 -> idx_c XOR 0 == idx_c, so every existing fixture's
-        # exact output must be byte-for-byte unchanged.
+        # exact output must be byte-for-byte unchanged. (The `m` token appended in 2026-07-24 is a
+        # separate sequenced axis -- orthogonal to the feedback no-op, which is scoped to idx_c.)
         from automixer.uxn_stream import uxn_tick
         for t in range(16):
             line = uxn_tick(t, feedback=0, rom_path=self.rom, uxncli_path=self.uxncli)
-            self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+$")
+            self.assertRegex(line, r"^l \d+ w \d+ s [\d.]+ c \d+,\d+(;\d+,\d+)* ss [\d.]+ m (rw|q|poly|lib)$")
 
     def test_nonzero_feedback_changes_c_selection_for_some_tick(self):
         # A real-effect gate, not just "it runs": find at least one tick where feedback=0 and
@@ -181,6 +184,9 @@ class MeasureFeedbackByteTest(unittest.TestCase):
         # Two 8s windows of the SAME real song, far enough apart to differ in busy-ness.
         cls.region_a = full[0:8000]
         cls.region_b = full[100000:108000]
+        # The whole asset -- per-tick regional feedback advances through it so different ticks
+        # react to different parts (a varied real song, not a uniform window).
+        cls.full = full
 
     def test_two_real_regions_yield_different_low_2_bits(self):
         from automixer.uxn_stream import _measure_feedback_byte
@@ -197,6 +203,74 @@ class MeasureFeedbackByteTest(unittest.TestCase):
         from automixer.uxn_stream import _measure_feedback_byte
         silence = AudioSegment.silent(duration=8000)
         self.assertEqual(_measure_feedback_byte(self._FakeCutter(silence)), 0)
+
+    def test_per_tick_feedback_varies_across_source_regions(self):
+        # The old whole-source-average returned the SAME byte every tick -- a constant idx_c
+        # offset, not a closed loop. Per-tick regional measurement makes different ticks react to
+        # different parts of a varied real song, so idx_c's perturbation actually moves across
+        # the run. A real-effect gate: a regression to whole-source averaging pins the low-2-bits
+        # set to size 1 here.
+        from automixer.uxn_stream import _measure_feedback_byte
+        cutter = self._FakeCutter(self.full)
+        low_bits = {_measure_feedback_byte(cutter, tick=t) & 3 for t in range(16)}
+        self.assertGreater(len(low_bits), 1,
+                           f"feedback byte's low-2-bits never moved across 16 ticks: {low_bits}")
+
+    def test_adaptive_ceiling_keeps_byte_below_saturation(self):
+        # The fixed /5.0 ceiling pinned the busiest region of a real song to byte 255 (low 2 bits
+        # stuck at 3, idx_c a constant XOR-by-3). An ADAPTIVE ceiling -- the source's own peak
+        # plus headroom -- structurally keeps every region below 255, so busy material no longer
+        # collapses to one perturbation key. (Guard invariant: holds by construction once the
+        # adaptive ceiling is in; documents the saturation fix.)
+        from automixer.uxn_stream import _measure_feedback_byte
+        cutter = self._FakeCutter(self.full)
+        bytes_seen = [_measure_feedback_byte(cutter, tick=t) for t in range(16)]
+        self.assertLess(max(bytes_seen), 255,
+                        f"busiest region saturated to 255: {bytes_seen}")
+
+
+class UxnModeTest(unittest.TestCase):
+    """ROM-driven mixer-mode selection (2026-07-24, issue #13 extension).
+
+    The sequencer's biggest unused axis was WHICH algorithm cuts the grains (rw/q/poly/lib) -- it
+    only ever varied params *within one fixed mode*. The mode is now a 6th pooled param: a 4th
+    argv token (the "mode-tick", host-computed as tick // 4) drives it via a 2-bit field, so a
+    single run moves through cutting *algorithms*, not just their knobs. The 4-tick period keeps
+    each mode in place long enough to read (a per-tick mode flip would be chaos, not music)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.uxncli = _ensure_uxn_toolchain()
+        cls.rom = os.path.join(UXN_CTRL, "paramgen.rom")
+
+    def test_mode_cycles_through_all_four_modes(self):
+        # tick // 4 -> 0,1,2,3 across ticks 0,4,8,12, so m must take all 4 known mode values.
+        # A ROM that ignored the mode-tick token (or aliased it onto an already-spent byte) would
+        # hold m constant here.
+        from automixer.uxn_stream import uxn_tick
+        modes = set()
+        for t in (0, 4, 8, 12):
+            parts = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()
+            self.assertEqual(parts[-2], "m", f"tick {t}: line missing trailing 'm' token: {parts}")
+            modes.add(parts[-1])
+        self.assertEqual(modes, {"rw", "q", "poly", "lib"},
+                         f"m did not cycle through all 4 modes: {modes}")
+
+    def test_mode_value_is_a_known_mixer(self):
+        from automixer.uxn_stream import uxn_tick
+        for t in range(20):
+            parts = uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()
+            self.assertIn(parts[-1], {"rw", "q", "poly", "lib"},
+                          f"tick {t}: ROM emitted an unknown mode {parts[-1]!r}")
+
+    def test_mode_holds_within_a_mode_period(self):
+        # mode-tick = tick // 4, so ticks within the same 4-wide period (0,1,2,3) MUST share a
+        # mode -- a ROM that keyed mode off the raw tick_lo byte (l/w/s/c's input) would flip it
+        # every tick instead. (l/w/s/c still move within the period; only m must hold.)
+        from automixer.uxn_stream import uxn_tick
+        modes = {uxn_tick(t, rom_path=self.rom, uxncli_path=self.uxncli).split()[-1]
+                 for t in (0, 1, 2, 3)}
+        self.assertEqual(len(modes), 1, f"mode did not hold across one period (ticks 0-3): {modes}")
 
 
 class RunUxnSequenceTest(unittest.TestCase):

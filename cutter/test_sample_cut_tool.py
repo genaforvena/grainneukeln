@@ -52,5 +52,18 @@ class TestSampleCutter(unittest.TestCase):
         self.assertEqual(config.channels_config[1].low_pass, 200)
         self.assertEqual(config.channels_config[1].high_pass, 400)
 
+    def test_m_lib_mode_does_not_crash_on_lib_policy_token_collision(self):
+        # `lib` is BOTH the library-mixer mode value (`m lib`) and the policy token (`lib sim|con`).
+        # Pre-fix, `amc m lib` made config_automix read past the end of args (IndexError) because
+        # the mode value had no policy word after it. This is a hot path under Uxn ROM control,
+        # which emits `m lib` on every library-period tick. Assert it now sets mode=lib cleanly,
+        # and that an explicit policy still parses when present alongside `m lib`.
+        self.sample_cutter.config_automix("amc m lib")
+        self.assertEqual(self.sample_cutter.auto_mixer_config.mode, "lib")
+
+        self.sample_cutter.config_automix("amc m lib lib con")
+        self.assertEqual(self.sample_cutter.auto_mixer_config.mode, "lib")
+        self.assertEqual(self.sample_cutter.auto_mixer_config.lib_policy, "contrast")
+
 if __name__ == "__main__":
     unittest.main()

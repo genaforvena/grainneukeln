@@ -425,8 +425,16 @@ class SampleCutter:
         # Library ("lib") mixer: `lib sim|con` policy + `lk <k>` cluster count.
         lib_policy = self.auto_mixer_config.lib_policy
         if "lib" in args:
-            p = str(args[args.index("lib") + 1])
-            lib_policy = "contrast" if p.startswith("con") else "similarity"
+            # `lib` is ambiguous: it is BOTH the library-mixer MODE value (`m lib`, parsed above
+            # as mode) and the policy token (`lib sim|con`). Treat only a `lib` NOT immediately
+            # after `m` as the policy token -- otherwise `amc m lib` reads past the end of args
+            # (the mode value has no policy word following it) and crashes. (Uxn ROM control,
+            # 2026-07-24, emits `m lib` on every lib-period tick, so this is now a hot path.)
+            lib_idx = next((i for i, t in enumerate(args)
+                            if t == "lib" and (i == 0 or args[i - 1] != "m")), None)
+            if lib_idx is not None and lib_idx + 1 < len(args):
+                p = str(args[lib_idx + 1])
+                lib_policy = "contrast" if p.startswith("con") else "similarity"
         lib_clusters = self.auto_mixer_config.lib_clusters
         if "lk" in args:
             lib_clusters = int(args[args.index("lk") + 1])

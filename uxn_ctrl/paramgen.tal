@@ -3,10 +3,13 @@
 ( maps to (8-bit AND/SFT/EOR arithmetic, no floats) -- it never formats or computes the values )
 ( themselves; those are fixed ASCII strings baked into the ROM, matching grainneukeln's own )
 ( pool-quantized param convention. )
-( Sequences all 5 amc params: l, w, s, c, ss -- one 2-bit field per param. l/w/s/c spend the whole )
-( 8-bit tick_lo byte of the 2nd argv token (4x4x4x4 = 256 combos). ss needs a 5th field and that )
-( byte has no bits left, so it reads a 3rd argv token (a coarser "macro tick") and picks ss from )
-( its low 2 bits. )
+( Sequences all 6 amc params: l, w, s, c, ss, m -- one 2-bit field per param. l/w/s/c spend the )
+( whole 8-bit tick_lo byte of the 2nd argv token (4x4x4x4 = 256 combos). ss needs a 5th field and )
+( that byte has no bits left, so it reads a 3rd argv token (a coarser "macro tick") and picks ss )
+( from its low 2 bits. m (the mixer MODE: rw/q/poly/lib, added 2026-07-24) is a 6th field -- it )
+( selects WHICH algorithm cuts the grains, not just its knobs -- so it wants to move on a coarser, )
+( musical cadence than the per-tick params: a 4th argv token ("mode-tick", host = tick//4) picks m )
+( from its low 2 bits, giving a 4-tick period per mode (each algorithm holds long enough to read). )
 ( Closed-loop feedback (2026-07-21, grain-effects-and-control design): a 1ST argv token, read )
 ( BEFORE the tick, lets a host-measured byte perturb WHICH c band-pair gets picked: )
 ( idx_c = ((tick_lo >> 6) & 3) EOR (feedback_lo & 3). feedback=0 is a TRUE no-op (x EOR 0 == x), )
@@ -14,12 +17,13 @@
 ( Feedback MUST arrive first: c's string is emitted while processing the tick token, so a )
 ( feedback value read afterward could never influence it -- there is no "peek ahead" once a line )
 ( has already been read+processed. )
-( input  : argv "<feedback>" "<tick>" "<macro-tick>" (uxncli feeds each nl-terminated decimal )
-(          ASCII line in turn, in that order) )
-( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N> ss <N>\n" -- a valid grainneukeln `amc` )
-( fragment. )
-( zero-page: acc=00 (short), token=02 (0=awaiting feedback, 1=awaiting tick, 2=awaiting )
-(            macro-tick), fb=03 (stashed feedback_lo, persists across the whole ROM run) )
+( input  : argv "<feedback>" "<tick>" "<macro-tick>" "<mode-tick>" (uxncli feeds each nl-terminated )
+(          decimal ASCII line in turn, in that order) )
+( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N> ss <N> m <mode>\n" -- a valid grainneukeln )
+( `amc` fragment. )
+( zero-page: acc=00 short, token=02 states: 0=awaiting feedback, 1=awaiting tick,       )
+(           2=awaiting macro-tick, 3=awaiting mode-tick; fb=03 stashed feedback_lo,          )
+(           persists across the whole ROM run                                                 )
 
 |0100
     ;on-console #10 DEO2
@@ -31,7 +35,8 @@
     POP
     #02 LDZ #00 EQU ,&store-fb JCN
     #02 LDZ #01 EQU ,&decide JCN
-    ;&decide-ss JMP2
+    #02 LDZ #02 EQU ;&decide-ss JCN2
+    ;&decide-mode JMP2
     &digit
     #30 SUB
     #00 SWP
@@ -106,10 +111,27 @@
     DUP #01 EQU ,&ss1 JCN
     #02 EQU ,&ss2 JCN
     ,&ss3 JMP
-    &ss0 POP ;ssstr0 ;emit JSR2 ,&halt JMP
-    &ss1 POP ;ssstr1 ;emit JSR2 ,&halt JMP
-    &ss2 ;ssstr2 ;emit JSR2 ,&halt JMP
+    &ss0 POP ;ssstr0 ;emit JSR2 ,&arm-mode JMP
+    &ss1 POP ;ssstr1 ;emit JSR2 ,&arm-mode JMP
+    &ss2 ;ssstr2 ;emit JSR2 ,&arm-mode JMP
     &ss3 ;ssstr3 ;emit JSR2
+
+    &arm-mode
+    ( 3rd line (macro-tick) done; reset acc, arm token=3 (awaiting the 4th line, mode-tick -> m) )
+    #0000 #00 STZ2
+    #03 #02 STZ
+    BRK
+
+    &decide-mode
+    #01 LDZ #03 AND         ( idx_m = mode_tick_lo & 3 )
+    DUP #00 EQU ,&m0 JCN
+    DUP #01 EQU ,&m1 JCN
+    #02 EQU ,&m2 JCN
+    ,&m3 JMP
+    &m0 POP ;mstr0 ;emit JSR2 ,&halt JMP
+    &m1 POP ;mstr1 ;emit JSR2 ,&halt JMP
+    &m2 ;mstr2 ;emit JSR2 ,&halt JMP
+    &m3 ;mstr3 ;emit JSR2
 
     &halt
     #01 #0f DEO
@@ -140,7 +162,13 @@
 @cstr1 "c 20 "0,200;800,6000 20 00
 @cstr2 "c 20 "0,500;2000,10000 20 00
 @cstr3 "c 20 "0,1000;4000,18000 20 00
-@ssstr0 "ss 20 "0.5 0a 00
-@ssstr1 "ss 20 "0.75 0a 00
-@ssstr2 "ss 20 "1.25 0a 00
-@ssstr3 "ss 20 "2.0 0a 00
+@ssstr0 "ss 20 "0.5 20 00
+@ssstr1 "ss 20 "0.75 20 00
+@ssstr2 "ss 20 "1.25 20 00
+@ssstr3 "ss 20 "2.0 20 00
+( m selects the cutting ALGORITHM (config.py AutoMixerConfig.modes): rw=random-window, )
+( q=quantized beat-grid, poly=polyrhythmic streams, lib=library/cluster. Low 2 bits of mode-tick. )
+@mstr0 "m 20 "rw 0a 00
+@mstr1 "m 20 "q 0a 00
+@mstr2 "m 20 "poly 0a 00
+@mstr3 "m 20 "lib 0a 00

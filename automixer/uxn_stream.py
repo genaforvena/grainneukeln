@@ -12,11 +12,13 @@ lines (``l 500 w 4``); this module feeds each line straight into ``SampleCutter`
 ``config_automix``/``automix`` methods -- the same entry points a human types at the REPL.
 The audio engine is untouched.
 
-The ROM sequences all 5 amc params (l/w/s/c/ss) and reads THREE argv tokens, in this order: a
-``feedback`` byte (0 = open-loop no-op; ``--uxn-feedback`` measures a real one per tick and its
-low 2 bits XOR-perturb the ``c``-band index), a ``tick`` whose 8-bit tick_lo byte drives l/w/s/c
-(256-tick period), and a coarser "macro tick" (``tick // 256``) whose low 2 bits pick ``ss``'s
-pool entry. Net period 1024 ticks before the whole sequence repeats. See uxn_ctrl/README.md.
+The ROM sequences all 6 amc params (l/w/s/c/ss/m) and reads FOUR argv tokens, in this order: a
+``feedback`` byte (0 = open-loop no-op for idx_c; ``--uxn-feedback`` measures a real one per tick
+-- a per-tick regional rhythm_density scaled by the source's own adaptive ceiling, whose low 2
+bits XOR-perturb the ``c``-band index), a ``tick`` whose 8-bit tick_lo byte drives l/w/s/c
+(256-tick period), a coarser "macro tick" (``tick // 256``) whose low 2 bits pick ``ss``, and a
+"mode tick" (``tick // _MODE_PERIOD``, default 4) whose low 2 bits pick the mixer MODE ``m``
+(rw/q/poly/lib -- which algorithm cuts the grains). See uxn_ctrl/README.md.
 """
 import os
 import shutil
@@ -25,6 +27,12 @@ import subprocess
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ROM = os.path.join(_HERE, "..", "uxn_ctrl", "paramgen.rom")
 _VENDORED_UXNCLI = os.path.join(_HERE, "..", "uxn_ctrl", "bin", "uxncli")
+
+# Mode changes every _MODE_PERIOD ticks. The mode is the whole cutting ALGORITHM (rw/q/poly/lib),
+# so a per-tick flip would be chaos, not music; 4 lets each algorithm settle across a few renders
+# before the ROM moves on. The macro-tick (ss) has its own coarser 256 period -- different params,
+# different cadences, exactly like ss itself was added on its own token because tick_lo was spent.
+_MODE_PERIOD = 4
 
 
 def find_uxncli(uxncli_path=None):
@@ -49,16 +57,20 @@ def uxn_tick(tick, feedback=0, rom_path=DEFAULT_ROM, uxncli_path=None):
     default (uxncli always exits 0 even when it fails to load a ROM, so the exit code itself
     is not a usable signal; non-empty stdout is the actual success predicate).
 
-    Passes THREE argv tokens, in this exact order: `feedback` (default 0, a true no-op --
+    Passes FOUR argv tokens, in this exact order: `feedback` (default 0, a true no-op --
     `x EOR 0 == x` -- so an unspecified feedback reproduces today's fully open-loop output byte
-    for byte), `tick` (its low byte drives l/w/s/c), and `tick // 256` (its low 2 bits drive ss).
-    Feedback MUST come first: the ROM emits `c`'s string while processing the SECOND line it
-    reads, so a feedback value arriving any later could never influence that selection (see
-    uxn_ctrl/paramgen.tal's header comment and uxn_ctrl/README.md).
+    for byte on every axis EXCEPT `m`, which is appended as a new sequenced axis in 2026-07-24;
+    the feedback no-op is scoped to idx_c, which it is the only thing that touches), `tick`
+    (its low byte drives l/w/s/c), ``tick // 256`` (its low 2 bits drive ss), and
+    ``tick // _MODE_PERIOD`` (its low 2 bits drive the mixer MODE m). Feedback MUST come first:
+    the ROM emits `c`'s string while processing the SECOND line it reads, so a feedback value
+    arriving any later could never influence that selection (see uxn_ctrl/paramgen.tal's header
+    comment and uxn_ctrl/README.md).
     """
     cli = find_uxncli(uxncli_path)
     result = subprocess.run(
-        [cli, rom_path, str(int(feedback) & 0xFF), str(tick), str(tick // 256)],
+        [cli, rom_path, str(int(feedback) & 0xFF), str(tick), str(tick // 256),
+         str(tick // _MODE_PERIOD)],
         capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL,
     )
     line = result.stdout.strip()
@@ -77,15 +89,17 @@ def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, clos
     command would be -- the engine never knows the params came from a Uxn ROM instead of a
     keyboard. Returns the list of param lines actually applied, one per render.
 
-    ``closed_loop=True`` computes a REAL feedback byte each tick from the current source's
-    measured character (a handful of evenly-spaced beat-grid grains, average rhythm_density
-    scaled to 0-255 -- see ``_measure_feedback_byte``), so the Uxn sequencer's `c`-band choice
-    reacts to the actual audio instead of ticking through its table open-loop. Default `False`
-    passes `feedback=0` every tick -- byte-for-byte the original open-loop behaviour.
+    ``closed_loop=True`` computes a REAL feedback byte each tick from the source's measured
+    character (a per-tick regional rhythm_density, scaled by the source's own adaptive ceiling
+    -- see ``_measure_feedback_byte``), so the Uxn sequencer's `c`-band choice reacts to the
+    part of the audio the run is currently working over instead of ticking through its table
+    open-loop. Default `False` passes `feedback=0` every tick -- byte-for-byte the original
+    open-loop behaviour (feedback is a true no-op for idx_c; the appended `m` axis is
+    orthogonal and present in both modes).
     """
     lines = []
     for tick in range(ticks):
-        feedback = _measure_feedback_byte(cutter) if closed_loop else 0
+        feedback = _measure_feedback_byte(cutter, tick=tick) if closed_loop else 0
         line = uxn_tick(tick, feedback=feedback, rom_path=rom_path, uxncli_path=uxncli_path)
         cutter.config_automix("amc " + line)
         cutter.automix("am")
@@ -93,39 +107,76 @@ def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, clos
     return lines
 
 
-def _measure_feedback_byte(cutter):
-    """A cheap, coarse feedback byte for closed-loop Uxn control: sample a handful of evenly-
-    spaced beat-grid grains from the CURRENT source, measure via the one existing measure tract
-    (``automixer.features.measure_grain`` -- no new analyzer), average onset density (a real,
-    audible axis: how busy the material is), clamp/scale a fixed practical range (0-5 onsets/sec
-    covers real material -- see automixer/features.py's own rhythm_density docs) to a byte. Only
-    the low 2 bits of the returned byte are actually consumed by the ROM (idx_c is 2 bits), so
-    this need not be a precision measurement -- it is a coarse perturbation key, not a control
-    signal in its own right.
+_DENSITY_SAMPLE_MS = 2000
+# Cap the profile at this many evenly-spaced grains. The full asset has hundreds of beat
+# positions; measuring all of them is librosa-onset-heavy and stalls a test for minutes. 24 is
+# enough headroom for per-tick regional variety across a 16-tick run (tick % len) while keeping a
+# profile build to a handful of seconds -- and the cache means a multi-tick run pays it once.
+_MAX_PROFILE_SAMPLES = 24
+# Headroom above the source's OWN measured peak density. The fixed /5.0 ceiling saturated busy
+# material to byte 255 (idx_c pinned at a constant XOR-by-3). Scaling against peak*headroom keeps
+# the busiest region below 255 while still spreading quiet-vs-busy across the byte range. >1.0
+# guarantees local_density/ceiling < 1 even when local IS the peak, so the byte can never pin.
+_FEEDBACK_HEADROOM = 1.25
 
-    Review finding (2026-07-21): a 300ms grain window made this saturate to a CONSTANT on real
-    audio -- rhythm_density is onsets extrapolated to a per-second rate, and even a single onset
-    in a 300ms window already extrapolates past the assumed 0-5/sec ceiling (measured: real
-    300ms grains from assets/test_audio.mp3 ranged ~3.3-13.3, sampled at 0/30/60/90/120s all
-    landed >=5 -> byte 255 every time, low 2 bits pinned at 3). A LONGER grain window fixes this
-    at the source rather than re-guessing another ceiling: measured with sample_len=2000ms, the
-    SAME song's 8-pick average lands at ~3.3-5.9 onsets/sec across different regions -- squarely
-    inside the original 0-5 assumption, which was correct for a per-SECOND rate, just violated by
-    a window an order of magnitude shorter than a second. See
-    automixer/test_uxn_stream.py::MeasureFeedbackByteTest for the real-region regression gate."""
+
+def _density_profile(cutter, sample_len=_DENSITY_SAMPLE_MS):
+    """Lazily build + cache the source's rhythm-density profile on the cutter, keyed by sample
+    window. Returns ``(positions, densities)`` -- parallel lists of (capped, evenly-spaced)
+    beat-grid grain offsets and their measured onset densities. Built ONCE per cutter (the
+    source does not change mid-run), so a multi-tick closed-loop run pays the measure cost once,
+    not once per tick."""
+    cached = getattr(cutter, "_uxn_density_profile", None)
+    if cached is not None and cached[0] == sample_len:
+        return cached[1], cached[2]
     from automixer.features import measure_grain
 
     audio = getattr(cutter, "audio", None)
     beats = getattr(cutter, "beats", None)
-    if audio is None or beats is None or len(beats) == 0 or len(audio) == 0:
-        return 0
-    sample_len = 2000
+    if audio is None or beats is None or len(audio) == 0:
+        cutter._uxn_density_profile = (sample_len, [], [])
+        return [], []
     positions = sorted(set(int(b) for b in beats if 0 <= b <= len(audio) - sample_len))
     if not positions:
+        cutter._uxn_density_profile = (sample_len, [], [])
+        return [], []
+    if len(positions) > _MAX_PROFILE_SAMPLES:
+        step = len(positions) / _MAX_PROFILE_SAMPLES
+        positions = [positions[int(i * step)] for i in range(_MAX_PROFILE_SAMPLES)]
+    densities = [measure_grain(audio[p:p + sample_len])["rhythm_density"] for p in positions]
+    cutter._uxn_density_profile = (sample_len, positions, densities)
+    return positions, densities
+
+
+def _measure_feedback_byte(cutter, tick=0, sample_len=_DENSITY_SAMPLE_MS):
+    """A coarse, audio-reactive feedback byte for closed-loop Uxn control -- only its low 2 bits
+    reach the ROM (``idx_c = ((tick>>6)&3) EOR (byte&3)``), so it is a perturbation key, not a
+    precision control signal.
+
+    Two fixes over the original whole-source-average (2026-07-24):
+
+    1. ADAPTIVE CEILING. The original divided by a fixed 5.0 onsets/sec; uniformly busy material
+       saturated to byte 255 and pinned idx_c at a constant XOR-by-3. We now scale against the
+       source's OWN peak density times headroom (``_FEEDBACK_HEADROOM``), so even the busiest
+       region stays below 255 -- different busy-ness levels map to different perturbations
+       instead of all collapsing to one. Headroom > 1 structurally guarantees the byte < 255.
+
+    2. PER-TICK REGIONAL MEASUREMENT. The original averaged the WHOLE source every tick -- the
+       same byte every call, i.e. a constant per-run idx_c offset, not a closed loop. We now
+       measure the region at ``positions[tick % len(positions)]`` each tick, advancing through the
+       source, so a varied song yields different bytes (and thus a moving idx_c) across the run.
+       A genuinely uniform source still yields a near-constant byte -- which is honest: nothing
+       varies for the loop to react to.
+
+    Uses the one existing measure tract (``automixer.features.measure_grain`` -- no new analyzer)
+    and the 2000ms grain window fixed in the 2026-07-21 review (300ms extrapolated a single onset
+    past the per-second ceiling). See ``automixer/test_uxn_stream.py::MeasureFeedbackByteTest``."""
+    positions, densities = _density_profile(cutter, sample_len)
+    if not densities:
         return 0
-    step = max(1, len(positions) // 8)
-    picks = positions[::step][:8]
-    densities = [measure_grain(audio[p:p + sample_len])["rhythm_density"] for p in picks]
-    avg = sum(densities) / len(densities) if densities else 0.0
-    scaled = int(min(1.0, avg / 5.0) * 255)
+    peak = max(densities)
+    ceiling = max(peak * _FEEDBACK_HEADROOM, 1.0)
+    idx = tick % len(positions)
+    local = densities[idx]
+    scaled = int(min(1.0, local / ceiling) * 255)
     return max(0, min(255, scaled))

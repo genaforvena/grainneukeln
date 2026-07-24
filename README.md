@@ -28,10 +28,13 @@ locked to the source's groove.
   overview of the terminal interface.
 - **Uxn external control layer** (issue #13, Option A): `--uxn-ctrl` drives a sequence of
   renders from a tiny portable [Uxn](https://wiki.xxiivv.com/site/uxn.html) ROM instead of
-  hand-written params. See [uxn_ctrl/README.md](uxn_ctrl/README.md). Add `--uxn-feedback`
-  (2026-07-21) to close the loop: each tick's ROM call is fed a byte measured from the source's
-  own rhythm density, so the sequencer's `c`-band choice reacts to the actual audio
-  (`feedback=0` — the default — is byte-identical to the open-loop behaviour).
+  hand-written params. See [uxn_ctrl/README.md](uxn_ctrl/README.md). The ROM sequences all 6 `amc`
+  params — `l w s c ss` **and** `m` (the cutting algorithm: `rw`/`q`/`poly`/`lib`, added
+  2026-07-24), so one run moves through cutting *algorithms*, not just their knobs. Add
+  `--uxn-feedback` (2026-07-21; adaptive ceiling + per-tick regional 2026-07-24) to close the loop:
+  each tick's ROM call is fed a byte measured from the source's own rhythm density (scaled by the
+  source's own peak, measured per region), so the sequencer's `c`-band choice reacts to the actual
+  audio (`feedback=0` — the default — is a true no-op for `idx_c`).
 - **Grain shaping, dual-source grinding + an HPSS axis** (2026-07-21): every grain now gets an
   attack/release taper (`env`, default 8% of the grain's length — `env 0` disables) and an
   optional per-grain reverse (`rv 0.3`); `src2 <path>` loads a **second source** and any `c` band
