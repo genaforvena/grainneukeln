@@ -26,6 +26,12 @@ def _isolated_session():
     return os.path.join(tempfile.mkdtemp(), "session.json")
 
 
+def _isolated_output():
+    # Empty temp dir so tests never mount the operator's real 2.7 GB output/ corpus
+    # (1000+ files → 5-12 s of widget-building per app instance). Hermetic + fast.
+    return tempfile.mkdtemp()
+
+
 class _FakeCutter:
     beats = [0, 400, 800]
     step = 400
@@ -61,7 +67,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
         from tui.widgets.tracks_panel import TracksPanel
         from tui.widgets.run_panel import RunPanel
         from tui.widgets.output_panel import OutputPanel
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             for W in (SourcePanel, ParamsPanel, TracksPanel, RunPanel, OutputPanel):
@@ -70,7 +76,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
                 self.assertLessEqual(r.bottom, 40, f"{W.__name__} runs off the bottom (y={r.bottom})")
 
     async def test_source_loaded_seeds_state(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             from tui.widgets.source_panel import SourcePanel
             src = app.query_one(SourcePanel)
@@ -80,7 +86,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.state.sample_length_ms, 400)  # seeded from step
 
     async def test_tracks_changed_updates_state(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             from tui.widgets.tracks_panel import TracksPanel
             panel = app.query_one(TracksPanel)
@@ -91,7 +97,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
     async def test_run_button_gated_on_loaded_source(self):
         # The core "does not work" fix: Run is un-clickable until a source has actually loaded, so
         # "Loaded: N beats" and "No source loaded" can never disagree.
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             from textual.widgets import Button
             from tui.widgets.source_panel import SourcePanel
@@ -109,7 +115,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
         # SourcePanel's load worker is a thread worker too; its completion must NOT drive the run log
         # (the app filters on worker group == "grind").
         loaded = _FakeCutter()
-        app = GrainTUI(output_dir="output", session_path=_isolated_session(), loader=lambda v: loaded, player=lambda p: None)
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session(), loader=lambda v: loaded, player=lambda p: None)
         async with app.run_test() as pilot:
             from textual.widgets import RichLog
             from tui.widgets.source_panel import SourcePanel
@@ -130,7 +136,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
         def fake_loader(value, on_stage=None):
             reloaded_paths.append(value)
             return second_cutter if value.endswith(".mp3") else first_cutter
-        app = GrainTUI(output_dir="output", session_path=_isolated_session(), loader=fake_loader, player=lambda p: None)
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session(), loader=fake_loader, player=lambda p: None)
         async with app.run_test() as pilot:
             from tui.widgets.source_panel import SourcePanel
             from tui.widgets.run_panel import RunPanel
@@ -155,7 +161,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
         def fake_loader(value, on_stage=None):
             reloaded_paths.append(value)
             return first_cutter
-        app = GrainTUI(output_dir="output", session_path=_isolated_session(), loader=fake_loader, player=lambda p: None)
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session(), loader=fake_loader, player=lambda p: None)
         async with app.run_test() as pilot:
             from tui.widgets.source_panel import SourcePanel
             from tui.widgets.run_panel import RunPanel
@@ -302,7 +308,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             from textual.widgets import RichLog
             from tui.widgets.source_panel import SourcePanel

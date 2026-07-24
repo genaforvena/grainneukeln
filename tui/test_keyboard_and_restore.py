@@ -12,6 +12,12 @@ from tui.app import GrainTUI, _text_typing_target
 from tui.state import SessionState, TrackSpec
 
 
+def _isolated_output():
+    # Empty temp dir so tests never mount the operator's real 2.7 GB output/ corpus
+    # (1000+ files → 5-12 s of widget-building per app instance). Hermetic + fast.
+    return tempfile.mkdtemp()
+
+
 class _FakeCutter:
     beats = [0, 400, 800]
     step = 400
@@ -32,7 +38,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
     without those letters triggering panel shortcuts."""
 
     async def test_digit_focus_jumps_each_panel(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             from tui.widgets.source_panel import SourcePanel
@@ -70,7 +76,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
         """Panel-local bindings (a/d in tracks, p/g in outputs) fire when that panel has focus.
         Workflow: Ctrl+4 jumps to tracks (focus on the DataTable) → 'a' adds a track. The panel
         owns those letters, so they don't conflict with typing in some other panel's Input."""
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             from tui.widgets.tracks_panel import TracksPanel
@@ -89,7 +95,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
     async def test_letter_shortcuts_do_not_fire_when_other_panel_focused(self):
         """Typing 'a' in the source Input must INSERT 'a', not add a track — the panel-local binding
         only fires when its own panel (or a non-typing descendant) has focus."""
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             from textual.widgets import Input
@@ -107,7 +113,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
         """Bare digits in an Input must TYPE the digit (sample_length, swing etc. take numbers).
         Ctrl+N (the panel-jump form) still fires from inside an Input — verified by the
         test_digit_focus_jumps_each_panel test which starts each jump from the prior panel's Input."""
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             from textual.widgets import Input
@@ -121,7 +127,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("1", sl.value, "bare digit '1' must reach the Input as a typed character")
 
     async def test_ctrl_l_focuses_source_input(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             from textual.widgets import Input
@@ -134,7 +140,7 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
         """`?` is an alias for F1 (Help) — it now pushes a scrollable modal (was a transient toast;
         a keymap + full amc grammar does not fit, or survive, a timed notification)."""
         from tui.screens import HelpScreen
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
             app.action_help()
@@ -174,7 +180,7 @@ class SessionRestoreTest(unittest.IsolatedAsyncioTestCase):
                 streams_spec="4;3", source_path="/tmp/previous.wav",
             )
             prior.save(path)
-            app = GrainTUI(output_dir="output", session_path=path)
+            app = GrainTUI(output_dir=_isolated_output(), session_path=path)
             async with app.run_test(size=(150, 40)) as pilot:
                 await pilot.pause()
                 self.assertEqual(app.state.speed, 2.5)
@@ -192,7 +198,7 @@ class SessionRestoreTest(unittest.IsolatedAsyncioTestCase):
     async def test_first_run_with_no_session_uses_defaults(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "absent.json")
-            app = GrainTUI(output_dir="output", session_path=path)
+            app = GrainTUI(output_dir=_isolated_output(), session_path=path)
             async with app.run_test(size=(150, 40)) as pilot:
                 await pilot.pause()
                 self.assertEqual(app.state.speed, 1.0)
@@ -204,7 +210,7 @@ class SessionRestoreTest(unittest.IsolatedAsyncioTestCase):
             path = os.path.join(td, "broken.json")
             with open(path, "w") as f:
                 f.write("{ broken json")
-            app = GrainTUI(output_dir="output", session_path=path)
+            app = GrainTUI(output_dir=_isolated_output(), session_path=path)
             async with app.run_test(size=(150, 40)) as pilot:
                 await pilot.pause()
                 self.assertEqual(app.state.mode, "rw")
@@ -217,7 +223,7 @@ class SessionRestoreTest(unittest.IsolatedAsyncioTestCase):
         by ParamsPanel.apply_to_state() reading the Input value back into state."""
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "session.json")
-            app = GrainTUI(output_dir="output", session_path=path)
+            app = GrainTUI(output_dir=_isolated_output(), session_path=path)
             async with app.run_test(size=(150, 40)) as pilot:
                 await pilot.pause()
                 # Land a source so Run is enabled.
@@ -243,7 +249,7 @@ class SessionRestoreTest(unittest.IsolatedAsyncioTestCase):
         recover it without the operator retyping."""
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "session.json")
-            app = GrainTUI(output_dir="output", session_path=path)
+            app = GrainTUI(output_dir=_isolated_output(), session_path=path)
             async with app.run_test(size=(150, 40)) as pilot:
                 await pilot.pause()
                 from tui.widgets.source_panel import SourcePanel

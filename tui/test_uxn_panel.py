@@ -30,6 +30,12 @@ def _uxn_available():
     return os.path.isfile(DEFAULT_ROM)
 
 
+def _isolated_output():
+    # Empty temp dir so tests never mount the operator's real 2.7 GB output/ corpus
+    # (1000+ files → 5-12 s of widget-building per app instance). Hermetic + fast.
+    return tempfile.mkdtemp()
+
+
 class PreviewFunctionTest(unittest.TestCase):
     @unittest.skipUnless(_uxn_available(), "uxncli not built (uxn_ctrl/build.sh)")
     def test_preview_returns_one_line_per_tick_without_rendering(self):
@@ -57,7 +63,7 @@ class PreviewFunctionTest(unittest.TestCase):
 
 class UxnPanelTest(unittest.IsolatedAsyncioTestCase):
     async def test_blank_rom_resolves_to_the_vendored_default(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             panel = app.query_one(UxnPanel)
             self.assertEqual(panel.resolved_rom(), os.path.abspath(DEFAULT_ROM))
@@ -66,7 +72,7 @@ class UxnPanelTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(panel.resolved_rom(), "/tmp/mine.rom")
 
     async def test_missing_rom_is_reported_before_a_run_starts(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             app.query_one("#uxn_rom_path", Input).value = "/tmp/definitely-not-here.rom"
             await pilot.pause()
@@ -88,7 +94,7 @@ class UxnPanelTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ticks", reason)
 
     async def test_toggles_write_through_to_state(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             app.query_one("#opt_uxn_enabled", Checkbox).value = True
             app.query_one("#opt_uxn_feedback", Checkbox).value = True
@@ -100,7 +106,7 @@ class UxnPanelTest(unittest.IsolatedAsyncioTestCase):
 
     @unittest.skipUnless(_uxn_available(), "uxncli not built (uxn_ctrl/build.sh)")
     async def test_preview_button_writes_the_plan_to_the_panel_log(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             app.query_one("#uxn_ticks", Input).value = "8"
             await pilot.pause()
@@ -117,7 +123,7 @@ class UxnPreseedLineTest(unittest.IsolatedAsyncioTestCase):
     async def test_preseed_carries_everything_the_rom_does_not_emit(self):
         """Mutation gate: the ROM owns l/w/s/c/ss/m, so seeding any of them would be overwritten on
         tick 0 and read as a lie. Everything else must be there."""
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             s = app.state
             s.env_pct, s.reverse_prob = 12.0, 0.3

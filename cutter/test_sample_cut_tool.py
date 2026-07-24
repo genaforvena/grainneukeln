@@ -6,8 +6,13 @@ from cutter.sample_cut_tool import SampleCutter
 
 class TestSampleCutter(unittest.TestCase):
     def setUp(self):
-        self.audio_file_path = "../assets/test_audio.mp3"
-        self.destination_path = "../test_samples"
+        # Anchor to this test file's directory so the suite passes from any cwd (matches the
+        # os.path.dirname(__file__) idiom in cutter/test_series_cli.py); the bare "../assets/..."
+        # path only resolved when pytest happened to run from cutter/.
+        here = os.path.dirname(__file__)
+        self.audio_file_path = os.path.join(here, "..", "assets", "test_audio.mp3")
+        self.destination_path = os.path.join(here, "..", "test_samples")
+        os.makedirs(self.destination_path, exist_ok=True)
         self.sample_cutter = SampleCutter(self.audio_file_path, self.destination_path)
 
     def tearDown(self):

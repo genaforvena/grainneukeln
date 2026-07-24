@@ -31,9 +31,15 @@ async def _submit(app, pilot, text):
     return bar
 
 
+def _isolated_output():
+    # Empty temp dir so tests never mount the operator's real 2.7 GB output/ corpus
+    # (1000+ files → 5-12 s of widget-building per app instance). Hermetic + fast.
+    return tempfile.mkdtemp()
+
+
 class CommandBarTest(unittest.IsolatedAsyncioTestCase):
     async def test_typed_recipe_moves_the_widgets(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "amc m q l 250 w 4 s 0.8 ek 5 en 16 sw 66 seed 99")
             self.assertEqual(app.state.mode, "q")
@@ -48,7 +54,7 @@ class CommandBarTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.query_one("#seed", Input).value, "99")
 
     async def test_bands_reach_the_tracks_table(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "c 0,250;2:900,7000")
             tracks = app.query_one(TracksPanel).tracks
@@ -60,21 +66,21 @@ class CommandBarTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.query_one(TracksPanel).tracks[0].bypass)
 
     async def test_flags_move_the_checkboxes(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "snap nofill")
             self.assertTrue(app.query_one("#snap", Checkbox).value)
             self.assertFalse(app.query_one("#fill", Checkbox).value)
 
     async def test_bracketed_line_arms_a_series_instead_of_erroring(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "amc l [/2,/3,/4]")
             self.assertEqual(app.state.series_spec, "l [/2,/3,/4]")
             self.assertEqual(app.query_one("#series_spec", Input).value, "l [/2,/3,/4]")
 
     async def test_recipe_line_tracks_the_state(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "m poly l 300 pr 4;3")
             bar = app.query_one(CommandBar)
@@ -87,13 +93,13 @@ class CommandBarTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn(" c ", app.query_one(CommandBar).recipe)
 
     async def test_bad_token_is_reported_and_the_good_half_still_lands(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             bar = await _submit(app, pilot, "w 4 zzz 1")
             self.assertEqual(app.query_one("#window_divider", Input).value, "4")
 
     async def test_history_recalls_the_previous_recipe(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             await _submit(app, pilot, "w 4")
             await _submit(app, pilot, "w 5")
@@ -104,7 +110,7 @@ class CommandBarTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.query_one("#amc_input", Input).value, "w 4")
 
     async def test_ctrl_e_focuses_the_bar(self):
-        app = GrainTUI(output_dir="output", session_path=_isolated_session())
+        app = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with app.run_test() as pilot:
             app.action_focus_amc()
             await pilot.pause()
@@ -115,13 +121,13 @@ class RoundTripThroughTheUITest(unittest.IsolatedAsyncioTestCase):
     async def test_recipe_from_one_session_reproduces_in_another(self):
         """The portability claim: copy the recipe line out, paste it into a fresh session, and the
         second session renders the same thing. Asserted through the real widgets, both ways."""
-        first = GrainTUI(output_dir="output", session_path=_isolated_session())
+        first = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with first.run_test() as pilot:
             await _submit(first, pilot, "m q l 320 w 3 s 0.9 ss 1.25 c 0,250;900,7000 "
                                         "ek 5 en 16 sw 66 env 12 rv 0.3 seed 7")
             recipe = first.query_one(CommandBar).recipe
 
-        second = GrainTUI(output_dir="output", session_path=_isolated_session())
+        second = GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
         async with second.run_test() as pilot:
             await _submit(second, pilot, recipe)
             self.assertEqual(second.query_one(CommandBar).recipe, recipe)

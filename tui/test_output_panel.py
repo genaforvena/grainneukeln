@@ -173,6 +173,50 @@ class OutputPanelTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("⏸", panel._status_text())
 
 
+class OutputPanelCapTest(unittest.IsolatedAsyncioTestCase):
+    """The list is capped to the newest ``MAX_LIST`` renders. The output dir grows without bound
+    (the grinder never prunes it — 1000+ files in practice), and mounting one widget per file made
+    both real TUI startup and every app-level test take 5–12 s just to build the panel."""
+
+    async def test_caps_to_newest_and_announces_the_rest(self):
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            n = OutputPanel.MAX_LIST + 25
+            # Distinct mtimes so "newest N" is well-defined; older files get older mtimes.
+            base = time.time() - n
+            for i in range(n):
+                p = _touch(d, f"grain_{i:04d}.mp3")
+                os.utime(p, (base + i, base + i))     # file i is newer than file i-1
+            app = _Host(d, DummyPlayer())
+            async with app.run_test() as pilot:
+                panel = app.query_one(OutputPanel)
+                panel.refresh_list()
+                await pilot.pause()
+                # Exactly MAX_LIST playable paths — the surplus is NOT in the selectable set.
+                self.assertEqual(len(panel.paths), OutputPanel.MAX_LIST)
+                # The ones kept are the newest (highest index in our naming), newest-first.
+                self.assertTrue(panel.paths[0].endswith(f"grain_{n - 1:04d}.mp3"))
+                self.assertTrue(all(f"grain_{n - 1 - i:04d}.mp3" in panel.paths[i]
+                                    for i in range(5)))
+                # The cut is LOUD: a trailing hint row exists for the hidden remainder.
+                from textual.widgets import ListView
+                lv = panel.query_one("#output_list", ListView)
+                self.assertEqual(len(lv.children), OutputPanel.MAX_LIST + 1)
+
+    async def test_no_hint_row_when_under_cap(self):
+        with tempfile.TemporaryDirectory() as d:
+            _touch(d, "a.mp3")
+            _touch(d, "b.mp3")
+            app = _Host(d, DummyPlayer())
+            async with app.run_test() as pilot:
+                panel = app.query_one(OutputPanel)
+                panel.refresh_list()
+                await pilot.pause()
+                from textual.widgets import ListView
+                lv = panel.query_one("#output_list", ListView)
+                self.assertEqual(len(lv.children), 2)   # no extra "… older" row
+
+
 class OutputPanelLegacyCallableTest(unittest.IsolatedAsyncioTestCase):
     """Back-compat: existing tests inject a ``player(path)`` callable (no pause/seek). The panel
     must still work with these — space plays, the legacy callable fires once per play."""
