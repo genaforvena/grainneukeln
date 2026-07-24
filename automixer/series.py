@@ -48,8 +48,28 @@ SERIES_PARAMS = frozenset({
     "l", "s", "ss", "w", "m",
     "ek", "en", "sw", "fg", "lk",
     "lib",            # the policy word (sim/con) — sweepable like an enum
+    # Cyclic pattern engine (2026-07-24): sweeping ``pat`` is the timeline sweep — the same source
+    # ground on a tresillo, a clave, a teental and a 9/8 aksak in one command, which is how you
+    # find out which metric universe a recording actually belongs to.
+    # ``acc`` is deliberately NOT sweepable: an accent map is itself a comma list, and the series
+    # body splits on commas, so ``acc [0,-9;0,-5]`` would silently expand into four one-value maps
+    # rather than two maps. An additive ``pat`` has the same shape and IS sweepable only because
+    # ``+2;2;3`` (semicolons) parses identically to ``+2,2,3``.
+    "pat", "cyc", "rot",
+    # Plain floats the parser already reads — sweeping the grain envelope and the reverse
+    # probability is the same "one render per value" the numeric params already give.
+    "env", "rv",
     "seed",
 })
+
+
+# amc keys the parser READS but that a series cannot sweep — either because the value is itself a
+# comma/semicolon list the series splitter would shred (``c``, ``pr``, ``acc``), or because it is a
+# path (``src2``). Bracketing one of these is a loud SeriesError rather than a silent single render
+# with a literal "[…]" as the value. Bare flags (``snap``, ``nofill``) take no value at all and so
+# cannot be followed by a series in the first place. A key missing from BOTH this set and
+# SERIES_PARAMS is treated as a typo and passed through untouched (see _find_series_params).
+NON_SWEEPABLE_PARAMS = frozenset({"c", "pr", "acc", "src2"})
 
 
 class SeriesError(ValueError):
@@ -183,6 +203,24 @@ def _find_series_params(tokens):
                 i += 2
                 continue
         i += 1
+
+    # A bracketed value after a key the amc parser DOES read but cannot sweep is a different
+    # failure from a typo'd key. A typo (``amc z [1,2,3]``) passes through harmlessly — nothing
+    # downstream reads ``z``, which is the contract
+    # ``test_unknown_param_in_brackets_passes_through`` pins. But ``amc env [4,8]`` or
+    # ``amc acc [0,-9]`` reaches a parser that WILL read it and hands ``float("[4,8]")`` a
+    # bracket — one render instead of the sweep that was asked for, and a crash or a garbage
+    # value instead of a message. Name those keys and reject them loudly.
+    for j, tok in enumerate(out):
+        if isinstance(tok, tuple) or not isinstance(tok, str):
+            continue
+        if parse_series_token(tok) is None or j == 0:
+            continue
+        prev = out[j - 1]
+        if isinstance(prev, str) and prev in NON_SWEEPABLE_PARAMS:
+            raise SeriesError(
+                f"'{prev}' is read by the amc parser but is not sweepable, so the series {tok} "
+                f"cannot be expanded. Sweepable: {', '.join(sorted(SERIES_PARAMS))}")
     return series, out
 
 

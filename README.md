@@ -127,8 +127,31 @@ The `amc` block is a list of `key value` pairs. The handful you'll reach for mos
 | `seed` | RNG seed | `seed 42` | reproducibility — same params + seed = byte-identical output. Also `--seed 42`. |
 
 There are more — per-grain envelope taper (`env`) and reverse (`rv`), a second source (`src2`),
-snap-to-beat (`snap`), swing (`sw`), euclidean patterns (`ek`/`en`), poly streams (`pr`), library
-clustering (`lib`/`lk`), and series sweeps (`[...]`).
+snap-to-beat (`snap`), swing (`sw`), euclidean patterns (`ek`/`en`), **cyclic patterns**
+(`pat`/`cyc`/`rot`/`acc` — see below), poly streams (`pr`), library clustering (`lib`/`lk`), and
+series sweeps (`[...]`).
+
+### Cyclic patterns — grind on a real timeline
+
+`E(k,n)` only knows "k hits spread as evenly as the integers allow", over exactly one beat. `pat`
+replaces it with an explicit cycle: a **named timeline** from the library, an `x..x..x.` string, or
+an additive meter `+2,2,2,3` whose gaps are deliberately uneven. `cyc` says how many beats the cycle
+spans (a 16-pulse clave wants four — crammed into one beat it is a blur), `rot` rotates it, and
+`acc` is a per-slot accent map in dB. That last one is what makes an all-hit cycle like a teental
+theka or a gnawa qraqeb stream a groove instead of a wash: those traditions carry the rhythm in
+which strokes are *accented*, not in which slots are struck.
+
+```bash
+python main.py djembe.wav out/ amc m q pat bembe snap        # the 12/8 standard bell
+python main.py tabla.wav  out/ amc m q pat teental snap      # 16 matras, khali at 9
+python main.py doira.wav  out/ amc m q pat aksak9 snap       # 9/8 limping meter
+python main.py song.mp3   out/ amc m q pat clave32 rot 4 acc 0,-9
+python main.py song.mp3   out/ amc m q pat list              # the library, with traditions
+```
+
+`./ethnic_grind.sh` is a worked batch: thirteen Asian and African percussion recordings, each ground
+on a timeline from its own tradition, plus cross-continental `src2` grafts — every render checked
+against its source before it counts.
 
 **→ Every parameter, the cross-mode matrix, and recipes: [docs/PARAMETERS.md](docs/PARAMETERS.md).**
 
@@ -153,7 +176,14 @@ python main.py song.mp3 output/ amc l [/2,/3,/4]        # 3 renders, grain lengt
 python main.py song.mp3 output/ amc l [100:300:50]      # numeric range → 100,150,200,250,300
 python main.py song.mp3 output/ amc s [0.8,1.0,1.2] ss [1.0,1.5]   # 6 renders, speed × sample-speed
 python main.py song.mp3 output/ amc seed [1,2,3,4,5]    # 5 renders, same recipe, different grain picks
+python main.py djembe.wav out/ amc m q pat [bembe,clave32,teental,aksak9]   # the timeline sweep
 ```
+
+The **timeline sweep** is how you find out which metric universe a recording belongs to: the same
+source ground on a 12/8 bell, a 16-pulse clave, a 16-matra theka and a 9/8 aksak, one command. (An
+additive pattern sweeps written with semicolons — `pat [+2;2;3,bembe]` — since the series body
+splits on commas. `acc` cannot be swept for the same reason, and says so instead of quietly
+rendering once.)
 
 `[a,b,c]` is an explicit list; `[start:stop:step]` is an inclusive numeric range. Quote the brackets
 in the shell to defeat globbing. Each render's filename encodes its own params so you can tell

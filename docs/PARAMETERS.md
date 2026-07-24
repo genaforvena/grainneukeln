@@ -68,7 +68,11 @@ operands accept floats in the `amc` path (`l *1.5` is legal).
 
 | param | value | default | effect |
 |---|---|---|---|
-| `ek` | int | `3` | euclidean hit count `k` in `E(k,n)` |
+| `pat` | name \| slot string \| `+g,g,g` | unset | **explicit cycle** — replaces the `E(ek,en)` generator (see *Cyclic patterns* below) |
+| `cyc` | float | `1` | how many **beats** one cycle of the pattern spans. `E(k,n)`'s n slots span one beat; a 16-pulse clave spans four |
+| `rot` | int | `0` | rotate the cycle left by n slots (negative = right). The accent map rotates with it |
+| `acc` | dB list | unset | per-slot accent map, cycled over the pattern. `0` = full strength, negatives duck |
+| `ek` | int | `3` | euclidean hit count `k` in `E(k,n)` — ignored when `pat` is set |
 | `en` | int | `8` | euclidean slot count `n` — the beat is divided into `n` slots |
 | `snap` | flag | off | cut the natural transient unit and stretch it into the slot |
 | `sw` | float % | `0` | swing (see above) |
@@ -85,6 +89,81 @@ python main.py song.mp3 out/ amc m q ek 5 en 8 snap sw 66      # cinquillo, snap
 python main.py song.mp3 out/ amc m q ek 5 en 13 nofill         # sparse, silent rests
 python main.py song.mp3 out/ amc m q ek 2 en 5 fg -12          # quiet fill under sparse hits
 ```
+
+### Cyclic patterns — `pat` / `cyc` / `rot` / `acc`
+
+`E(k,n)` can only say *"k hits spread as evenly as the integers allow."* That covers a tresillo and a
+four-on-the-floor. It cannot express a son clave, a teental theka, or a 9/8 aksak — and it has no
+vocabulary at all for the thing most Asian and African percussion carries the groove in: **which
+strokes are accented**, not merely which slots are struck. A teental theka strikes all sixteen
+matras; what makes it teental is the sam on 1 and the *khali* (open, unaccented) at 9.
+
+**`pat` — three input forms**
+
+| form | example | meaning |
+|---|---|---|
+| library name | `pat bembe` | a named timeline (table below), case-insensitive. Brings its own `cyc` and `acc` defaults |
+| slot string | `pat x..x..x.` / `pat 10010010` | `x X 1 # o` = hit, `. - _ 0` = rest; ` ` `\|` `,` `;` ignored so bars can be written out |
+| additive meter | `pat +2,2,2,3` | one hit at each group head — the 9/8 aksak. Deliberately **uneven** gaps, which is exactly what a euclidean generator can never produce |
+
+`pat list` prints the library with each entry's glyphs, cycle and tradition.
+
+**`cyc` — the parameter the euclidean grid was missing.** The grid hardcoded *one beat per cycle*.
+That is right for an 8-slot tresillo and badly wrong for a 16-pulse clave: crammed into a single
+beat it is a 25 ms blur, not a clave. `cyc 4` spreads those 16 pulses over four beats — slot = a
+sixteenth. Named patterns set their own (`bembe` → 4, i.e. triplets; `khandachapu` → 1.25), and an
+explicit `cyc` always wins.
+
+**`rot`** rotates the cycle. Half the clave/bell family *is* one cycle at different rotations
+(`clave23` is `clave32` rotated by 8), and rotating a familiar timeline against unfamiliar material
+is the cheapest way to get a groove that is neither. The accent map rotates **with** the pattern — a
+sam left behind by a rotation lands on the wrong stroke.
+
+**`acc`** is a per-slot gain map in dB, cycled over the pattern (so `acc 0,-9,-5` accents the heads
+of a 12-pulse triplet cycle). It applies to hit slots *and* to gap-fill slots — an accent map
+describes the cycle's dynamic shape, and a slot the map ducks should duck whichever material lands
+in it. `acc` is what makes an all-hit pattern like `teental` or `gnawa` a groove rather than a wash.
+
+A `pat`/`acc` spec that cannot be read **raises** and the render does not start. A pattern that
+quietly fell back to the euclidean default would still sound plausible, and nothing would tell you
+the clave you asked for never arrived.
+
+**The named library** — each entry is a *reduction*: the timeline, clap pattern or theka skeleton of
+a tradition, not a transcription of a performance. They exist to put the grid in the right metric
+universe for the material.
+
+| name | cycle | `cyc` | tradition |
+|---|---|---|---|
+| `tresillo` | `x..x..x.` | 2 | 3+3+2 — the ubiquitous West African / Cuban cell |
+| `cinquillo` | `x.xx.xx.` | 2 | the tresillo's filled-in 5-stroke cousin |
+| `bembe` | `x.xx.x.xx.x.` | 4 | the 7-stroke standard bell (Ewe/Yoruba 12/8), accented on the triplet heads |
+| `bell6` | `x.xx.x` | 2 | the short bell — the standard bell's 6-pulse cousin |
+| `clave32` / `clave23` | 16-pulse | 4 | son clave, 3-2 and 2-3 |
+| `rumba32` | 16-pulse | 4 | rumba clave, 3-2 |
+| `bossa` · `shiko` · `soukous` | 16-pulse | 4 | the other three of Toussaint's five 16-pulse claves |
+| `gnawa` | 12 hits | 4 | qraqeb — a continuous 12/8 triplet stream carried **entirely** by accent |
+| `maqsum` | `xx.xx.x.` | 2 | Egyptian maqsum — DUM on 1 and 5 |
+| `teental` | 16 hits | 4 | tintal, 16 matras (4+4+4+4) — sam on 1, khali at 9 |
+| `jhaptal` · `rupak` · `keherwa` · `dadra` | 10 · 7 · 8 · 6 hits | 2.5 · 1.75 · 2 · 1.5 | tala thekas, each with its khali |
+| `adi` · `khandachapu` · `misrachapu` | `x...x.x.` · `x.x..` · `x..x.x.` | 2 · 1.25 · 1.75 | Carnatic clap patterns |
+| `colotomic` | 16-pulse | 4 | Javanese gong/kenong/kempul punctuation |
+| `aksak9` · `aksak7` · `aksak5` | `+2,2,2,3` · `+2,2,3` · `+2,3` | 2.25 · 1.75 · 1.25 | Turkish/Uzbek/Balkan limping meters |
+| `jajinmori` | `x..x..x..x..` | 4 | Korean 12/8 janggu cycle, accent on 1 and 7 |
+
+```bash
+python main.py djembe.wav out/ amc m q pat bembe snap rv 0.15        # its own 12/8 bell
+python main.py tabla.wav  out/ amc m q pat teental snap              # theka incl. the khali
+python main.py doira.wav  out/ amc m q pat aksak9 snap               # 9/8, gaps deliberately uneven
+python main.py song.mp3   out/ amc m q pat clave32 rot 4 acc 0,-9    # rotated clave, accented
+python main.py song.mp3   out/ amc m q pat "x..x.x.. | x.x..x.." cyc 4
+python main.py song.mp3   out/ amc m q pat list                      # print the library
+```
+
+`cyc`/`rot`/`acc` also work **without** `pat` — they apply to the current `E(ek,en)` pattern, so
+`amc m q ek 5 en 16 cyc 4 acc 0,-8` accents and stretches a euclidean cycle just the same.
+
+Renders name the cycle in the filename (`…_m-q_pat-bembe_cyc4_acc_seed101.mp3`) instead of the
+`k3_n8` euclidean defaults the mixer never used.
 
 ---
 

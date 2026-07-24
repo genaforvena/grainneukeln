@@ -51,16 +51,27 @@ class QuantizedAutoMixer:
         if beat_period <= 0:
             beat_period = config.sample_length if config.sample_length and config.sample_length > 0 else 500.0
 
-        k = int(getattr(config, "euclid_k", 3))
-        n = int(getattr(config, "euclid_n", 8))
-        pattern = euclidean(k, n)
+        # Cyclic pattern engine (2026-07-24): an explicit ``pattern`` (from ``amc pat …`` — a named
+        # ethnic timeline, an x..x string, or an additive meter) REPLACES the euclidean generator,
+        # and ``cycle_beats`` says how many beats one cycle spans. Absent both, this is exactly the
+        # original E(k,n)-over-one-beat grid. See ``automixer.iterators.patterns``.
+        pattern = list(getattr(config, "pattern", None) or [])
+        if not pattern:
+            k = int(getattr(config, "euclid_k", 3))
+            n = int(getattr(config, "euclid_n", 8))
+            pattern = euclidean(k, n)
         if not pattern:
             pattern = [1]
-            n = 1
-        slot_ms = float(beat_period) / n
+        n = len(pattern)
+        cycle_beats = float(getattr(config, "cycle_beats", 1.0) or 1.0)
+        slot_ms = float(beat_period) * cycle_beats / n
         grain_len = max(1, int(round(slot_ms)))
 
-        slots = grid_slots(beat_period, pattern, total_ms)
+        # Per-slot accent map in dB (0 = full strength). Cycled over the pattern, so a 3-value
+        # triplet map covers a 12-pulse bell. None -> every slot at full strength (today).
+        accents = list(getattr(config, "accents", None) or []) or None
+
+        slots = grid_slots(beat_period, pattern, total_ms, cycle_beats=cycle_beats)
         onsets = self._onsets(audio, slot_ms)
 
         # Placement effects (issue #8): swing/groove micro-timing + pitch-preserving snap.
@@ -103,6 +114,7 @@ class QuantizedAutoMixer:
                 offset = swing_offset(slot_idx, swing, slot_ms)
             grain = self._create_grain(config, onsets, grain_len, snap, candidates=onset_candidates)
             if grain is not None and len(grain) > 0:
+                grain = self._accent(grain, accents, slot_idx, n)
                 grains_at_pos.append((int(round(pos + offset)), grain))
             pbar.update(1)
         pbar.close()
@@ -125,6 +137,10 @@ class QuantizedAutoMixer:
                 if grain is not None and len(grain) > 0:
                     # apply_gain is applied BEFORE collection so the fill grain's bytes are already
                     # attenuated when mixed into the canvas — same order pydub's overlay would see.
+                    # The slot's accent rides on TOP of the fill gain: an accent map describes the
+                    # cycle's dynamic shape, and a rest slot that the map ducks should duck whether
+                    # its material is a hit or a remnant.
+                    grain = self._accent(grain, accents, i, n)
                     grains_at_pos.append((int(round(pos + offset)), grain.apply_gain(fill_gain_db)))
 
         # Canvas attrs = max(silent defaults, source attrs) — what pydub's _sync lands on after the
@@ -135,6 +151,21 @@ class QuantizedAutoMixer:
             sample_width=max(2, audio.sample_width),
             channels=max(1, audio.channels),
         )
+
+    @staticmethod
+    def _accent(grain, accents, slot_idx, n):
+        """Apply the cycle's per-slot accent (dB) to one grain.
+
+        No accent map, or a 0 dB slot, returns the grain UNTOUCHED — not ``apply_gain(0)`` — so
+        every pre-existing config keeps its byte-identical render (the seeded bit-identity gate)
+        instead of routing through an audioop multiply that only *should* be a no-op.
+        """
+        if not accents:
+            return grain
+        db = float(accents[slot_idx % len(accents)])
+        if db == 0.0:
+            return grain
+        return grain.apply_gain(db)
 
     def _remnants(self, onsets, audio_len, grain_len):
         """Off-grid remnant cut positions: the MIDPOINTS between consecutive snapped onsets — the

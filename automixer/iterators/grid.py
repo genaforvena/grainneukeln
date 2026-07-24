@@ -48,18 +48,26 @@ def euclidean(k, n):
     return pattern
 
 
-def grid_slots(beat_period, pattern, total_ms):
+def grid_slots(beat_period, pattern, total_ms, cycle_beats=1.0):
     """Tile ``pattern`` across ``total_ms`` and return the OUTPUT position (ms, float) of every HIT.
 
-    The n slots of ``pattern`` span exactly one beat, so ``slot = beat_period / n`` — subdividing the
-    beat the same way the README's ``l /2 /3`` metric family does, keeping every grain start on an
-    integer subdivision of the imagined pulse. Slots are laid end to end from 0; the pattern repeats
-    (bar after bar) until ``total_ms`` is covered, and only slots the pattern marks ``1`` are emitted.
+    ``cycle_beats`` is how many BEATS one full cycle of the pattern spans, so
+    ``slot = beat_period * cycle_beats / n`` — subdividing the beat the same way the README's
+    ``l /2 /3`` metric family does, keeping every grain start on an integer subdivision of the
+    imagined pulse. Slots are laid end to end from 0; the pattern repeats (bar after bar) until
+    ``total_ms`` is covered, and only slots the pattern marks ``1`` are emitted.
+
+    The default ``cycle_beats=1.0`` is the original euclidean behaviour (E(k,n)'s n slots span
+    exactly one beat) and keeps every existing config byte-identical. It is right for an 8-slot
+    tresillo and wrong for a 16-pulse clave, which spans four beats — crammed into one it is a
+    25 ms blur, not a clave. See ``automixer.iterators.patterns``.
     """
     if not pattern or beat_period <= 0 or total_ms <= 0:
         return []
+    if cycle_beats is None or cycle_beats <= 0:
+        cycle_beats = 1.0
     n = len(pattern)
-    slot_ms = float(beat_period) / n
+    slot_ms = float(beat_period) * float(cycle_beats) / n
     if slot_ms <= 0:
         return []
     num_slots = int(total_ms // slot_ms)

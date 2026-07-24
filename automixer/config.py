@@ -96,7 +96,11 @@ class AutoMixerConfig:
                  low_memory=False,
                  env_pct=8.0,
                  reverse_prob=0.0,
-                 audio2=None):
+                 audio2=None,
+                 pattern=None,
+                 cycle_beats=1.0,
+                 accents=None,
+                 pattern_label=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -126,6 +130,21 @@ class AutoMixerConfig:
         # subdivision slots. Ignored by the rw mixer.
         self.euclid_k = euclid_k
         self.euclid_n = euclid_n
+        # Cyclic pattern engine (2026-07-24, `amc pat/cyc/rot/acc`): an explicit 0/1 slot list
+        # REPLACES the euclidean generator (`pattern`), `cycle_beats` is how many beats one cycle
+        # of it spans (the euclidean grid hardcoded 1 — right for a tresillo, wrong for a 16-pulse
+        # clave), and `accents` is a per-slot gain map in dB carrying the cycle's accent structure
+        # (a teental theka strikes all 16 matras; the khali at 9 is what makes it teental).
+        # pattern=None + cycle_beats=1.0 + accents=None is exactly today's E(k,n) behaviour.
+        # Resolved by `automixer.iterators.patterns.resolve_pattern` — the one parser the CLI and
+        # the TUI share.
+        self.pattern = list(pattern) if pattern else None
+        self.cycle_beats = float(cycle_beats) if cycle_beats else 1.0
+        self.accents = list(accents) if accents else None
+        # What to CALL this cycle in the render's filename. Without it a `pat clave32` render is
+        # saved as `k3_n8` — the euclidean defaults the mixer never used — and the corpus loses
+        # any record of which timeline actually produced the audio.
+        self.pattern_label = pattern_label
         # Poly ("poly") mixer: list of {ratio, length?, channels?} stream dicts. None -> a default
         # 3-against-4. Ignored by the other mixers.
         self.streams = streams

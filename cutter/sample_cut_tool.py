@@ -10,6 +10,10 @@ import pydub.utils
 from pydub import AudioSegment
 
 from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
+from automixer.iterators.grid import euclidean
+from automixer.iterators.patterns import (
+    NAMED_PATTERNS, PatternError, describe, resolve_pattern,
+)
 from automixer.runner import AutoMixerRunner
 from automixer.utils import calculate_step, beat_interval
 
@@ -308,7 +312,13 @@ class SampleCutter:
 
         has_series = any(parse_series_token(t) is not None for t in args)
         if not has_series:
-            self.config_automix(" ".join(["amc"] + args))
+            # A REJECTED config must not render. config_automix returns False when it printed an
+            # error and applied nothing (bad `pat`/`acc`, a series it could not expand, or an
+            # info-only call) — rendering anyway silently produced a grind on the PREVIOUS recipe,
+            # saved under a filename naming that recipe, so a typo'd `pat clavee` came back as a
+            # plausible euclidean render with no sign the timeline never arrived.
+            if not self.config_automix(" ".join(["amc"] + args)):
+                return
             self.automix("am")
             return
 
@@ -321,7 +331,8 @@ class SampleCutter:
         for i, combo in enumerate(combos, 1):
             combo_args = combo[1:]  # strip the leading "amc" for the display line only
             print(f"--- [{i}/{len(combos)}] amc {' '.join(combo_args)} ---")
-            self.config_automix(" ".join(combo))
+            if not self.config_automix(" ".join(combo)):
+                continue
             self.automix("am")
 
     def automix(self, command):
@@ -352,7 +363,8 @@ class SampleCutter:
 
         for i, combo in enumerate(combos, 1):
             # Reconfigure from the expanded token list so each grind uses its own resolved values.
-            self.config_automix(" ".join(combo))
+            if not self.config_automix(" ".join(combo)):
+                continue
             combo_args = combo[1:]  # strip leading "amc" for display
             which = f"#{idx}" if idx is not None else f"{i}/{len(combos)}"
             print(f"--- series {which}: amc {' '.join(combo_args)} ---")
@@ -361,10 +373,13 @@ class SampleCutter:
             self._save_mix(mix)
 
     def config_automix(self, command):
+        """Apply an amc block. Returns True when the config was APPLIED, False when it was not
+        (an error was printed, or the call was informational) — the CLI drivers gate the render on
+        that so a rejected recipe never renders the previous one under the new one's name."""
         args = command.split(" ")
         if "info" in args:
             print("AutoMixer config: " + str(self.auto_mixer_config))
-            return
+            return False
 
         # Series-aware (2026-07-19): if any param value is bracketed (e.g. ``l [/2,/3,/4]``),
         # expand to the cartesian product, stash the list on ``self._pending_series`` so a
@@ -377,13 +392,13 @@ class SampleCutter:
             has_series = any(parse_series_token(t) is not None for t in args)
         except SeriesError as e:
             print(f"Series error: {e}")
-            return
+            return False
         if has_series:
             try:
                 combos = expand_amc_series(args)
             except SeriesError as e:
                 print(f"Series error: {e}")
-                return
+                return False
             self._pending_series = combos
             print(f"Series armed: {len(combos)} combinations queued. `am` runs all; `am N` runs #N.")
             args = combos[0]  # configure with the first combination; am/am-N picks the rest
@@ -414,6 +429,50 @@ class SampleCutter:
         euclid_n = self.auto_mixer_config.euclid_n
         if "en" in args:
             euclid_n = int(args[args.index("en") + 1])
+
+        # Cyclic pattern engine (2026-07-24): `pat <name|x..x|+2,2,3>` replaces E(ek,en) with an
+        # explicit cycle, `cyc <beats>` says how many beats one cycle spans, `rot <n>` rotates it,
+        # `acc <dB,dB,…>` is the per-slot accent map. All four resolve through the single
+        # `resolve_pattern` parser (shared with the TUI). A bad spec RAISES rather than silently
+        # falling back to the euclidean default — a clave that never arrived still sounds
+        # plausible, which is exactly the silent-fallback trap.
+        pattern = getattr(self.auto_mixer_config, "pattern", None)
+        cycle_beats = getattr(self.auto_mixer_config, "cycle_beats", 1.0)
+        accents = getattr(self.auto_mixer_config, "accents", None)
+        pattern_label = getattr(self.auto_mixer_config, "pattern_label", None)
+        if "pat" in args:
+            pat_spec = str(args[args.index("pat") + 1])
+            if pat_spec == "list":
+                for nm in sorted(NAMED_PATTERNS):
+                    print("  " + describe(nm))
+                return False
+            cyc_arg = float(args[args.index("cyc") + 1]) if "cyc" in args else None
+            rot_arg = int(args[args.index("rot") + 1]) if "rot" in args else 0
+            acc_arg = str(args[args.index("acc") + 1]) if "acc" in args else None
+            try:
+                pattern, cycle_beats, accents = resolve_pattern(
+                    pat_spec, cyc=cyc_arg, rot=rot_arg, acc=acc_arg)
+            except PatternError as e:
+                print(f"Pattern error: {e}")
+                return False
+            pattern_label = pat_spec if rot_arg == 0 else f"{pat_spec}r{rot_arg}"
+            glyphs = "".join("x" if v else "." for v in pattern)
+            print(f"pattern: {glyphs} ({sum(pattern)}/{len(pattern)} hits, cyc {cycle_beats}"
+                  f"{', accented' if accents else ''})")
+        elif "cyc" in args or "acc" in args or "rot" in args:
+            # cyc/rot/acc on the euclidean grid, with no `pat` — resolve the CURRENT E(ek,en)
+            # pattern through the same path so these three are not silently `pat`-only.
+            try:
+                base = euclidean(euclid_k, euclid_n)
+                pattern, cycle_beats, accents = resolve_pattern(
+                    base,
+                    cyc=float(args[args.index("cyc") + 1]) if "cyc" in args else None,
+                    rot=int(args[args.index("rot") + 1]) if "rot" in args else 0,
+                    acc=str(args[args.index("acc") + 1]) if "acc" in args else None)
+                pattern_label = f"E{euclid_k}-{euclid_n}"
+            except PatternError as e:
+                print(f"Pattern error: {e}")
+                return False
 
         # Poly ("poly") mixer streams: `pr 4:1-2000;3:6000-15000` -> two streams, ratios 4 & 3, each
         # with its own band; `ratio[@length][:low-high]`, segments separated by ";". Bare `pr 4;3`
@@ -535,9 +594,14 @@ class SampleCutter:
             env_pct=env_pct,
             reverse_prob=reverse_prob,
             audio2=audio2,
+            pattern=pattern,
+            cycle_beats=cycle_beats,
+            accents=accents,
+            pattern_label=pattern_label,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))
+        return True
 
     def show_automix_help(self, command):
         print("AutoMixer commands:")
@@ -592,10 +656,21 @@ class SampleCutter:
             params_parts.append(f"c{cutoffs}")
         if cfg.mode != "rw":
             params_parts.append(f"m-{cfg.mode}")
-        if cfg.euclid_k:
-            params_parts.append(f"k{cfg.euclid_k}")
-        if cfg.euclid_n:
-            params_parts.append(f"n{cfg.euclid_n}")
+        if getattr(cfg, "pattern", None):
+            # An explicit cycle REPLACED the euclidean generator — so k/n are not what rendered
+            # this file and naming it `k3_n8` would be a lie in the corpus. Name the cycle instead.
+            label = getattr(cfg, "pattern_label", None) or "".join(
+                "x" if v else "." for v in cfg.pattern)
+            params_parts.append("pat-" + re.sub(r"[^A-Za-z0-9.+-]", "", label)[:24])
+            if float(getattr(cfg, "cycle_beats", 1.0) or 1.0) != 1.0:
+                params_parts.append(f"cyc{cfg.cycle_beats:g}")
+            if getattr(cfg, "accents", None):
+                params_parts.append("acc")
+        else:
+            if cfg.euclid_k:
+                params_parts.append(f"k{cfg.euclid_k}")
+            if cfg.euclid_n:
+                params_parts.append(f"n{cfg.euclid_n}")
         if getattr(cfg, "streams", None):
             params_parts.append(f"st{cfg.streams}")
         if getattr(cfg, "seed", None):
