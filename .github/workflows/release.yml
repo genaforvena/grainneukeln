@@ -1,0 +1,126 @@
+name: release-bundles
+
+# Build friend-shippable, self-contained bundles for Windows / macOS / Linux.
+# PyInstaller cannot cross-compile, so each OS builds on its own native runner.
+# ffmpeg is bundled INTO each archive (rthook_ffmpeg.py points pydub at it) so a friend
+# just downloads their OS's zip, unpacks, and runs — nothing else to install.
+#
+# Trigger: push a tag like `v0.1.0`, or run manually (Actions ▸ release-bundles ▸ Run workflow).
+# Artifacts appear both as workflow Artifacts (any run) and as a GitHub Release (tag runs).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the Release on tag builds
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: grainneukeln-linux-x64
+          - os: windows-latest
+            asset: grainneukeln-windows-x64
+          - os: macos-13          # Intel build; also runs on Apple-Silicon Macs via Rosetta 2.
+            asset: grainneukeln-macos            # (setup-ffmpeg ships no static arm64 macOS ffmpeg)
+    runs-on: ${{ matrix.os }}
+    env:
+      # Friend runs macOS 10.13.6 (High Sierra). Target it; the verify step below FAILS the build
+      # if any bundled Mach-O (a wheel's dylib, the ffmpeg we ship) needs newer — no silent crash.
+      MACOSX_DEPLOYMENT_TARGET: "10.13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install a static ffmpeg (for bundling)
+        id: ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      # macOS pins the native stack to versions whose wheels still target macOS <= 10.13 (High
+      # Sierra); Linux/Windows build from latest. See constraints-macos.txt.
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            pip install -c constraints-macos.txt -r requirements.txt pyinstaller
+          else
+            pip install -r requirements.txt pyinstaller
+          fi
+
+      - name: Build bundle
+        run: pyinstaller --noconfirm --clean grainneukeln.spec
+
+      # setup-ffmpeg's `ffmpeg-path` output is the DIRECTORY holding ffmpeg + ffprobe.
+      - name: Vendor ffmpeg into the bundle (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ff="${{ steps.ffmpeg.outputs.ffmpeg-path }}"
+          cp "$ff/ffmpeg"  dist/grainneukeln/
+          cp "$ff/ffprobe" dist/grainneukeln/ || true
+          chmod +x dist/grainneukeln/ffmpeg dist/grainneukeln/ffprobe || true
+
+      - name: Vendor ffmpeg into the bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ff = "${{ steps.ffmpeg.outputs.ffmpeg-path }}"
+          Copy-Item "$ff\ffmpeg.exe"  "dist\grainneukeln\" -Force
+          if (Test-Path "$ff\ffprobe.exe") { Copy-Item "$ff\ffprobe.exe" "dist\grainneukeln\" -Force }
+
+      # Enforce the 10.13.6 floor: scan every bundled Mach-O for its minimum-macOS load command and
+      # FAIL if anything needs newer. A red build naming the offending file beats a binary that
+      # crashes on the friend's High Sierra Mac.
+      - name: Verify macOS 10.13 compatibility
+        if: runner.os == 'macOS'
+        run: python3 .github/verify_macos_min.py dist/grainneukeln 10.13
+
+      - name: Add a plain-language README for friends
+        shell: bash
+        run: |
+          cat > dist/grainneukeln/HOW-TO-RUN.txt <<'EOF'
+          grainneukeln — granular sampler
+
+          WINDOWS:  double-click grainneukeln.exe, OR in a terminal:
+                      grainneukeln.exe --gui
+          MAC:      right-click grainneukeln > Open (first time, to bypass Gatekeeper),
+                    OR in Terminal:   ./grainneukeln --gui
+          LINUX:    ./grainneukeln --gui
+
+          No graphics? Use the terminal UI:   grainneukeln --tui
+          Command line grind:  grainneukeln <song.mp3-or-YouTube-URL> out/ amc l 500 w 6 m q
+          ffmpeg is already included — you do not need to install anything else.
+          EOF
+
+      - name: Package archive
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "../${{ matrix.asset }}.zip" grainneukeln
+          else
+            zip -r "../${{ matrix.asset }}.zip" grainneukeln
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}.zip
+
+      - name: Attach to Release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}.zip

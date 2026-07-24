@@ -13,3 +13,5 @@ __pycache__/
 bench/
 yt_*
 *.prof
+build/
+dist/

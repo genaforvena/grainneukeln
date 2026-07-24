@@ -1,0 +1,14 @@
+# macOS 10.13.6 (High Sierra) floor for the release bundle.
+#
+# The friend's Mac runs 10.13.6. The CURRENT wheels of the native audio stack have already moved
+# past it — scipy 1.16+ ships macosx_10.15, soxr 0.5+ ships 10.14, recent numba/llvmlite ship
+# 10.14+. These are the NEWEST versions that still publish a cp312 x86_64 wheel built for
+# macOS <= 10.13 (verified against PyPI wheel platform tags, 2026-07-24). Applied ONLY on the
+# macOS job in .github/workflows/release.yml; Linux/Windows build from latest. The workflow's
+# verify_macos_min.py gate re-reads the actual bundled Mach-O load commands, so if any of these
+# ever regress the build fails red instead of shipping a binary that crashes on High Sierra.
+scipy==1.15.3       # 1.16+ → macosx_10.15
+soxr==0.4.0         # 0.5+  → macosx_10.14
+numba==0.60.0       # newer numba → 10.14+ ; 0.60 has a 10.9 x86_64 cp312 wheel
+llvmlite==0.43.0    # numba 0.60.0's pinned llvmlite ; 10.9 wheel
+numpy==2.0.2        # numba 0.60 caps numpy<2.1 ; 2.0.2 ships a macosx_10.13 wheel
