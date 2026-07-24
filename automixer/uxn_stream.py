@@ -82,7 +82,46 @@ def uxn_tick(tick, feedback=0, rom_path=DEFAULT_ROM, uxncli_path=None):
     return line
 
 
-def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, closed_loop=False):
+def preview_uxn_sequence(ticks, rom_path=DEFAULT_ROM, uxncli_path=None, cutter=None,
+                         closed_loop=False):
+    """Return the param lines the ROM WOULD emit for ticks 0..ticks-1 — without rendering anything.
+
+    A ROM-driven run is N full grinds; before 2026-07-24 the only way to find out what a ROM would
+    do (or that a hand-written ROM emits garbage, or that ``uxncli`` was never built) was to start
+    those grinds and read the log as they went. Ticking the ROM is microseconds and touches no
+    audio, so the sequence is knowable up front — this is that read.
+
+    ``closed_loop`` requires a loaded ``cutter`` to measure the feedback byte from; without one it
+    falls back to the open-loop byte (0) and the caller is expected to say so, rather than quietly
+    presenting an open-loop preview as if it were the closed-loop plan.
+    """
+    lines = []
+    for tick in range(max(0, int(ticks))):
+        feedback = (_measure_feedback_byte(cutter, tick=tick)
+                    if (closed_loop and cutter is not None) else 0)
+        lines.append(uxn_tick(tick, feedback=feedback, rom_path=rom_path,
+                              uxncli_path=uxncli_path))
+    return lines
+
+
+def describe_line(line):
+    """Split one ROM param line into an ordered dict of amc token → value.
+
+    Used by the TUI preview to show WHICH axis moved between ticks (the `m` mode axis especially —
+    the 2026-07-24 addition that makes a run move through cutting ALGORITHMS, not just their knobs;
+    reading that off a raw `l 200 w 4 s 0.5 c 0,0;1000,15000 ss 0.5 m rw` string is needless work).
+    """
+    toks = (line or "").split()
+    out = {}
+    i = 0
+    while i + 1 < len(toks):
+        out[toks[i]] = toks[i + 1]
+        i += 2
+    return out
+
+
+def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, closed_loop=False,
+                     on_tick=None):
     """Drive `ticks` renders of `cutter` from the Uxn param stream.
 
     Each tick's line is handed to config_automix/automix exactly as a human-typed `amc ...`
@@ -96,14 +135,24 @@ def run_uxn_sequence(cutter, ticks, rom_path=DEFAULT_ROM, uxncli_path=None, clos
     open-loop. Default `False` passes `feedback=0` every tick -- byte-for-byte the original
     open-loop behaviour (feedback is a true no-op for idx_c; the appended `m` axis is
     orthogonal and present in both modes).
+
+    ``on_tick(index, line, phase)`` — optional progress callback, invoked TWICE per tick: once with
+    ``phase="start"`` the moment the ROM's line is known (before the render), and once with
+    ``phase="done"`` after that render lands. A single end-of-tick callback would leave the caller's
+    progress bar frozen for the whole of the slowest thing in the loop (the grind), which is exactly
+    the interval the operator most wants to see moving.
     """
     lines = []
     for tick in range(ticks):
         feedback = _measure_feedback_byte(cutter, tick=tick) if closed_loop else 0
         line = uxn_tick(tick, feedback=feedback, rom_path=rom_path, uxncli_path=uxncli_path)
+        if on_tick:
+            on_tick(tick, line, "start")
         cutter.config_automix("amc " + line)
         cutter.automix("am")
         lines.append(line)
+        if on_tick:
+            on_tick(tick, line, "done")
     return lines
 
 

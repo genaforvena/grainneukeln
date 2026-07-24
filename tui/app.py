@@ -6,14 +6,18 @@ from textual.widgets import Button, Footer, Input, Select, DataTable
 
 from tui.state import SessionState, SESSION_PATH, CRASH_LOG
 from tui import engine
+from tui.amc import format_amc
 from tui.player import make_player
+from tui.screens import CrashScreen, HelpScreen
 from tui.theme import grain_theme
 from tui.widgets.banner import Banner
+from tui.widgets.command_bar import CommandBar
 from tui.widgets.source_panel import SourcePanel
 from tui.widgets.params_panel import ParamsPanel
 from tui.widgets.mode_panel import ModePanel
 from tui.widgets.tracks_panel import TracksPanel
 from tui.widgets.run_panel import RunPanel
+from tui.widgets.uxn_panel import UxnPanel
 from tui.widgets.output_panel import OutputPanel
 
 
@@ -58,18 +62,20 @@ class GrainTUI(App):
     # The Footer shows every binding here, so the operator can read the whole keymap without a manual.
     # Design: Ctrl-prefixed keys ALWAYS fire (panel jumps, run, crash-log) — they're the navigation
     # backbone the operator can rely on regardless of where the cursor is. Bare-letter shortcuts
-    # (a/d in tracks, p/g in outputs) are panel-LOCAL — they fire only when that panel has focus, so
-    # typing 'a' in the source path inserts 'a' rather than adding a track. Use Ctrl+4 to focus the
-    # tracks panel, then 'a' adds a track. Help (?) lists the full keymap.
+    # (a/d/t/b in tracks, space/s/g in outputs) are panel-LOCAL — they fire only when that panel has
+    # focus, so typing 'a' in the source path inserts 'a' rather than adding a track. Help (?) lists
+    # the full keymap.
     BINDINGS = [
         ("ctrl+r", "run", "Run grind"),
+        ("ctrl+e", "focus_amc", "amc bar"),
         ("ctrl+l", "focus_source", "Focus source"),
         Binding("ctrl+1", "focus_panel('1')", "Source", show=False),
         Binding("ctrl+2", "focus_panel('2')", "Params", show=False),
-        Binding("ctrl+3", "focus_panel('3')", "Mode", show=False),
-        Binding("ctrl+4", "focus_panel('4')", "Tracks", show=False),
+        Binding("ctrl+3", "focus_panel('3')", "Mixer", show=False),
+        Binding("ctrl+4", "focus_panel('4')", "Bands", show=False),
         Binding("ctrl+5", "focus_panel('5')", "Run", show=False),
-        Binding("ctrl+6", "focus_panel('6')", "Outputs", show=False),
+        Binding("ctrl+6", "focus_panel('6')", "Uxn", show=False),
+        Binding("ctrl+o", "focus_panel('o')", "Outputs", show=False),
         ("i", "info", "Info"),
         ("f1,question", "help", "Help"),
         ("ctrl+t", "open_crash_log", "Crash log"),
@@ -77,12 +83,17 @@ class GrainTUI(App):
     ]
 
     def __init__(self, output_dir="output", loader=None, player=None, low_memory=False,
-                 session_path=SESSION_PATH):
+                 session_path=SESSION_PATH, initial_state=None, autoload=None):
         super().__init__()
         # Restore the last session BEFORE the panels compose — they read state to seed themselves.
         # None on first run (no prior session); a previous SessionState on restart-after-crash.
         prior = SessionState.load(session_path)
-        if prior is not None:
+        if initial_state is not None:
+            # A caller (main.py's CLI flags) handed us an explicit state — it WINS over the restored
+            # session, because flags typed just now are a newer statement of intent than a file.
+            self.state = initial_state
+            self.state.output_dir = output_dir or initial_state.output_dir
+        elif prior is not None:
             # cutter is not serialized — re-load from source_path lazily (the user re-presses Enter
             # or the load is auto-triggered on mount). Output_dir from prior if set, else caller's.
             self.state = prior
@@ -90,24 +101,33 @@ class GrainTUI(App):
             self.state.output_dir = output_dir or prior.output_dir
         else:
             self.state = SessionState(output_dir=output_dir)
+        if low_memory:
+            self.state.low_memory = True
         self._loader = loader or _real_loader
         # Player: a Player instance (preferred — supports start/stop/pause/seek) or a legacy
         # ``player(path)`` callable (existing tests inject these). Default: pick the best for the node.
         self._player = player if player is not None else make_player()
         self.low_memory = low_memory
         self._session_path = session_path
+        # A source to load the moment the UI is up (``main.py song.mp3 out/ --tui``). Before
+        # 2026-07-24 the positional args were parsed and then silently dropped for --tui, so the
+        # operator watched an empty Source box after naming a file on the command line.
+        self._autoload = autoload
 
     def compose(self) -> ComposeResult:
         yield Banner()
         with Horizontal(id="top"):
-            with Vertical(id="left"):
-                yield SourcePanel(self._loader)
+            with Vertical(id="col_left"):
+                yield SourcePanel(self._loader, state=self.state)
                 yield ParamsPanel(self.state)
+            with Vertical(id="col_mid"):
                 yield ModePanel(self.state)
                 yield TracksPanel(self.state.tracks)
-            with Vertical(id="right"):
+            with Vertical(id="col_right"):
                 yield RunPanel(self.state, self._threaded_runner)
+                yield UxnPanel(self.state)
                 yield OutputPanel(self.state.output_dir, self._player)
+        yield CommandBar(self.state)
         yield Footer()
 
     def on_mount(self):
@@ -116,10 +136,10 @@ class GrainTUI(App):
         self.title = "grainneukeln"
         self.sub_title = "granular grinder"
         self.query_one(ParamsPanel).border_title = "◈ 2 · grind params"
-        self.query_one(ParamsPanel).border_subtitle = "speed · window · length"
+        self.query_one(ParamsPanel).border_subtitle = "length · speed · grain shape · seed"
         self.query_one(ModePanel).border_title = "◈ 3 · mixer & effects"
         self.query_one(ModePanel).border_subtitle = "mode · euclid · poly · lib · snap · swing"
-        self.query_one(OutputPanel).border_title = "♫ outputs"
+        self.query_one(OutputPanel).border_title = "♫ outputs · ctrl+o"
         # If the restored session had a source, drop it into the source input so the operator can
         # press Enter to reload (or it auto-loads). Don't silently re-load — a crashed session may
         # have crashed BECAUSE of that source's grind, and the operator chooses whether to retry.
@@ -128,6 +148,11 @@ class GrainTUI(App):
                 self.query_one("#source_input", Input).value = self.state.source_path
             except Exception:
                 pass
+        self.refresh_recipe()
+        if self._autoload:
+            # An EXPLICIT command-line source is different from a restored one: the operator just
+            # named it, so loading it without a second keystroke is what they asked for.
+            self.query_one(SourcePanel).load(self._autoload)
 
     def on_unmount(self):
         # Final checkpoint on exit — captures any state changes after the last save. Best-effort.
@@ -150,7 +175,42 @@ class GrainTUI(App):
                 self.state.source_path = path
         self.state.save(self._session_path)
 
+    def refresh_recipe(self):
+        """Repaint the live amc recipe line. Called after any edit that could change what Run does,
+        so the line is never a stale claim."""
+        try:
+            self.query_one(CommandBar).refresh_recipe()
+        except Exception:
+            pass
+
+    def refresh_panels_from_state(self):
+        """Push the state back into every widget — the amc bar's other half.
+
+        A typed recipe that changed what Run renders while the panels kept showing the old numbers
+        would be two surfaces disagreeing about one fact: the same shape as the Loaded/No-source
+        race this TUI was built to make impossible."""
+        for cls in (SourcePanel, ParamsPanel, ModePanel, RunPanel, UxnPanel):
+            try:
+                self.query_one(cls).refresh_from_state()
+            except Exception:
+                pass
+        try:
+            self.query_one(TracksPanel).set_tracks(self.state.tracks)
+        except Exception:
+            pass
+        self.refresh_recipe()
+
     # --- wiring ---
+    def on_command_bar_applied(self, msg):
+        if msg.series:
+            self.notify(f"Series armed: {msg.series}", title="amc", timeout=6)
+            self.refresh_panels_from_state()
+            return
+        if msg.errors:
+            self.notify("\n".join(msg.errors), severity="error", title="amc", timeout=10)
+        self.refresh_panels_from_state()
+        self._save_session()
+
     def on_source_panel_loading(self, msg):
         self.state.cutter = None
         self.query_one(RunPanel).set_ready(False, "loading source…")
@@ -178,10 +238,12 @@ class GrainTUI(App):
             except Exception:
                 pass
         self.query_one(RunPanel).set_ready(True)
+        self.refresh_recipe()
         self._save_session()
 
     def on_tracks_panel_changed(self, msg):
         self.state.tracks = msg.tracks
+        self.refresh_recipe()
         self._save_session()
 
     def on_run_panel_finished(self, msg):
@@ -212,19 +274,15 @@ class GrainTUI(App):
         n_beats = len(beats) if beats is not None else 0
         beat = int(getattr(cutter, "beat", 0) or 0)
         path = getattr(cutter, "audio_file_path", "?")
-        tracks = " ".join(f"{t.low}-{t.high}" for t in s.tracks) or "(none)"
-        streams = s.streams_spec or "(mixer default)"
+        n_filtered = sum(0 if t.bypass else 1 for t in s.tracks)
         panel._log(
             f"Source: {os.path.basename(path)} · {n_beats} beats · beat={beat}ms\n"
-            f"  mode={s.mode}  l={s.sample_length_ms}ms  s={s.speed}  ss={s.sample_speed}"
-            f"  w={s.window_divider}\n"
-            f"  bands: {tracks}\n"
-            f"  euclid E({s.euclid_k},{s.euclid_n}) · swing={s.swing} · snap={s.snap}"
-            f" · fill={'on' if s.fill else 'off'}({s.fill_gain_db}dB)\n"
-            f"  lib: {s.lib_policy}/{s.lib_clusters} · poly: {streams}\n"
-            f"  out: wav={'on' if s.wav_export else 'off'}"
+            f"  {format_amc(s)}\n"
+            f"  bands: {len(s.tracks)} ({n_filtered} filtered / {len(s.tracks) - n_filtered} raw)"
+            f" · out: wav={'on' if s.wav_export else 'off'}"
             f" verbose={'on' if s.verbose else 'off'}"
             f" self-feed={'on' if s.self_feed else 'off'}"
+            f" low-mem={'on' if s.low_memory else 'off'}"
         )
 
     def action_run(self):
@@ -237,20 +295,18 @@ class GrainTUI(App):
         # bombed is already on disk and the next launch restores it. The engine ALSO appends to the
         # crash log inside its own try/except, so we get BOTH: restored session + a crash entry.
         self._save_session()
+        self.refresh_recipe()
         self.query_one(RunPanel).start()
 
     def action_help(self):
-        self.notify(
-            "KEYBOARD (no mouse needed):\n"
-            "  Source: type path/URL → Enter to load.\n"
-            "  Jump panels: Ctrl+1 source · Ctrl+2 params · Ctrl+3 mode · Ctrl+4 tracks\n"
-            "               · Ctrl+5 run · Ctrl+6 outputs.  (Tab also cycles.)\n"
-            "  Tracks (Ctrl+4 first): a add · d remove · type low/high + Enter.\n"
-            "  Outputs (Ctrl+6 first): space play/pause · s stop · . ff 10s · , back 10s · g refresh.\n"
-            "  Run: Ctrl+R · Info: i · Crash log: Ctrl+T · Help: ? · Quit: q.\n"
-            "  Series: in Run (Ctrl+5), type e.g. `l [/2,/3] s [0.8,1.0]` to render the cartesian product.\n"
-            "Crash-tolerant: state is saved before every grind — restart after a crash restores it.",
-            title="How to grind", timeout=14)
+        self.push_screen(HelpScreen())
+
+    def action_focus_amc(self):
+        """Ctrl+E: jump to the amc command bar — the CLI's whole grammar, one keystroke away."""
+        try:
+            self.query_one("#amc_input", Input).focus()
+        except Exception:
+            pass
 
     def action_focus_source(self):
         """Ctrl+L: jump straight to the source input and select-all so a new path overwrites."""
@@ -262,8 +318,8 @@ class GrainTUI(App):
             pass
 
     def action_focus_panel(self, which):
-        """Ctrl+1..6: jump to each panel. Always fires (Ctrl-prefixed — does not conflict with
-        typing digits into Inputs).
+        """Ctrl+1..6 / Ctrl+O: jump to each panel. Always fires (Ctrl-prefixed — does not conflict
+        with typing digits into Inputs).
 
         Panels extend Static and have ``can_focus=False`` — calling ``.focus()`` on the panel itself
         does nothing. We walk descendants and focus the FIRST focusable child (Input/Select/DataTable/
@@ -271,7 +327,7 @@ class GrainTUI(App):
         lands on the tracks DataTable (so 'a'/'d' panel-local bindings work right after the jump)."""
         cmap = {
             "1": SourcePanel, "2": ParamsPanel, "3": ModePanel,
-            "4": TracksPanel, "5": RunPanel, "6": OutputPanel,
+            "4": TracksPanel, "5": RunPanel, "6": UxnPanel, "o": OutputPanel,
         }
         cls = cmap.get(which)
         if not cls:
@@ -305,7 +361,9 @@ class GrainTUI(App):
 
     def action_open_crash_log(self):
         """Ctrl+T: surface the last crash record so the operator reads WHAT bombed without leaving
-        the TUI. The log is append-only — show the last entry (the most recent crash)."""
+        the TUI. The log is append-only — show the last entry (the most recent crash), WHOLE: a
+        traceback truncated to a toast's 1500 chars threw away its own tail, which is the raise
+        site, i.e. the part you open a crash log to read."""
         try:
             with open(CRASH_LOG) as f:
                 text = f.read()
@@ -317,8 +375,8 @@ class GrainTUI(App):
             return
         # Split on the "[stamp] CRASH" header and take the last block.
         blocks = [b for b in text.split("\n[") if "CRASH" in b]
-        last = ("[" + blocks[-1]) if blocks else text[-1500:]
-        self.notify(last.strip()[:1500], title="Last crash", timeout=14)
+        last = ("[" + blocks[-1]) if blocks else text
+        self.push_screen(CrashScreen(last.strip()))
 
     # --- real threaded runner injected into RunPanel ---
     def _threaded_runner(self, state, on_progress, on_log):
@@ -332,52 +390,94 @@ class GrainTUI(App):
             return self._run_series(state, spec, on_progress, on_log)
         return self._run_single(state, on_progress, on_log)
 
-    def _run_uxn(self, state, on_progress, on_log):
-        """Drive renders from the Uxn param-sequencer ROM (issue #13), closing the TUI's own
-        long-standing gap (this capability previously had zero TUI exposure). Runs on the same
-        worker-thread pattern as `_run_single`/`_run_series`.
+    def _uxn_preseed_line(self, state):
+        """The amc line that seeds everything the ROM does NOT emit.
 
-        Review finding (2026-07-21): this used to hand ``state.cutter`` straight to
-        ``run_uxn_sequence`` without ever routing through ``engine.build_config`` — the ROM's
-        per-tick line only carries ``l w s c ss`` tokens, and ``cutter.config_automix`` only
-        overrides fields whose tokens are present, falling back to whatever is cached on
-        ``cutter.auto_mixer_config``/``cutter.audio2``. Nothing ever wrote those caches, so
-        env_pct/reverse_prob/Source B were silent no-ops in Uxn mode. Fix: seed the cutter's own
-        caches BEFORE the tick loop (same worker thread, so file I/O never blocks the UI) — a
-        single ``config_automix("amc env <v> rv <v>")`` call rebuilds ``cutter.auto_mixer_config``
-        with env/rv set explicitly while every other field falls back to what was already cached
-        (traced in cutter/sample_cut_tool.py:453-461), so each ROM tick's own token-absent fallback
-        picks these up for the rest of the run. Per-track A/B tags AND Source B CANNOT compose
-        this way — the ROM emits its own `c` band string every tick (paramgen.tal's cstr0..cstr3,
-        none `2:`-prefixed), and `config_automix` rebuilds channels_config from scratch on every
-        `c` token with source2=True only for `2:`-prefixed bands, so no channel can ever pull from
-        audio2 in this mode (structural guard: test_app.py::UxnBandHonestyGuardTest). We therefore
-        do NOT load Source B here (loading it would be dead weight faking applicability) and say
-        loudly, once, that both tags and Source B are inert — instead of silently dropping them."""
-        from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM
+        The ROM's per-tick line carries only ``l w s c ss m``, and ``config_automix`` overrides only
+        the fields whose tokens are present — everything else falls back to whatever is cached on
+        ``cutter.auto_mixer_config``. Nothing wrote those caches, so the TUI's own panel settings
+        were silent no-ops in ROM mode. The 2026-07-21 fix seeded env/rv only; since the ROM gained
+        the ``m`` axis (2026-07-24) it now drives runs THROUGH q/poly/lib, whose settings —
+        euclid k/n, gap-fill, the poly stream spec, the lib policy and cluster count — were exactly
+        the ones still being dropped. Seed all of them, plus snap/swing/seed, in one call before the
+        tick loop; each tick's token-absent fallback then picks them up for the whole run.
+
+        Deliberately NOT seeded: ``c`` (the ROM writes a band string every tick, so a seeded one is
+        overwritten on tick 0 and would be a lie in the recipe) and ``l w s ss m`` (same). Source B
+        cannot compose either — see ``_run_uxn``."""
+        s = state
+        parts = [f"env {s.env_pct:g}", f"rv {s.reverse_prob:g}",
+                 f"ek {s.euclid_k}", f"en {s.euclid_n}",
+                 f"lib {'con' if s.lib_policy == 'contrast' else 'sim'}", f"lk {s.lib_clusters}",
+                 f"sw {s.swing:g}", f"fg {s.fill_gain_db:g}"]
+        if s.snap:
+            parts.append("snap")
+        if not s.fill:
+            parts.append("nofill")
+        if s.streams_spec:
+            parts.append(f"pr {s.streams_spec}")
+        seed = s.amc_seed()
+        if seed is not None:
+            parts.append(f"seed {seed}")
+        return "amc " + " ".join(parts)
+
+    def _run_uxn(self, state, on_progress, on_log):
+        """Drive renders from the Uxn param-sequencer ROM (issue #13), on the same worker-thread
+        pattern as ``_run_single``/``_run_series``.
+
+        Per-track A/B tags AND Source B CANNOT compose with this mode — the ROM emits its own `c`
+        band string every tick (paramgen.tal's cstr0..cstr3, none `2:`-prefixed), and
+        ``config_automix`` rebuilds channels_config from scratch on every `c` token with
+        source2=True only for `2:`-prefixed bands, so no channel can ever pull from audio2 here
+        (structural guard: test_app.py::UxnBandHonestyGuardTest). We therefore do NOT load Source B
+        (loading it would be dead weight faking applicability) and say so loudly, once, instead of
+        silently dropping it."""
+        from automixer.uxn_stream import run_uxn_sequence, DEFAULT_ROM, describe_line
 
         rom = state.uxn_rom_path.strip() or DEFAULT_ROM
         ticks = max(1, int(state.uxn_ticks))
+        # The output toggles are cutter-level in this path (run_uxn_sequence drives the cutter's own
+        # automix/_save_mix), not engine-level — so mirror them onto the cutter or the WAV/verbose
+        # checkboxes are dead in ROM mode while looking live in the panel.
+        cutter = state.cutter
+
+        def log(text):
+            self.call_from_thread(on_log, text)
 
         def work():
             # Fires when EITHER a track is tagged B OR a Source B path is set: an operator who
             # set Source B must learn it is inert in this mode, not just one who tagged a track.
             if any(t.source2 for t in state.tracks) or (state.source2_path or "").strip():
-                on_log("Uxn mode: ROM owns the bands — per-track A/B tags and Source B "
-                       "don't apply (env/rv do)")
+                log("Uxn mode: ROM owns the bands — per-track A/B tags and Source B "
+                    "don't apply (env/rv/euclid/poly/lib/snap/swing/seed do)")
             try:
-                state.cutter.config_automix(f"amc env {state.env_pct} rv {state.reverse_prob}")
+                cutter.is_wav_export_enabled = bool(state.wav_export)
+                cutter.is_verbose_mode_enabled = bool(state.verbose)
+                cutter.config_automix(self._uxn_preseed_line(state))
             except Exception as e:
-                on_log(f"Run failed: {e}")
+                log(f"Run failed: {e}")
                 self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
                 return None
-            on_log(f"Uxn: driving {ticks} tick(s) from {rom}"
-                    f"{' (closed-loop)' if state.uxn_feedback else ''}...")
-            lines = run_uxn_sequence(state.cutter, ticks, rom_path=rom,
-                                     closed_loop=state.uxn_feedback)
-            for i, line in enumerate(lines):
-                on_log(f"[uxn tick {i}] {line}")
-                self.call_from_thread(on_progress, (i + 1) / ticks)
+            log(f"Uxn: driving {ticks} tick(s) from {os.path.basename(rom)}"
+                f"{' (closed-loop)' if state.uxn_feedback else ''}...")
+
+            def on_tick(i, line, phase):
+                if phase == "start":
+                    mode = describe_line(line).get("m", "?")
+                    log(f"[tick {i + 1}/{ticks} · m {mode}] {line}")
+                    # Advance to the START of this tick's slice — a progress bar that only moves
+                    # when a render FINISHES sits frozen through the slowest part of the loop.
+                    self.call_from_thread(on_progress, i / ticks)
+                else:
+                    self.call_from_thread(on_progress, (i + 1) / ticks)
+
+            try:
+                run_uxn_sequence(cutter, ticks, rom_path=rom, closed_loop=state.uxn_feedback,
+                                 on_tick=on_tick)
+            except Exception as e:
+                log(f"Uxn run failed: {e}")
+                self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
+                return None
             # Renders were exported by run_uxn_sequence's own cutter.automix calls — there is no
             # single "last path" the way _run_single/_run_series track one, so completion is done
             # HERE, not via on_worker_state_changed: that handler only fires _on_finished on a
@@ -408,7 +508,7 @@ class GrainTUI(App):
             try:
                 cfg = engine.build_config(state.cutter, state)
             except Exception as e:
-                on_log(f"Run failed: {e}")
+                self.call_from_thread(on_log, f"Run failed: {e}")
                 self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
                 return None
             return engine.run(
@@ -418,7 +518,9 @@ class GrainTUI(App):
                 source_path=state.source_path,
             )
 
-        on_log(f"Rendering {len(state.tracks)} track(s), cut {state.sample_length_ms}ms…")
+        n_filtered = sum(0 if t.bypass else 1 for t in state.tracks)
+        on_log(f"Rendering {len(state.tracks)} band(s) ({n_filtered} filtered), "
+               f"cut {state.sample_length_ms}ms…")
         self.run_worker(work, thread=True, exit_on_error=False, group="grind")
         return None  # completion arrives async via on_worker_state_changed
 
@@ -446,6 +548,9 @@ class GrainTUI(App):
 
         last_path_holder = {"path": None}
 
+        def log(text):
+            self.call_from_thread(on_log, text)
+
         def work():
             for i, combo in enumerate(combos, 1):
                 # Clone the live state so the panels are not mutated as a side-effect of the sweep.
@@ -454,12 +559,12 @@ class GrainTUI(App):
                 try:
                     cfg = engine.build_config(clone.cutter, clone)
                 except Exception as e:
-                    on_log(f"Run failed: {e}")
+                    log(f"Run failed: {e}")
                     self.call_from_thread(lambda: self.query_one(RunPanel).set_ready(True))
                     return last_path_holder["path"]
                 label = describe_combination(combo[1:]) or f"combo-{i}"
-                on_log(f"[{i}/{n}] {label}  (l={clone.sample_length_ms}ms  s={clone.speed}"
-                       f"  ss={clone.sample_speed}  w={clone.window_divider}  m={clone.mode})")
+                log(f"[{i}/{n}] {label}  (l={clone.sample_length_ms}ms  s={clone.speed}"
+                    f"  ss={clone.sample_speed}  w={clone.window_divider}  m={clone.mode})")
                 # Per-combination progress: scale the engine's 0..1 fraction into the i-th slice of
                 # n. So the bar advances smoothly across the whole series, not jumping per render.
                 base = (i - 1) / n
@@ -473,7 +578,7 @@ class GrainTUI(App):
                     name_suffix=label,
                 )
                 last_path_holder["path"] = path
-                on_log(f"[{i}/{n}] done → {os.path.basename(path)}")
+                log(f"[{i}/{n}] done → {os.path.basename(path)}")
             return last_path_holder["path"]
 
         self.run_worker(work, thread=True, exit_on_error=False, group="grind")
@@ -495,12 +600,30 @@ class GrainTUI(App):
             panel.set_ready(True)
 
 
-def run_tui(output_dir="output", seed=None, low_memory=False):
-    """Launch the TUI. ``seed`` (from ``main.py --seed``) is accepted for symmetry with the CLI but
-    not yet wired into the TUI's session state — the TUI's own params panel is the primary seed
-    surface there. The arg is accepted so ``main.py --seed N --tui`` does not raise.
-    ``low_memory`` enables aggressive GC for memory-constrained nodes."""
-    if seed is not None:
-        print(f"[tui] note: --seed {seed} accepted but not yet wired into the TUI session state; "
-              f"the CLI path (no --tui) honours it end-to-end.")
-    GrainTUI(output_dir=output_dir, low_memory=low_memory).run()
+def run_tui(output_dir="output", seed=None, low_memory=False, source=None, uxn_rom=None,
+            uxn_ticks=None, uxn_feedback=False):
+    """Launch the TUI.
+
+    Every argument here mirrors a CLI flag, and each one is now actually WIRED (2026-07-24) — the
+    old signature accepted ``seed`` only to print "accepted but not yet wired", and silently dropped
+    the positional source/destination entirely when ``--tui`` was passed. Flags typed at launch are
+    a newer statement of intent than the restored session, so they override it.
+    """
+    state = None
+    if any(v is not None for v in (seed, uxn_rom, uxn_ticks)) or uxn_feedback or low_memory:
+        prior = SessionState.load()
+        state = prior if prior is not None else SessionState()
+        state.cutter = None
+        if seed is not None:
+            state.seed = seed
+        if low_memory:
+            state.low_memory = True
+        if uxn_rom is not None:
+            state.uxn_enabled = True
+            state.uxn_rom_path = "" if uxn_rom == "__default__" else uxn_rom
+        if uxn_ticks is not None:
+            state.uxn_ticks = uxn_ticks
+        if uxn_feedback:
+            state.uxn_feedback = True
+    GrainTUI(output_dir=output_dir, low_memory=low_memory, initial_state=state,
+             autoload=source).run()

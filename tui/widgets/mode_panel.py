@@ -53,6 +53,29 @@ class ModePanel(Static):
             yield Checkbox("Snap to slot", value=self.state.snap, id="snap")
             yield Checkbox("Gap-fill rests (q)", value=self.state.fill, id="fill")
 
+    def refresh_from_state(self):
+        """Re-seed every control from the state (see ParamsPanel.refresh_from_state for why)."""
+        for field, value in (("euclid_k", str(self.state.euclid_k)),
+                             ("euclid_n", str(self.state.euclid_n)),
+                             ("lib_clusters", str(self.state.lib_clusters)),
+                             ("swing", f"{self.state.swing:g}"),
+                             ("fill_gain_db", f"{self.state.fill_gain_db:g}"),
+                             ("streams_spec", self.state.streams_spec)):
+            try:
+                self.query_one(f"#{field}", Input).value = value
+            except Exception:
+                pass
+        for field, value in (("mode", self.state.mode), ("lib_policy", self.state.lib_policy)):
+            try:
+                self.query_one(f"#{field}", Select).value = value
+            except Exception:
+                pass
+        for field, value in (("snap", self.state.snap), ("fill", self.state.fill)):
+            try:
+                self.query_one(f"#{field}", Checkbox).value = value
+            except Exception:
+                pass
+
     def apply_to_state(self):
         """Validate every field and write it back onto the state. Returns a list of error strings;
         an empty list means all fields were valid and applied (same contract as ParamsPanel)."""

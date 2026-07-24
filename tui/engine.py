@@ -30,11 +30,12 @@ def _config_to_recipe(config):
         parts.append(f"ss{cfg.sample_speed}")
     if cfg.speed != 1.0:
         parts.append(f"s{cfg.speed}")
-    if cfg.channels_config and any(
-        getattr(ch, "low_pass", 0) > 0 or getattr(ch, "high_pass", 25000) < 25000
-        for ch in cfg.channels_config
-    ):
-        parts.append("c" + "_".join(f"{ch.low_pass}-{ch.high_pass}" for ch in cfg.channels_config))
+    # Only NAMED bands go in the recipe — a bypass channel is the absent-`c` default, and printing
+    # it as "c1-15000" would read as a filter the operator never asked for (and send them hunting a
+    # band-pass bug that isn't there when they read the crash log).
+    named = [ch for ch in (cfg.channels_config or []) if not getattr(ch, "bypass", False)]
+    if named:
+        parts.append("c" + "_".join(f"{ch.low_pass}-{ch.high_pass}" for ch in named))
     # mode-scoped params — defaults exist for the others but they don't apply, so suppress them
     # (the operator reads the line for the mixer that actually bombed, not a kitchen-sink dump).
     if cfg.mode == "q":
@@ -100,8 +101,12 @@ def build_config(cutter, state):
     tags ``source2=True``."""
     if state.source2_path and state.source2_path.strip():
         cutter._load_secondary_audio(state.source2_path.strip())
-    channels = [ChannelConfig(t.low, t.high, source2=t.source2) for t in state.tracks]
-    low_memory = getattr(cutter, "low_memory", False)
+    # ``bypass`` carries the CLI's absent-`c` default through: a RAW band skips band_pass_filer
+    # entirely (measured 27x faster on a 20s clip — see TrackSpec's docstring). A named band is a
+    # real filter, exactly as ``amc c lo,hi`` is.
+    channels = [ChannelConfig(t.low, t.high, bypass=t.bypass, source2=t.source2)
+                for t in state.tracks]
+    low_memory = getattr(state, "low_memory", False) or getattr(cutter, "low_memory", False)
     return AutoMixerConfig(
         audio=cutter.audio,
         beats=cutter.beats,
@@ -125,6 +130,10 @@ def build_config(cutter, state):
         env_pct=state.env_pct,
         reverse_prob=state.reverse_prob,
         audio2=getattr(cutter, "audio2", None),
+        # Reproducibility parity with `--seed N` / `amc seed N` (2026-07-24). ``amc_seed()`` is
+        # tolerant of a string typed into the field; None = legacy unseeded behaviour. A series
+        # sweep `seed [1,2,3]` reaches here through apply_amc_to_state, which sets state.seed.
+        seed=state.amc_seed() if hasattr(state, "amc_seed") else getattr(state, "seed", None),
     )
 
 

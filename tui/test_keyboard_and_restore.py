@@ -40,10 +40,14 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
             from tui.widgets.mode_panel import ModePanel
             from tui.widgets.tracks_panel import TracksPanel
             from tui.widgets.run_panel import RunPanel
+            from tui.widgets.uxn_panel import UxnPanel
             from tui.widgets.output_panel import OutputPanel
+            # Ctrl+6 is the Uxn panel now; Outputs moved to Ctrl+O when Uxn got its own panel
+            # (2026-07-24) — a digit for every config panel, a letter for the two side panels.
             cmap = {
                 "ctrl+1": SourcePanel, "ctrl+2": ParamsPanel, "ctrl+3": ModePanel,
-                "ctrl+4": TracksPanel, "ctrl+5": RunPanel, "ctrl+6": OutputPanel,
+                "ctrl+4": TracksPanel, "ctrl+5": RunPanel, "ctrl+6": UxnPanel,
+                "ctrl+o": OutputPanel,
             }
             for key, cls in cmap.items():
                 await pilot.press(key)
@@ -127,13 +131,15 @@ class KeyboardParityTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.focused.id, "source_input")
 
     async def test_question_mark_opens_help(self):
-        """`?` is an alias for F1 (Help). Notification is transient — assert only that the action
-        fires without raising (the binding routes here via the f1,question combo in BINDINGS)."""
+        """`?` is an alias for F1 (Help) — it now pushes a scrollable modal (was a transient toast;
+        a keymap + full amc grammar does not fit, or survive, a timed notification)."""
+        from tui.screens import HelpScreen
         app = GrainTUI(output_dir="output", session_path=_isolated_session())
         async with app.run_test(size=(150, 40)) as pilot:
             await pilot.pause()
-            app.action_help()   # direct call — keypress routing is exercised by other tests
+            app.action_help()
             await pilot.pause()
+            self.assertIsInstance(app.screen, HelpScreen)
 
 
 class TextTypingTargetTest(unittest.TestCase):

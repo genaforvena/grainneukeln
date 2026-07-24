@@ -44,7 +44,9 @@ if __name__ == "__main__":
                              "uxn_ctrl/paramgen.rom; or pass a path to your own ROM that emits "
                              "'l <ms> w <n>' lines on stdout. Combine with --uxn-ticks. Bypasses "
                              "the positional `commands` list.")
-    parser.add_argument("--uxn-ticks", type=int, default=8,
+    # default None (not 8) so `--tui` can tell "the operator asked for N ticks" apart from "nobody
+    # said" — an always-set 8 would override the restored session's tick count on every launch.
+    parser.add_argument("--uxn-ticks", type=int, default=None,
                         help="Number of ticks (renders) to drive from --uxn-ctrl (default 8).")
     parser.add_argument("--uxn-feedback", action="store_true",
                         help="Closed-loop Uxn control (issue #13 extension): each tick's ROM call "
@@ -56,8 +58,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.tui:
+        # Every flag reaches the TUI (2026-07-24). Previously `--tui` dropped the positional
+        # source AND destination on the floor and printed "--seed accepted but not wired", so
+        # `python main.py song.mp3 out/ --seed 5 --tui` opened an empty, unseeded session — three
+        # arguments parsed and silently discarded.
         from tui.app import run_tui
-        run_tui(seed=args.seed, low_memory=args.low_memory)
+        out = args.destination_path or "output"
+        if args.destination_path and not os.path.isdir(args.destination_path):
+            print("Destination path doesn't exist")
+            sys.exit(1)
+        run_tui(output_dir=os.path.abspath(out), seed=args.seed, low_memory=args.low_memory,
+                source=args.source_path, uxn_rom=args.uxn_ctrl, uxn_ticks=args.uxn_ticks,
+                uxn_feedback=args.uxn_feedback)
         sys.exit(0)
 
     if args.gui:
@@ -108,7 +120,7 @@ if __name__ == "__main__":
             print("Starting cut tool with file: " + args.source_path)
             cutter = sample_cut_tool.SampleCutter(args.source_path, args.destination_path,
                                                    low_memory=args.low_memory)
-            lines = run_uxn_sequence(cutter, args.uxn_ticks, rom_path=rom,
+            lines = run_uxn_sequence(cutter, args.uxn_ticks or 8, rom_path=rom,
                                      closed_loop=args.uxn_feedback)
             for i, line in enumerate(lines):
                 print(f"[uxn tick {i}] {line}")

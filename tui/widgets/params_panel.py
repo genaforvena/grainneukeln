@@ -47,10 +47,37 @@ class ParamsPanel(Static):
             yield Input(str(self.state.window_divider), id="window_divider")
             yield Label("Sample length (ms) · /2 /3 *2", id="sample_length_label")
             yield Input(str(self.state.sample_length_ms), id="sample_length")
-            yield Label("Envelope taper %% (0-50)")
+            # The literal "%%" here was an argparse escape that leaked into the rendered label —
+            # Textual is not printf, so the operator read "Envelope taper %%". Same in the error
+            # strings below.
+            yield Label("Envelope taper % (0-50)")
             yield Input(str(self.state.env_pct), id="env_pct")
             yield Label("Reverse probability (0-1)")
             yield Input(str(self.state.reverse_prob), id="reverse_prob")
+            yield Label("Seed (blank = random)")
+            yield Input("" if self.state.seed is None else str(self.state.seed), id="seed",
+                        placeholder="e.g. 42 — same seed + params = identical render")
+
+    def refresh_from_state(self):
+        """Re-seed every input from the state — the other half of ``apply_to_state``.
+
+        Without it the amc bar (and the CLI flags that pre-arm the session) would change what Run
+        renders while the widgets kept showing the old numbers: two surfaces disagreeing about one
+        fact, which is the exact class of bug the Loaded/No-source race was."""
+        vals = {
+            "speed": f"{self.state.speed:g}",
+            "sample_speed": f"{self.state.sample_speed:g}",
+            "window_divider": str(self.state.window_divider),
+            "sample_length": str(int(self.state.sample_length_ms)),
+            "env_pct": f"{self.state.env_pct:g}",
+            "reverse_prob": f"{self.state.reverse_prob:g}",
+            "seed": "" if self.state.amc_seed() is None else str(self.state.amc_seed()),
+        }
+        for field, value in vals.items():
+            try:
+                self.query_one(f"#{field}", Input).value = value
+            except Exception:
+                pass
 
     def set_beat(self, beat_ms):
         """Show the beat period in the label so /2 /3 *2 have a visible base."""
@@ -105,8 +132,20 @@ class ParamsPanel(Static):
         speed = _float("speed", 0.1, 10.0, "Speed")
         ss = _float("sample_speed", 0.1, 10.0, "Sample speed")
         wd = _int("window_divider", 1, 10, "Window divider")
-        env_pct = _float("env_pct", 0.0, 50.0, "Envelope taper %%")
+        env_pct = _float("env_pct", 0.0, 50.0, "Envelope taper %")
         reverse_prob = _float("reverse_prob", 0.0, 1.0, "Reverse probability")
+
+        # Seed: blank is a legitimate value (unseeded/legacy), so it is validated separately from
+        # the numeric fields — an empty string is not an error, a non-integer is.
+        seed_raw = self.query_one("#seed", Input).value.strip()
+        seed = None
+        seed_ok = True
+        if seed_raw:
+            try:
+                seed = int(seed_raw)
+            except ValueError:
+                errors.append(f"Seed: not an integer ({seed_raw!r}) — leave blank for unseeded")
+                seed_ok = False
 
         # Sample length accepts /N *N (transform current) as well as a bare number, matching the
         # on-Enter handler — so a value left as "/2" at Run time still resolves instead of erroring.
@@ -128,6 +167,8 @@ class ParamsPanel(Static):
             self.state.env_pct = env_pct
         if reverse_prob is not None:
             self.state.reverse_prob = reverse_prob
+        if seed_ok:
+            self.state.seed = seed
         if sl is not None:
             self.state.sample_length_ms = sl
             sl_input.value = str(sl)

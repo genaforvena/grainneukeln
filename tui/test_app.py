@@ -181,8 +181,19 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             app.state.uxn_enabled = True
             app.state.uxn_ticks = 3
+            # The stub DRIVES the on_tick callback (2026-07-24): per-tick logging and the progress
+            # bar are now the callback's job, so a stub that ignores it would assert nothing about
+            # the thing that actually reports progress during a long ROM run.
+            def fake_sequence(cutter, ticks, on_tick=None, **kw):
+                lines = ["l 100 s 1.0 m rw", "l 200 s 0.9 m rw", "l 300 s 1.1 m q"][:ticks]
+                for i, line in enumerate(lines):
+                    if on_tick:
+                        on_tick(i, line, "start")
+                        on_tick(i, line, "done")
+                return lines
+
             with patch("automixer.uxn_stream.run_uxn_sequence",
-                       return_value=["l=100 s=1.0", "l=200 s=0.9", "l=300 s=1.1"]) as stub:
+                       side_effect=fake_sequence) as stub:
                 app.query_one(RunPanel).start()
                 await app.workers.wait_for_complete()
                 await pilot.pause()
@@ -190,7 +201,10 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             btn = app.query_one("#run_btn", Button)
             self.assertFalse(btn.disabled, "Run must re-enable after a successful Uxn run")
             log_text = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
-            self.assertIn("[uxn tick 2]", log_text)
+            self.assertIn("[tick 3/3", log_text)
+            # The mode axis is the 2026-07-24 ROM addition — the log must name which ALGORITHM
+            # each tick is cutting with, not just its knobs.
+            self.assertIn("m q", log_text)
             self.assertIn("3 tick(s) complete", log_text)
 
     async def test_uxn_seeds_env_rv_and_source2_stays_unloaded(self):
@@ -221,6 +235,13 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             # the operator-facing seam under test is the widget value, not a direct state poke.
             app.query_one("#env_pct", Input).value = "22.0"
             app.query_one("#reverse_prob", Input).value = "0.65"
+            # Since the ROM gained the `m` axis (2026-07-24) a run drives THROUGH q/poly/lib, so
+            # those modes' own settings are exactly the ones the old env/rv-only seed dropped.
+            app.query_one("#euclid_k", Input).value = "5"
+            app.query_one("#euclid_n", Input).value = "16"
+            app.query_one("#lib_clusters", Input).value = "9"
+            app.query_one("#swing", Input).value = "66"
+            app.query_one("#seed", Input).value = "1234"
             app.state.source2_path = ASSET
             with patch("automixer.uxn_stream.run_uxn_sequence",
                        return_value=["l 500 w 4"]) as stub:
@@ -232,6 +253,14 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             # (which never emits `env`/`rv` tokens) falls back to these on EVERY tick.
             self.assertEqual(cutter.auto_mixer_config.env_pct, 22.0)
             self.assertEqual(cutter.auto_mixer_config.reverse_prob, 0.65)
+            # ...and every OTHER param the ROM does not emit. Each of these was a silent no-op in
+            # ROM mode before 2026-07-24: the panel showed the operator's value, the render used
+            # the default. `c`/`l`/`w`/`s`/`ss`/`m` are deliberately absent — the ROM owns those.
+            self.assertEqual(cutter.auto_mixer_config.euclid_k, 5)
+            self.assertEqual(cutter.auto_mixer_config.euclid_n, 16)
+            self.assertEqual(cutter.auto_mixer_config.lib_clusters, 9)
+            self.assertEqual(cutter.auto_mixer_config.swing, 66.0)
+            self.assertEqual(cutter.auto_mixer_config.seed, 1234)
             # Source B must NOT be loaded by the Uxn path: no channel can ever have source2=True
             # here (ROM owns the band string), so loading audio2 would only fake applicability.
             self.assertIsNone(getattr(cutter, "audio2", None),
@@ -269,7 +298,7 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
                               "the note must be logged exactly once, not per tick")
             # Asserted in wrap-safe fragments — the RichLog word-wraps long lines across strips.
             self.assertIn("per-track A/B tags and Source B don't apply", log_text)
-            self.assertIn("(env/rv do)", log_text)
+            self.assertIn("euclid/poly/lib/snap/swing/seed do", log_text)
 
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.
@@ -286,8 +315,12 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             lines = "\n".join(str(l) for l in app.query_one("#run_log", RichLog).lines)
             self.assertIn("Source:", lines)
-            self.assertIn("mode=q", lines)
-            self.assertIn("E(3,8)", lines)
+            # Info speaks the amc grammar now — the same string the command bar takes, so what
+            # `i` prints can be pasted straight back in (or into the CLI).
+            self.assertIn("m q", lines)
+            self.assertIn("ek 3", lines)
+            self.assertIn("en 8", lines)
+            self.assertIn("bands:", lines)
 
 
 class UxnBandHonestyGuardTest(unittest.TestCase):

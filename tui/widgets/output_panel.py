@@ -48,17 +48,43 @@ class OutputPanel(Static):
         # Live-refresh the playback status line — wallclock position advances while playing.
         self.set_interval(self.REFRESH_INTERVAL, self._refresh_status)
 
+    #: Extensions the panel lists. ``.wav`` is here because the WAV checkbox writes one next to
+    #: every mp3 — listing only mp3s meant the operator who ticked WAV could not see, play, or
+    #: confirm the file they had just asked for.
+    EXTS = (".mp3", ".wav")
+
+    @staticmethod
+    def _describe(path):
+        """``name · size · age`` — enough to tell a 4-second dud from a real render without
+        leaving the panel, and to spot the one you just made among fifty siblings."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return os.path.basename(path)
+        mb = st.st_size / (1024 * 1024)
+        size = f"{mb:.1f}M" if mb >= 1 else f"{st.st_size // 1024}K"
+        age_s = max(0, int(time.time() - st.st_mtime))
+        if age_s < 60:
+            age = f"{age_s}s"
+        elif age_s < 3600:
+            age = f"{age_s // 60}m"
+        elif age_s < 86400:
+            age = f"{age_s // 3600}h"
+        else:
+            age = f"{age_s // 86400}d"
+        return f"{os.path.basename(path)}  ·  {size} · {age} ago"
+
     def refresh_list(self):
         lv = self.query_one("#output_list", ListView)
         lv.clear()
         self.paths = []
         if os.path.isdir(self.output_dir):
             files = [os.path.join(self.output_dir, f)
-                     for f in os.listdir(self.output_dir) if f.endswith(".mp3")]
+                     for f in os.listdir(self.output_dir) if f.endswith(self.EXTS)]
             files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
             self.paths = files
             for p in files:
-                lv.append(ListItem(Label(os.path.basename(p))))
+                lv.append(ListItem(Label(self._describe(p))))
             if files:
                 lv.index = 0   # highlight the newest so play/preview has a target
 

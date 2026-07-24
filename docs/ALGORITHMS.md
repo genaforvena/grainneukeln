@@ -80,8 +80,8 @@ install; comment `:114-118`.)
 **This step cannot fail loudly.** Given any fluctuating audio, `beat_track` returns a grid whether or
 not the source has a real pulse — it fits librosa's ~120 BPM prior to whatever it finds. White noise
 yields a confident invented grid; a featureless drone or digital silence yields *nothing* (0 beats),
-which is the only "no build material" case. See the README's *rhythm-seeking maniac* section for the
-measured regimes. Consequence for every mixer below: **there is no beat floor** — beatless input still
+which is the only "no build material" case. See
+[`HOW_IT_WORKS.md`](HOW_IT_WORKS.md#what-it-is-a-rhythm-seeking-maniac) for the measured regimes. Consequence for every mixer below: **there is no beat floor** — beatless input still
 grinds on the hallucinated grid, and no mixer reports "no rhythm here."
 
 ### 2.2 The grain clock: `beat_interval` vs `calculate_step`

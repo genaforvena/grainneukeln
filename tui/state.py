@@ -5,12 +5,27 @@ import os
 
 @dataclass
 class TrackSpec:
+    """One band the grinder renders. ``bypass`` is the RAW pass-through — no band_pass_filer call.
+
+    Load-bearing default (2026-07-24): the CLI's ``AutoMixerConfig`` resolves an ABSENT ``c`` token
+    to ``[ChannelConfig(0, 15000, bypass=True)]``, i.e. an operator who never names a band pays no
+    filter cost. The TUI seeded its default track as a REAL 0..15000 filter, so every default TUI
+    grind took the slow path the CLI skips — measured on a 20s clip, seed 1: bypass **0.14s** vs
+    filtered **3.77s** (27x). A default track is therefore ``bypass=True`` ("raw"); naming a band
+    (Set / the ``c`` token / the amc bar) turns the filter ON, exactly as ``amc c lo,hi`` does.
+    """
+
     low: int
     high: int
     source2: bool = False
+    bypass: bool = False
 
     def valid(self) -> bool:
         return 0 <= self.low < self.high
+
+    def label(self) -> str:
+        """How the row reads in the tracks table / recipe line."""
+        return "raw" if self.bypass else f"{self.low}-{self.high}"
 
 
 MODES = ("rw", "q", "poly", "lib")
@@ -36,7 +51,8 @@ class SessionState:
     sample_speed: float = 1.0
     window_divider: int = 2
     sample_length_ms: int = 0
-    tracks: list = field(default_factory=lambda: [TrackSpec(0, 15000)])
+    # Default = ONE raw (bypass) band, mirroring the CLI's absent-`c` default. See TrackSpec.
+    tracks: list = field(default_factory=lambda: [TrackSpec(0, 15000, bypass=True)])
     output_dir: str = "output"
     # Mixer selection + per-mode effects — parity with the CLI `amc` knobs (issue: the TUI exposed
     # only the 5 mode-neutral params above). Each block below is ignored by the mixers it does not
@@ -80,6 +96,23 @@ class SessionState:
     uxn_rom_path: str = ""            # blank = vendored default ROM
     uxn_ticks: int = 8
     uxn_feedback: bool = False
+    # Reproducibility (2026-07-24): the CLI's `--seed N` / `amc seed N`. None = legacy unseeded
+    # behaviour (runs differ). The TUI accepted `--seed` and printed "not wired" — it is wired now,
+    # and `automixer.series.apply_amc_to_state` (which already set a bare `seed` attribute for the
+    # series sweep `seed [1,2,3]`) finally lands on a field `engine.build_config` reads.
+    seed: object = None
+    # Aggressive GC for memory-constrained nodes — the CLI's `--low-memory`. Mirrors the flag onto
+    # the state so the TUI can toggle it per-run instead of only at launch.
+    low_memory: bool = False
+
+    def amc_seed(self):
+        """The seed as an int, or None. Tolerates a string typed into the seed field."""
+        if self.seed is None or self.seed == "":
+            return None
+        try:
+            return int(self.seed)
+        except (TypeError, ValueError):
+            return None
 
     def is_runnable(self) -> tuple[bool, str]:
         if self.cutter is None:
@@ -93,6 +126,15 @@ class SessionState:
         for i, t in enumerate(self.tracks):
             if not t.valid():
                 return False, f"Track {i + 1} range invalid (need 0 <= low < high)"
+        if self.uxn_enabled:
+            # Validate the Uxn inputs HERE, before a worker thread spawns uxncli and dies on tick 0
+            # with a raw FileNotFoundError in the log. A missing ROM / unbuilt emulator is the single
+            # most common Uxn-mode failure and it deserves an actionable message, not a traceback.
+            if self.uxn_ticks < 1:
+                return False, "Uxn ticks must be >= 1"
+            rom = (self.uxn_rom_path or "").strip()
+            if rom and not os.path.isfile(rom):
+                return False, f"Uxn ROM not found: {rom}"
         return True, ""
 
     # --- crash-tolerant persistence ---
@@ -107,12 +149,14 @@ class SessionState:
         "wav_export", "verbose", "self_feed", "source_path", "series_spec",
         "env_pct", "reverse_prob", "source2_path",
         "uxn_enabled", "uxn_rom_path", "uxn_ticks", "uxn_feedback",
+        "seed", "low_memory",
     )
 
     def to_dict(self):
         """JSON-safe view of every persisted field. ``cutter`` is excluded."""
         d = asdict(self)
-        d["tracks"] = [{"low": t.low, "high": t.high, "source2": t.source2} for t in self.tracks]
+        d["tracks"] = [{"low": t.low, "high": t.high, "source2": t.source2, "bypass": t.bypass}
+                       for t in self.tracks]
         d.pop("cutter", None)
         return {k: d[k] for k in self.SERIAL_FIELDS if k in d}
 
@@ -123,8 +167,10 @@ class SessionState:
         clean = {k: v for k, v in d.items() if k in known}
         if "tracks" in clean:
             clean["tracks"] = [
-                TrackSpec(t["low"], t["high"], t.get("source2", False)) if isinstance(t, dict)
-                else TrackSpec(t.low, t.high, getattr(t, "source2", False))
+                TrackSpec(t["low"], t["high"], t.get("source2", False), t.get("bypass", False))
+                if isinstance(t, dict)
+                else TrackSpec(t.low, t.high, getattr(t, "source2", False),
+                               getattr(t, "bypass", False))
                 for t in clean["tracks"]
             ]
         return cls(**clean)

@@ -1,4 +1,5 @@
 import inspect
+import os
 
 from textual import work
 from textual.app import ComposeResult
@@ -42,9 +43,14 @@ class SourcePanel(Static):
             self.error = error
             super().__init__()
 
-    def __init__(self, loader, searcher=None):
+    def __init__(self, loader, searcher=None, state=None):
         super().__init__()
         self._loader = loader
+        # Source B (dual-source grinding) lives HERE, next to Source A — it was buried in the Run
+        # panel between the series spec and the Uxn row, which is the one place an operator looking
+        # for "where do I put the second source" would never look. ``state`` is optional so the
+        # existing single-arg constructions in the tests keep working.
+        self.state = state
         # ``searcher`` is injectable for tests; the real default calls yt_dlp.
         # Signature: searcher(query) -> list[result-dict] (see youtube.search.search).
         self._searcher = searcher or yts.search
@@ -58,6 +64,10 @@ class SourcePanel(Static):
                         id="source_input")
             yield OptionList(id="source_results")
             yield Label(self.status_text, id="source_status")
+            yield Label("Source B (optional) — bands tagged B in the tracks panel pull from it")
+            yield Input(getattr(self.state, "source2_path", "") if self.state else "",
+                        id="source2_path",
+                        placeholder="blank = single-source · local file path")
 
     def on_mount(self):
         self.border_title = "◈ 1 · source"
@@ -69,7 +79,36 @@ class SourcePanel(Static):
         except Exception:
             pass
 
+    def on_input_changed(self, event):
+        if event.input.id == "source2_path" and self.state is not None:
+            self.state.source2_path = event.value
+
+    def refresh_from_state(self):
+        if self.state is None:
+            return
+        for wid, val in (("source_input", self.state.source_path),
+                         ("source2_path", self.state.source2_path)):
+            try:
+                self.query_one(f"#{wid}", Input).value = val or ""
+            except Exception:
+                pass
+
     def on_input_submitted(self, event):
+        # ``event.input`` is absent when a test injects a bare {value: …} stub for the primary
+        # path; treat that as the source-A input (id source_input), never source2.
+        inp = getattr(event, "input", None)
+        if getattr(inp, "id", "source_input") == "source2_path":
+            # Enter in Source B validates the path instead of falling through to the YouTube
+            # search branch below — which would otherwise treat a mistyped local path as a
+            # search query and start downloading something unrelated.
+            path = (event.value or "").strip()
+            if not path:
+                self._set_status("Source B cleared — single-source grinding")
+            elif os.path.isfile(path):
+                self._set_status(f"Source B set → {os.path.basename(path)}")
+            else:
+                self._set_status(f"Source B: file not found — {path}")
+            return
         value = (event.value or "").strip()
         if not value:
             self._set_status("Enter a path, URL, or artist + track, then Enter")

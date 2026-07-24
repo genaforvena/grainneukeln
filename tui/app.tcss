@@ -14,13 +14,19 @@ Banner {
     background: $background;
 }
 
-/* --- layout skeleton (unchanged geometry) --- */
-#top   { height: 1fr; }
-#left  { width: 3fr; }
-#right { width: 2fr; }
+/* --- layout skeleton ---
+   THREE columns (2026-07-24), not two. The Uxn panel and the amc command bar are new surfaces and
+   a two-column split could not hold them: the right column alone needed Run (17 rows) + Uxn (12) +
+   Outputs, which is past a 40-row screen before the banner. Splitting config across two narrower
+   columns costs nothing at 150 cols and keeps every panel visible without scrolling —
+   test_all_panels_fit_on_screen is the gate. */
+#top       { height: 1fr; }
+#col_left  { width: 1fr; }
+#col_mid   { width: 1fr; }
+#col_right { width: 1fr; }
 
 /* --- panels: rounded, per-role accent, titled --- */
-SourcePanel, ParamsPanel, ModePanel, TracksPanel, RunPanel, OutputPanel {
+SourcePanel, ParamsPanel, ModePanel, TracksPanel, RunPanel, UxnPanel, OutputPanel, CommandBar {
     border: round $primary;
     background: $surface;
     padding: 0 1;
@@ -32,17 +38,50 @@ SourcePanel, ParamsPanel, ModePanel, TracksPanel, RunPanel, OutputPanel {
 }
 SourcePanel { border: round $secondary; border-title-color: $secondary; }
 ParamsPanel { border: round $primary;   border-title-color: $primary;   }
-ModePanel   { border: round $warning;   border-title-color: $warning;   margin: 0 1 0 0; }
+ModePanel   { border: round $warning;   border-title-color: $warning;   }
 TracksPanel { border: round $accent;    border-title-color: $accent;    }
 RunPanel    { border: round $success;   border-title-color: $success;   }
-OutputPanel { border: round $secondary; border-title-color: $secondary; }
+UxnPanel    { border: round $primary;   border-title-color: $primary;   }
+CommandBar  { border: round $accent;    border-title-color: $accent; height: auto; margin: 0 1 0 0; }
 
 /* content-sized panels hug their content; space-fillers grow into the leftover column height */
-SourcePanel, ParamsPanel, ModePanel, RunPanel { height: auto; }
-SourcePanel > Vertical, RunPanel > Vertical { height: auto; }
-TracksPanel, OutputPanel { height: 1fr; }
-TracksPanel > Vertical, OutputPanel > Vertical { height: 1fr; }
+SourcePanel, ModePanel, RunPanel { height: auto; }
+SourcePanel > Vertical, RunPanel > Vertical, CommandBar > Vertical { height: auto; }
+ParamsPanel, TracksPanel, UxnPanel, OutputPanel { height: 1fr; }
+ParamsPanel > Grid { height: auto; }
+TracksPanel > Vertical, OutputPanel > Vertical, UxnPanel > Vertical { height: 1fr; }
 TracksPanel DataTable, OutputPanel ListView { height: 1fr; }
+
+/* --- amc command bar --- */
+CommandBar #recipe_line { color: $secondary; text-style: bold; height: auto; }
+CommandBar Input { height: 1; border: none; background: $surface-lighten-1; }
+CommandBar Input:focus { background: $surface-lighten-2; }
+
+/* --- uxn panel --- */
+UxnPanel #uxn_toggles { height: 1; }
+UxnPanel #uxn_toggles Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; height: 1; }
+UxnPanel #uxn_fields { grid-size: 2; grid-rows: auto; grid-gutter: 0 1; height: auto; }
+UxnPanel #uxn_fields Label { color: $foreground-darken-1; height: 1; padding: 0; }
+UxnPanel #uxn_fields Input { width: 1fr; height: 1; border: none; background: $surface-lighten-1; }
+UxnPanel #uxn_fields Input:focus { background: $surface-lighten-2; }
+UxnPanel #uxn_actions { height: auto; margin: 1 0 0 0; }
+UxnPanel #uxn_preview { width: auto; height: 1; background: $primary; color: $background; }
+UxnPanel #uxn_status { padding: 0 0 0 1; color: $text-muted; }
+UxnPanel #uxn_log { height: 1fr; background: $surface-darken-1; border: round $panel; color: $text-muted; }
+
+/* --- modal screens (help / crash log) --- */
+_Modal, HelpScreen, CrashScreen { align: center middle; }
+#modal_body {
+    width: 90%;
+    height: 85%;
+    background: $surface;
+    border: round $secondary;
+    border-title-color: $secondary;
+    border-title-style: bold;
+    padding: 1 2;
+}
+#modal_text { width: 100%; }
+#modal_close { width: 100%; dock: bottom; }
 
 /* --- params grid (2-col: label | field, one field per row) ---
    Inputs are the compact 1-row style (same as ModePanel) — the tall bordered default made each
@@ -62,8 +101,13 @@ ModePanel Grid Input:focus { background: $surface-lighten-2; }
 ModePanel Grid Select { width: 1fr; height: 3; }
 ModePanel Grid Checkbox { width: 1fr; height: 1; background: $surface; border: none; }
 
+/* --- source panel --- */
+SourcePanel Input { height: 1; border: none; background: $surface-lighten-1; }
+SourcePanel Input:focus { background: $surface-lighten-2; }
+SourcePanel OptionList { height: auto; max-height: 8; }
+
 /* --- captions / helper labels --- */
-#source_status { color: $text-muted; padding: 1 0 0 0; }
+#source_status { color: $text-muted; padding: 0; }
 #track_status  { color: $text-muted; }
 SourcePanel Label, TracksPanel Label, OutputPanel Label { color: $foreground-darken-1; }
 
@@ -92,15 +136,14 @@ DataTable > .datatable--hover  { background: $panel-lighten-1; }
 #track_set:hover { background: $accent-lighten-1; }
 
 /* --- run panel --- */
-RunPanel #run_options { height: auto; margin: 0 0 1 0; }
-RunPanel #uxn_options { height: auto; }  /* Horizontal defaults to 1fr — it swallowed 12 rows */
+RunPanel #run_options { height: 1; margin: 0 0 1 0; }
 RunPanel #run_options Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; }
-/* compact 1-row inputs (series / Source B / Uxn rom+ticks) — the tall bordered default made the
-   Uxn+source2 additions (2026-07-21) push OutputPanel off a 40-row screen */
+/* compact 1-row inputs (series) — the tall bordered default pushed OutputPanel off a 40-row screen */
 RunPanel Input { height: 1; border: none; background: $surface-lighten-1; }
 RunPanel Input:focus { background: $surface-lighten-2; }
 RunPanel Checkbox { padding: 0 1; margin: 0; background: $surface; border: none; height: 1; }
-RunPanel #run_progress { margin: 1 0; }
+RunPanel #run_btn { height: 1; }
+RunPanel #run_progress { margin: 0; }
 RunPanel #run_log {
     height: 8;
     background: $surface-darken-1;

@@ -67,8 +67,9 @@ class SessionStatePersistenceTest(unittest.TestCase):
     def test_tracks_serialize_as_list_of_dicts(self):
         s = SessionState(tracks=[TrackSpec(80, 2000), TrackSpec(2000, 12000)])
         d = s.to_dict()
-        self.assertEqual(d["tracks"], [{"low": 80, "high": 2000, "source2": False},
-                                        {"low": 2000, "high": 12000, "source2": False}])
+        self.assertEqual(d["tracks"], [
+            {"low": 80, "high": 2000, "source2": False, "bypass": False},
+            {"low": 2000, "high": 12000, "source2": False, "bypass": False}])
 
     def test_roundtrip_preserves_every_persisted_field(self):
         original = SessionState(

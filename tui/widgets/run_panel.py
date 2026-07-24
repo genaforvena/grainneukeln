@@ -5,6 +5,13 @@ from textual.message import Message
 
 
 class RunPanel(Static):
+    """Render options, the series sweep, the Run button, progress, and the run log.
+
+    Uxn ROM control used to live here as four unlabelled widgets in one row; it has its own panel
+    now (``UxnPanel``). What stays here is everything about THIS render: the output toggles, the
+    optional sweep, and the log that says what happened.
+    """
+
     class Finished(Message):
         def __init__(self, path):
             self.path = path
@@ -24,6 +31,8 @@ class RunPanel(Static):
                                tooltip="Pass is_verbose_mode_enabled to the mixers")
                 yield Checkbox("Self-feed", value=self.state.self_feed, id="opt_self_feed",
                                tooltip="After the grind, reload the exported mp3 as the source (aminf)")
+                yield Checkbox("Low-mem", value=self.state.low_memory, id="opt_low_memory",
+                               tooltip="Aggressive GC — slower, ~30%% less peak RAM (--low-memory)")
             # Series spec (2026-07-19): sweep one or more amc params across a list/range. Empty =
             # single-shot grind; non-empty = the runner expands the cartesian product and iterates
             # one render per combination. The hint string shows the grammar inline so the operator
@@ -33,26 +42,13 @@ class RunPanel(Static):
                         id="series_label")
             yield Input(self.state.series_spec, id="series_spec",
                         placeholder="blank = one render;  l [/2,/3,/4]  → 3 renders")
-            yield Label("Source B (optional, dual-source grinding)")
-            yield Input(self.state.source2_path, id="source2_path",
-                        placeholder="blank = single-source;  local file path")
-            with Horizontal(id="uxn_options"):
-                yield Checkbox("Uxn ctrl", value=self.state.uxn_enabled, id="opt_uxn_enabled",
-                               tooltip="Drive renders from the Uxn param-sequencer ROM (issue #13) "
-                                       "instead of a normal/series grind")
-                yield Input(self.state.uxn_rom_path, id="uxn_rom_path",
-                            placeholder="blank = vendored paramgen.rom")
-                yield Input(str(self.state.uxn_ticks), id="uxn_ticks")
-                yield Checkbox("Closed-loop", value=self.state.uxn_feedback, id="opt_uxn_feedback",
-                               tooltip="Feed each tick a measured feedback byte (closed-loop Uxn "
-                                       "control) instead of pure open-loop ticking")
             yield Button("Run grind — load a source first", id="run_btn",
                          variant="primary", disabled=True)
             yield ProgressBar(total=100, show_eta=False, id="run_progress")
-            yield RichLog(id="run_log", max_lines=200, wrap=True)
+            yield RichLog(id="run_log", max_lines=400, wrap=True)
 
     def on_mount(self):
-        self.border_title = "◈ 3 · run"
+        self.border_title = "◈ 5 · run"
         self.border_subtitle = "ctrl+r · i: info"
 
     def set_ready(self, ready, reason="load a source first"):
@@ -62,28 +58,32 @@ class RunPanel(Static):
         btn.disabled = not ready
         btn.label = "Run grind  (Ctrl+R)" if ready else f"Run grind — {reason}"
 
+    def refresh_from_state(self):
+        for wid, val in (("opt_wav", self.state.wav_export), ("opt_verbose", self.state.verbose),
+                         ("opt_self_feed", self.state.self_feed),
+                         ("opt_low_memory", self.state.low_memory)):
+            try:
+                self.query_one(f"#{wid}", Checkbox).value = val
+            except Exception:
+                pass
+        try:
+            self.query_one("#series_spec", Input).value = self.state.series_spec
+        except Exception:
+            pass
+
     def on_checkbox_changed(self, event):
-        """Sync the three render-option checkboxes straight onto state — they take effect on the
-        next Run, no separate apply step needed (they are booleans, nothing to validate)."""
+        """Sync the render-option checkboxes straight onto state — they take effect on the next
+        Run, no separate apply step needed (they are booleans, nothing to validate)."""
         cmap = {"opt_wav": "wav_export", "opt_verbose": "verbose", "opt_self_feed": "self_feed",
-                "opt_uxn_enabled": "uxn_enabled", "opt_uxn_feedback": "uxn_feedback"}
+                "opt_low_memory": "low_memory"}
         attr = cmap.get(event.checkbox.id)
         if attr:
             setattr(self.state, attr, event.value)
 
     def on_input_changed(self, event):
-        # Persist these as the operator types — a crash mid-typing should not lose them.
+        # Persist as the operator types — a crash mid-typing should not lose it.
         if event.input.id == "series_spec":
             self.state.series_spec = event.value
-        elif event.input.id == "source2_path":
-            self.state.source2_path = event.value
-        elif event.input.id == "uxn_rom_path":
-            self.state.uxn_rom_path = event.value
-        elif event.input.id == "uxn_ticks":
-            try:
-                self.state.uxn_ticks = int(event.value)
-            except ValueError:
-                pass  # leave the last valid value; the field still shows what was typed
 
     def on_button_pressed(self, event):
         if event.button.id == "run_btn":

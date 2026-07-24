@@ -67,16 +67,16 @@ class RunPanelTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.finished, "/tmp/uxn-out.mp3")
 
     async def test_render_option_checkboxes_sync_to_state(self):
-        """WAV / Verbose / Self-feed checkboxes are the TUI's parity surface for the CLI's
-        set_wav_enabled / set_verbose_enabled / aminf — toggling one writes straight to state."""
+        """WAV / Verbose / Self-feed / Low-mem checkboxes are the TUI's parity surface for the CLI's
+        set_wav_enabled / set_verbose_enabled / aminf / --low-memory — toggling one writes straight
+        to state. (The Uxn checkboxes moved to their own panel 2026-07-24 and are tested there.)"""
         state = SessionState(cutter=object(), sample_length_ms=300)
         app = _Host(state, lambda *a: None)
         async with app.run_test() as pilot:
             for cid, attr in (("opt_wav", "wav_export"),
                               ("opt_verbose", "verbose"),
                               ("opt_self_feed", "self_feed"),
-                              ("opt_uxn_enabled", "uxn_enabled"),
-                              ("opt_uxn_feedback", "uxn_feedback")):
+                              ("opt_low_memory", "low_memory")):
                 cb = app.query_one(f"#{cid}", Checkbox)
                 self.assertFalse(getattr(state, attr))   # default off
                 cb.value = True
