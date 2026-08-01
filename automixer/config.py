@@ -100,7 +100,8 @@ class AutoMixerConfig:
                  pattern=None,
                  cycle_beats=1.0,
                  accents=None,
-                 pattern_label=None):
+                 pattern_label=None,
+                 target_ms=None):
         if mode not in self.modes:
             print("Invalid mode. Defaulting to random.")
             print("Valid modes: " + str(self.modes.keys()))
@@ -169,6 +170,27 @@ class AutoMixerConfig:
         # per-grain reverse probability (0..1, default off -- today's character unchanged).
         self.env_pct = float(env_pct)
         self.reverse_prob = float(reverse_prob)
+        # Output length bound in ms, or None = unbounded (today's behaviour, unchanged).
+        #
+        # The rw mixer is the ONLY mixer with no length bound: q/poly/lib all canvas at ``total_ms``
+        # (the source length), while rw emits ``n_windows × calculate_step(beats)`` and stops when
+        # it runs out of windows. ``calculate_step`` is ``mean(beat POSITIONS)/4`` — roughly an
+        # EIGHTH OF THE TRACK LENGTH, not any beat quantity (``beat_interval``'s docstring has said
+        # so since 2026-07-24; the consequence for rw's output length was never drawn). Windows step
+        # by one beat, so the render is ``n_beats × duration/8`` — QUADRATIC in source duration.
+        #
+        # Measured on the operator's 254.9s source (2026-08-01): 408 beats, real beat period 592ms,
+        # calculate_step 31285ms. w=5 -> 328 windows × 31.3s = 10261s of audio. A 2.9-HOUR render
+        # for a 4-minute source, 40.3x. It never finished: ~1.9GB of int16 in the join, ×4 through
+        # the float64 export path, cgroup-OOM-killed (rc=137) at a 9GB ceiling and again at 16GB.
+        # No memory budget fixes a quadratic — 01/02/03 died the same way at both ceilings.
+        # Short sources hid it (the sound reflex caps its feed ~65s, where 8x is merely "long").
+        #
+        # Set it and rw stops at the bound, trimming the last window exactly. Left None, nothing
+        # changes for any existing consumer — this does NOT silently re-cut every rw grind in the
+        # mesh, whose gates are tuned around today's lengths. Fixing ``calculate_step`` itself is
+        # the real repair and belongs to the sound lane, which owns that blast radius.
+        self.target_ms = int(target_ms) if target_ms else None
 
     def __str__(self):
         channel_config = [str(channel) for channel in self.channels_config]
@@ -181,4 +203,6 @@ class AutoMixerConfig:
             "Sample Speed: " + str(self.sample_speed) + "\n" + \
             "Verbose Mode Enabled: " + str(self.is_verbose_mode_enabled) + "\n" + \
             "Window Divider: " + str(self.window_divider) + "\n" + \
-            "Channels Config: " + str(channel_config) + "\n"
+            "Channels Config: " + str(channel_config) + "\n" + \
+            "Target Length: " + (str(self.target_ms) + "ms" if self.target_ms else "unbounded") + "\n" + \
+            "Low Memory: " + str(self.low_memory) + "\n"

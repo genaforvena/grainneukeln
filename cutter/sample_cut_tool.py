@@ -526,6 +526,14 @@ class SampleCutter:
         if "rv" in args:
             reverse_prob = float(args[args.index("rv") + 1])
 
+        # Output length bound (2026-08-01): `tl <seconds>` caps the render; `tl src` uses the source
+        # length. Only the rw mixer is unbounded (see AutoMixerConfig.target_ms) — the others already
+        # canvas at the source length, so `tl` is a no-op there. Absent = unbounded, unchanged.
+        target_ms = getattr(self.auto_mixer_config, "target_ms", None)
+        if "tl" in args:
+            val = str(args[args.index("tl") + 1])
+            target_ms = len(self.audio) if val == "src" else int(round(float(val) * 1000))
+
         # Dual-source grinding (2026-07-21): `src2 <path>` loads a second file (cached by path);
         # a `c` band prefixed `2:` pulls its grains from it instead of the primary source.
         audio2 = getattr(self, "audio2", None)
@@ -598,6 +606,17 @@ class SampleCutter:
             cycle_beats=cycle_beats,
             accents=accents,
             pattern_label=pattern_label,
+            target_ms=target_ms,
+            # ``low_memory`` was NOT carried across this rebuild (2026-08-01): __init__ builds the
+            # first config with ``low_memory=self.low_memory``, and every ``amc …`` command then
+            # REPLACED it with a fresh AutoMixerConfig that omitted the field — so it silently fell
+            # back to the default False. Since a render is always ``amc <params>`` followed by
+            # ``am``, ``--low-memory`` was a no-op on every CLI grind that passed any amc string:
+            # the flag parsed, printed, and did nothing. The streaming join it selects is exactly
+            # the path that halves peak RSS, so the op-grind batch was running the O(N)-AudioSegment
+            # path while its log said low-mem was on. Same shape as the target_ms omission above —
+            # a rebuild that forgets a field reports the old value and uses the new default.
+            low_memory=self.low_memory,
         )
 
         print("AutoMixer config: " + str(self.auto_mixer_config))

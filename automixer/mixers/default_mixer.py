@@ -49,6 +49,9 @@ class RandomWindowAutoMixer:
         apply_seed(config)
         pbar = tqdm(desc="Mixing")
         chunk_length_in_window = calculate_step(config.beats)
+        # Output length bound (None = unbounded, today's behaviour). See AutoMixerConfig.target_ms
+        # for why rw — alone among the mixers — needs an explicit one.
+        target_ms = getattr(config, "target_ms", None)
         low_memory = getattr(config, "low_memory", False)
         gc_interval = 10 if low_memory else 0
         if low_memory:
@@ -63,6 +66,7 @@ class RandomWindowAutoMixer:
             # (both reduce to ``first._spawn(joined_bytes)``); verified by test_low_memory_bit_identity.
             mix_data = bytearray()
             first = None
+            emitted_ms = 0
             for i, window in enumerate(rolling_window(config.beats, config.window_divider)):
                 chunk_parts = [_create_chunk(config, window)]
                 chunk_total = len(chunk_parts[0])
@@ -75,15 +79,20 @@ class RandomWindowAutoMixer:
                     first = chunk1
                 mix_data.extend(chunk1._data)
                 pbar.update(len(chunk1))
+                emitted_ms += len(chunk1)
                 del chunk_parts, chunk1
                 if gc_interval and (i % gc_interval == 0):
                     gc.collect()
+                if target_ms and emitted_ms >= target_ms:
+                    break
             gc.collect()
             from pydub import AudioSegment
             if first is None:
                 return AudioSegment.empty()
-            return first._spawn(bytes(mix_data))
+            mixed = first._spawn(bytes(mix_data))
+            return mixed[:target_ms] if target_ms else mixed
         mix_parts = []
+        emitted_ms = 0
         for i, window in enumerate(rolling_window(config.beats, config.window_divider)):
             chunk_parts = [_create_chunk(config, window)]
             chunk_total = len(chunk_parts[0])
@@ -94,12 +103,16 @@ class RandomWindowAutoMixer:
             chunk1 = concat_bit_identical(chunk_parts)
             mix_parts.append(chunk1)
             pbar.update(len(chunk1))
+            emitted_ms += len(chunk1)
             if gc_interval and (i % gc_interval == 0):
                 del chunk_parts
                 gc.collect()
+            if target_ms and emitted_ms >= target_ms:
+                break
         if gc_interval:
             gc.collect()
-        return concat_bit_identical(mix_parts)
+        mixed = concat_bit_identical(mix_parts)
+        return mixed[:target_ms] if target_ms else mixed
 
 # amc ss 0.5 s 1.5 c 1,250;500,15000 w 6
 # amc ss 2.0 s 0.5 c 1,250;10000,15000
