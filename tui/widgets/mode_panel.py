@@ -4,16 +4,20 @@ from textual.widgets import Checkbox, Input, Label, Select, Static
 
 from tui.state import MODES, LIB_POLICIES
 from automixer.config import parse_stream_spec
+# The one shared pattern parser (see tui/amc.py) — the panel validates through it rather than
+# re-reading `pat`/`acc` itself, so a name that works on the command line works here by construction.
+from automixer.iterators.patterns import PatternError, parse_accents, resolve_pattern
 
 
 class ModePanel(Static):
     """Mixer selection + per-mode effects — the CLI `amc` knobs the TUI was missing.
 
-    Picks the mixer (rw/q/poly/lib) and edits every effect the CLI exposes: euclid E(k,n) and
-    gap-fill (q), the poly stream `pr` spec, the lib policy + cluster count, and the composable
-    placement effects snap + swing. Each field maps 1:1 onto AutoMixerConfig and is ignored by the
-    mixers it does not apply to — same as on the command line. (`groove_template` is intentionally
-    absent: the CLI has no textual form for it either, so there is nothing to reach parity with.)
+    Picks the mixer (rw/q/poly/lib) and edits every effect the CLI exposes: euclid E(k,n), the
+    cyclic pattern engine (`pat`/`cyc`/`rot`/`acc`) and gap-fill (q), the poly stream `pr` spec, the
+    lib policy + cluster count, and the composable placement effects snap + swing. Each field maps
+    1:1 onto AutoMixerConfig and is ignored by the mixers it does not apply to — same as on the
+    command line. (`groove_template` is intentionally absent: the CLI has no textual form for it
+    either, so there is nothing to reach parity with.)
     """
 
     def __init__(self, state):
@@ -50,6 +54,23 @@ class ModePanel(Static):
                 self.state.streams_spec, id="streams_spec",
                 placeholder="3;2 · 4:1-2000;3:6000-15000")
 
+            # Cyclic pattern engine (q). Blank Pattern = the euclid k/n above; a name/spec here
+            # REPLACES them. Cycle/Rotate/Accents left blank fall back to the named pattern's own
+            # library defaults, and apply to the euclid grid when Pattern is blank — same as `amc`.
+            yield Label("Pattern (pat)")
+            yield Input(self.state.pattern_spec, id="pattern_spec",
+                        placeholder="bembe · clave32 · x..x..x. · +2,2,2,3")
+            yield Label("Cycle beats (cyc)")
+            yield Input(
+                "" if self.state.cycle_beats is None else f"{float(self.state.cycle_beats):g}",
+                id="cycle_beats", placeholder="blank = pattern default")
+
+            yield Label("Rotate (rot)")
+            yield Input(str(self.state.pattern_rot), id="pattern_rot", placeholder="0 · slots")
+            yield Label("Accents dB (acc)")
+            yield Input(self.state.accents_spec, id="accents_spec",
+                        placeholder="0,-9,-5 · cycled over the pattern")
+
             yield Checkbox("Snap to slot", value=self.state.snap, id="snap")
             yield Checkbox("Gap-fill rests (q)", value=self.state.fill, id="fill")
 
@@ -60,7 +81,15 @@ class ModePanel(Static):
                              ("lib_clusters", str(self.state.lib_clusters)),
                              ("swing", f"{self.state.swing:g}"),
                              ("fill_gain_db", f"{self.state.fill_gain_db:g}"),
-                             ("streams_spec", self.state.streams_spec)):
+                             ("streams_spec", self.state.streams_spec),
+                             ("pattern_spec", self.state.pattern_spec),
+                             # Blank, not "1" — an unset cyc means "take the pattern's own default",
+                             # and showing a number the state does not hold is the two-surfaces-
+                             # disagreeing bug this method exists to prevent.
+                             ("cycle_beats", "" if self.state.cycle_beats is None
+                              else f"{float(self.state.cycle_beats):g}"),
+                             ("pattern_rot", str(self.state.pattern_rot)),
+                             ("accents_spec", self.state.accents_spec)):
             try:
                 self.query_one(f"#{field}", Input).value = value
             except Exception:
@@ -135,6 +164,33 @@ class ModePanel(Static):
                 errors.append(f"Poly streams: cannot parse {streams_spec!r} ({e})")
                 streams_spec = None
 
+        # Cyclic pattern engine. Blank is the legitimate "unset" for all four (like the seed field),
+        # so blankness is not an error — but a NON-blank spec that cannot be read is, and it must not
+        # reach the state: a rejected `pat` that silently left the euclid grid in place would render
+        # a plausible groove and never mention that the clave asked for did not arrive.
+        pattern_spec = self.query_one("#pattern_spec", Input).value.strip()
+        accents_spec = self.query_one("#accents_spec", Input).value.strip()
+        cyc_raw = self.query_one("#cycle_beats", Input).value.strip()
+        cycle_beats, cyc_ok = None, True
+        if cyc_raw:
+            cycle_beats = _float("cycle_beats", 0.01, 64.0, "Cycle beats")
+            cyc_ok = cycle_beats is not None
+        rot_raw = self.query_one("#pattern_rot", Input).value.strip()
+        pattern_rot, rot_ok = 0, True
+        if rot_raw:
+            pattern_rot = _int("pattern_rot", -256, 256, "Rotate")
+            rot_ok = pattern_rot is not None
+        pattern_ok = True
+        try:
+            if pattern_spec:
+                resolve_pattern(pattern_spec, cyc=cycle_beats if cyc_ok else None,
+                                rot=pattern_rot if rot_ok else 0, acc=accents_spec or None)
+            elif accents_spec:
+                parse_accents(accents_spec)
+        except PatternError as e:
+            errors.append(f"Pattern: {e}")
+            pattern_ok = False
+
         snap = self.query_one("#snap", Checkbox).value
         fill = self.query_one("#fill", Checkbox).value
 
@@ -154,6 +210,13 @@ class ModePanel(Static):
             self.state.lib_policy = lib_policy
         if streams_spec is not None:
             self.state.streams_spec = streams_spec
+        if pattern_ok:
+            self.state.pattern_spec = pattern_spec
+            self.state.accents_spec = accents_spec
+        if cyc_ok:
+            self.state.cycle_beats = cycle_beats
+        if rot_ok:
+            self.state.pattern_rot = pattern_rot
         self.state.snap = snap
         self.state.fill = fill
         return errors

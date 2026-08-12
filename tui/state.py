@@ -60,6 +60,17 @@ class SessionState:
     mode: str = "rw"                 # rw | q | poly | lib — picks the mixer
     euclid_k: int = 3                # q: E(k, n) euclidean hits...
     euclid_n: int = 8                # ...over n beat-subdivision slots
+    # Cyclic pattern engine (2026-07-24, the CLI's `amc pat/cyc/rot/acc`). Stored as the operator
+    # ENTERED them — a spec string, not a resolved slot list — for two reasons: the recipe line has
+    # to round-trip (`pat bembe` must print back as `pat bembe`, not as `x.xx.x.xx.x.`), and the
+    # session JSON stays readable/editable. Resolution happens at config-build time through
+    # `automixer.iterators.patterns.resolve_pattern`, the ONE parser the CLI also calls.
+    # Defaults ("" / None / 0) are the absent-`pat` case: engine.build_config then hands
+    # AutoMixerConfig pattern=None, cycle_beats=1.0, accents=None — byte-identical to E(k,n).
+    pattern_spec: str = ""           # q: `pat` — library name, x..x. string, or +2,2,3 additive
+    cycle_beats: object = None       # q: `cyc` — beats per cycle; None = library default, else 1.0
+    pattern_rot: int = 0             # q: `rot` — rotate pattern AND its accent map together
+    accents_spec: str = ""           # q: `acc` — per-slot gain map in dB, e.g. "0,-9,-5"
     streams_spec: str = ""           # poly: raw `pr` spec, parsed via parse_stream_spec at build time
     lib_policy: str = "similarity"   # lib: similarity | contrast Markov policy over feature clusters
     lib_clusters: int = 6            # lib: cluster count
@@ -144,7 +155,8 @@ class SessionState:
     # vice versa: a removed field in the file is silently absent in the new state).
     SERIAL_FIELDS = (
         "speed", "sample_speed", "window_divider", "sample_length_ms",
-        "tracks", "output_dir", "mode", "euclid_k", "euclid_n", "streams_spec",
+        "tracks", "output_dir", "mode", "euclid_k", "euclid_n",
+        "pattern_spec", "cycle_beats", "pattern_rot", "accents_spec", "streams_spec",
         "lib_policy", "lib_clusters", "snap", "swing", "fill", "fill_gain_db",
         "wav_export", "verbose", "self_feed", "source_path", "series_spec",
         "env_pct", "reverse_prob", "source2_path",

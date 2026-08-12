@@ -5,6 +5,8 @@ import traceback
 from datetime import datetime
 
 from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
+from automixer.iterators.grid import euclidean
+from automixer.iterators.patterns import resolve_pattern
 from automixer.runner import AutoMixerRunner
 from cutter.sample_cut_tool import normalize_loudness
 
@@ -39,10 +41,22 @@ def _config_to_recipe(config):
     # mode-scoped params — defaults exist for the others but they don't apply, so suppress them
     # (the operator reads the line for the mixer that actually bombed, not a kitchen-sink dump).
     if cfg.mode == "q":
-        if cfg.euclid_k:
-            parts.append(f"k{cfg.euclid_k}")
-        if cfg.euclid_n:
-            parts.append(f"n{cfg.euclid_n}")
+        if getattr(cfg, "pattern", None):
+            # An explicit cycle REPLACED the euclidean generator, so k/n are not what rendered this
+            # and writing `k3_n8` into the crash record would send the operator hunting a euclid bug
+            # that isn't there. Same fix as `_save_mix`'s `pat-<label>` filename.
+            label = getattr(cfg, "pattern_label", None) or "".join(
+                "x" if v else "." for v in cfg.pattern)
+            parts.append(f"pat-{label}")
+            if float(getattr(cfg, "cycle_beats", 1.0) or 1.0) != 1.0:
+                parts.append(f"cyc{float(cfg.cycle_beats):g}")
+            if getattr(cfg, "accents", None):
+                parts.append("acc")
+        else:
+            if cfg.euclid_k:
+                parts.append(f"k{cfg.euclid_k}")
+            if cfg.euclid_n:
+                parts.append(f"n{cfg.euclid_n}")
         if not cfg.fill:
             parts.append("no-fill")
         if cfg.fill_gain_db != -6.0:
@@ -92,6 +106,42 @@ def _record_crash(config, source_path, exc_type, exc_msg, tb):
         pass
 
 
+def resolve_state_pattern(state):
+    """Resolve a SessionState's raw ``pat``/``cyc``/``rot``/``acc`` entries into the
+    ``(pattern, cycle_beats, accents, label)`` AutoMixerConfig takes.
+
+    Goes through ``patterns.resolve_pattern`` — the SAME call the CLI's ``config_automix`` makes —
+    so a library name or spec form can never mean one thing on the command line and another in the
+    TUI. The state deliberately keeps the spec unresolved (see SessionState) and this is the single
+    place it becomes a slot list.
+
+    Three cases, mirroring the CLI exactly:
+      * no pat and no cyc/rot/acc -> ``(None, 1.0, None, None)``, i.e. the mixer's own E(k,n)
+        generator, byte-identical to the pre-pattern behaviour.
+      * ``pat`` set -> that cycle, with cyc/acc defaulting from the library entry.
+      * cyc/rot/acc with NO pat -> the current E(k,n) resolved through the same path, so those three
+        are not silently ``pat``-only (the CLI's ``elif "cyc" in args …`` branch).
+
+    A bad spec RAISES ``PatternError``. Both entry surfaces (the amc bar, the Mixer panel) validate
+    on entry so it should never reach here; falling back to the euclidean default instead would
+    render a plausible groove that is not the clave the operator asked for, and say nothing.
+    """
+    spec = (getattr(state, "pattern_spec", "") or "").strip()
+    cyc = getattr(state, "cycle_beats", None)
+    rot = int(getattr(state, "pattern_rot", 0) or 0)
+    acc = (getattr(state, "accents_spec", "") or "").strip() or None
+    if spec:
+        pattern, cycle_beats, accents = resolve_pattern(spec, cyc=cyc, rot=rot, acc=acc)
+        # Label the render by the cycle the operator NAMED (`bembe`, `bembe r2`), not by its glyphs
+        # — matching the CLI's `pattern_label`, which is what keeps `pat-bembe` in the filename.
+        return pattern, cycle_beats, accents, (spec if not rot else f"{spec}r{rot}")
+    if cyc is None and not rot and acc is None:
+        return None, 1.0, None, None
+    pattern, cycle_beats, accents = resolve_pattern(
+        euclidean(state.euclid_k, state.euclid_n), cyc=cyc, rot=rot, acc=acc)
+    return pattern, cycle_beats, accents, f"E{state.euclid_k}-{state.euclid_n}"
+
+
 def build_config(cutter, state):
     """Map a SessionState onto the existing AutoMixerConfig. DSP untouched.
 
@@ -107,6 +157,7 @@ def build_config(cutter, state):
     channels = [ChannelConfig(t.low, t.high, bypass=t.bypass, source2=t.source2)
                 for t in state.tracks]
     low_memory = getattr(state, "low_memory", False) or getattr(cutter, "low_memory", False)
+    pattern, cycle_beats, accents, pattern_label = resolve_state_pattern(state)
     return AutoMixerConfig(
         audio=cutter.audio,
         beats=cutter.beats,
@@ -134,6 +185,12 @@ def build_config(cutter, state):
         # tolerant of a string typed into the field; None = legacy unseeded behaviour. A series
         # sweep `seed [1,2,3]` reaches here through apply_amc_to_state, which sets state.seed.
         seed=state.amc_seed() if hasattr(state, "amc_seed") else getattr(state, "seed", None),
+        # Cyclic pattern engine parity with `amc pat/cyc/rot/acc` (2026-07-24). All four are None/
+        # 1.0/None for a state that names no pattern, which is the mixer's original E(k,n) path.
+        pattern=pattern,
+        cycle_beats=cycle_beats,
+        accents=accents,
+        pattern_label=pattern_label,
     )
 
 

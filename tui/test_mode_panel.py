@@ -77,5 +77,56 @@ class ModePanelTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state.swing, 0.0)                 # unchanged
 
 
+class ModePanelPatternTest(unittest.IsolatedAsyncioTestCase):
+    """The four pattern knobs are reachable from the panel, not only from the amc bar — the parity
+    claim is about the TUI, and a knob that exists only in the command bar is half-wired."""
+
+    async def test_pattern_fields_write_back(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test():
+            panel = app.query_one(ModePanel)
+            panel.query_one("#pattern_spec", Input).value = "bembe"
+            panel.query_one("#cycle_beats", Input).value = "4"
+            panel.query_one("#pattern_rot", Input).value = "2"
+            panel.query_one("#accents_spec", Input).value = "0,-9,-5"
+            errs = panel.apply_to_state()
+            self.assertEqual(errs, [])
+            self.assertEqual(state.pattern_spec, "bembe")
+            self.assertEqual(state.cycle_beats, 4.0)
+            self.assertEqual(state.pattern_rot, 2)
+            self.assertEqual(state.accents_spec, "0,-9,-5")
+
+    async def test_blank_pattern_fields_are_the_default_not_an_error(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test():
+            errs = app.query_one(ModePanel).apply_to_state()
+            self.assertEqual(errs, [])
+            self.assertEqual(state.pattern_spec, "")
+            self.assertIsNone(state.cycle_beats)
+            self.assertEqual(state.pattern_rot, 0)
+
+    async def test_unknown_pattern_reported_not_written(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test():
+            panel = app.query_one(ModePanel)
+            panel.query_one("#pattern_spec", Input).value = "notapattern"
+            errs = panel.apply_to_state()
+            self.assertTrue(any("Pattern" in e for e in errs), errs)
+            self.assertEqual(state.pattern_spec, "")   # unchanged — no silent euclid fallback
+
+    async def test_bad_accent_map_reported_not_written(self):
+        state = SessionState()
+        app = _Host(state)
+        async with app.run_test():
+            panel = app.query_one(ModePanel)
+            panel.query_one("#accents_spec", Input).value = "0,notadb"
+            errs = panel.apply_to_state()
+            self.assertTrue(any("Pattern" in e for e in errs), errs)
+            self.assertEqual(state.accents_spec, "")
+
+
 if __name__ == "__main__":
     unittest.main()

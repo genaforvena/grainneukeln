@@ -86,6 +86,32 @@ class SeriesValidationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(called), 1)
 
 
+class SeriesPatternApplierTest(unittest.TestCase):
+    """`pat`/`cyc`/`rot` are declared sweepable in SERIES_PARAMS, so the TUI's applier must actually
+    LAND them on the state. It did not when the engine first shipped: every combination fell back to
+    E(k,n), rendering N identical files under N filenames that each claimed a different timeline —
+    the silent fallback with a receipt. Asserted through the resolved config, not just the field."""
+
+    def test_swept_pattern_tokens_land_on_the_state(self):
+        from automixer.series import apply_amc_to_state
+        state = SessionState(sample_length_ms=300, mode="q")
+        apply_amc_to_state(state, ["m", "q", "pat", "clave32", "cyc", "4", "rot", "2"])
+        self.assertEqual(state.pattern_spec, "clave32")
+        self.assertEqual(state.cycle_beats, 4.0)
+        self.assertEqual(state.pattern_rot, 2)
+
+    def test_each_swept_pattern_resolves_to_a_different_grid(self):
+        from automixer.series import apply_amc_to_state, expand_amc_series
+        from tui.engine import resolve_state_pattern
+        grids = []
+        for combo in expand_amc_series(["amc", "pat", "[tresillo,clave32,bembe]"]):
+            state = SessionState(sample_length_ms=300, mode="q")
+            apply_amc_to_state(state, combo)
+            grids.append(tuple(resolve_state_pattern(state)[0]))
+        self.assertEqual(len(grids), 3)
+        self.assertEqual(len(set(grids)), 3, f"a sweep that renders identical grids: {grids}")
+
+
 class SeriesEndToEndTest(unittest.IsolatedAsyncioTestCase):
     """Full sweep through the real engine — verifies N files are rendered, each labelled with its
     own combination suffix so the operator can tell them apart in the output browser."""

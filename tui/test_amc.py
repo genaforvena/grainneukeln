@@ -172,6 +172,97 @@ class SeriesRoutingTest(unittest.TestCase):
         self.assertFalse(is_series(""))
 
 
+class PatternTokensTest(unittest.TestCase):
+    """`pat`/`cyc`/`rot`/`acc` parity (2026-07-24). The claim under test is that the TUI reaches the
+    cyclic pattern engine the CLI reaches — so every gate asserts a CONCRETE field, and the
+    rejection gate asserts the state was NOT mutated (a parser that accepts everything also raises
+    no error, and a silent fall-back to E(k,n) still renders a plausible groove)."""
+
+    def test_pat_by_library_name_lands_on_the_state(self):
+        s = SessionState()
+        errs = apply_amc(s, "m q pat bembe")
+        self.assertEqual(errs, [])
+        self.assertEqual(s.pattern_spec, "bembe")
+
+    def test_pat_accepts_a_slot_string_and_an_additive_meter(self):
+        for spec in ("x..x..x.", "10010010", "+2,2,2,3"):
+            s = SessionState()
+            errs = apply_amc(s, f"pat {spec}")
+            self.assertEqual(errs, [], spec)
+            self.assertEqual(s.pattern_spec, spec)
+
+    def test_unknown_pattern_name_is_rejected_and_does_not_mutate_state(self):
+        s = SessionState()
+        errs = apply_amc(s, "pat notapattern")
+        self.assertTrue(errs, "an unknown pat name must be a user-visible error")
+        self.assertTrue(any("pat" in e for e in errs), errs)
+        self.assertEqual(s.pattern_spec, "", "a rejected pat must not reach the state")
+        # ...and must not have quietly become something else either.
+        self.assertEqual((s.euclid_k, s.euclid_n), (3, 8))
+        self.assertIsNone(s.cycle_beats)
+
+    def test_cyc_rot_acc_apply(self):
+        s = SessionState()
+        errs = apply_amc(s, "m q pat clave32 cyc 4 rot 2 acc 0,-9,-5")
+        self.assertEqual(errs, [])
+        self.assertEqual(s.pattern_spec, "clave32")
+        self.assertEqual(s.cycle_beats, 4.0)
+        self.assertEqual(s.pattern_rot, 2)
+        self.assertEqual(s.accents_spec, "0,-9,-5")
+
+    def test_cyc_rot_acc_apply_without_a_pat(self):
+        """The CLI resolves cyc/rot/acc against the CURRENT E(k,n) when no `pat` is given — these
+        three are not `pat`-only, so the TUI must accept them alone too."""
+        s = SessionState()
+        errs = apply_amc(s, "cyc 2 rot 1 acc 0,-8")
+        self.assertEqual(errs, [])
+        self.assertEqual((s.cycle_beats, s.pattern_rot, s.accents_spec), (2.0, 1, "0,-8"))
+        self.assertEqual(s.pattern_spec, "")
+
+    def test_bad_accent_map_reported_not_stored(self):
+        s = SessionState()
+        errs = apply_amc(s, "acc 0,notadb")
+        self.assertTrue(errs)
+        self.assertEqual(s.accents_spec, "")
+
+    def test_out_of_range_cyc_is_an_error_not_a_clamp(self):
+        s = SessionState()
+        errs = apply_amc(s, "cyc 0")
+        self.assertTrue(errs and "out of range" in errs[0], errs)
+        self.assertIsNone(s.cycle_beats)
+
+    def test_recipe_line_round_trips_a_pattern_config(self):
+        """parse(render(state)) == state for a pattern config — the portability claim. Asserted on
+        the FIELDS, not just on string stability: a renderer that dropped all four tokens would give
+        a stable string and a state that lost the clave."""
+        s = SessionState(sample_length_ms=480, mode="q", pattern_spec="bembe",
+                         cycle_beats=4.0, pattern_rot=2, accents_spec="0,-9,-5")
+        line = format_amc(s)
+        fresh = SessionState(sample_length_ms=480)
+        errs = apply_amc(fresh, line)
+        self.assertEqual(errs, [], line)
+        for f in ("mode", "pattern_spec", "cycle_beats", "pattern_rot", "accents_spec"):
+            self.assertEqual(getattr(fresh, f), getattr(s, f), f"round-trip drift on {f}: {line}")
+        self.assertEqual(format_amc(fresh), line)
+
+    def test_a_set_pattern_suppresses_ek_en_in_the_line(self):
+        """An explicit cycle REPLACES the euclidean generator; printing `ek 3 en 8` beside `pat
+        bembe` would name the generator that did not render the audio."""
+        line = format_amc(SessionState(sample_length_ms=400, mode="q", pattern_spec="bembe"))
+        self.assertIn("pat bembe", line)
+        self.assertNotIn("ek ", line)
+        self.assertNotIn("en ", line)
+
+    def test_default_state_prints_no_pattern_tokens(self):
+        """The no-pattern default must stay exactly what it was — an unset pattern has no token
+        form, and emitting `cyc 1` would flip the CLI into its 'cyc without pat' branch."""
+        for line in (format_amc(SessionState(sample_length_ms=400, mode="q")),
+                     format_amc(SessionState(sample_length_ms=400), full=True)):
+            for tok in ("pat ", "cyc ", "rot ", "acc "):
+                self.assertNotIn(tok, line, line)
+            self.assertIn("ek 3", line)
+
+
 class SeedWiringTest(unittest.TestCase):
     def test_amc_seed_tolerates_a_typed_string(self):
         self.assertEqual(SessionState(seed="42").amc_seed(), 42)

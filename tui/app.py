@@ -138,7 +138,7 @@ class GrainTUI(App):
         self.query_one(ParamsPanel).border_title = "◈ 2 · grind params"
         self.query_one(ParamsPanel).border_subtitle = "length · speed · grain shape · seed"
         self.query_one(ModePanel).border_title = "◈ 3 · mixer & effects"
-        self.query_one(ModePanel).border_subtitle = "mode · euclid · poly · lib · snap · swing"
+        self.query_one(ModePanel).border_subtitle = "mode · euclid · pattern · poly · lib · snap"
         self.query_one(OutputPanel).border_title = "♫ outputs · ctrl+o"
         # If the restored session had a source, drop it into the source input so the operator can
         # press Enter to reload (or it auto-loads). Don't silently re-load — a crashed session may
@@ -416,6 +416,19 @@ class GrainTUI(App):
             parts.append("nofill")
         if s.streams_spec:
             parts.append(f"pr {s.streams_spec}")
+        # The cyclic pattern engine (2026-07-24) is the newest member of the q-mode family the ROM's
+        # `m` axis now drives runs through, so it falls in exactly the same hole ek/en/fg did: the
+        # ROM never emits pat/cyc/rot/acc, and an unseeded cache means a clave armed in the panel is
+        # silently dropped for the whole ROM run. Emitted only when SET — an unconditional `cyc 1`
+        # would trip config_automix's "cyc without pat" branch and replace E(k,n) on every tick.
+        if s.pattern_spec:
+            parts.append(f"pat {s.pattern_spec}")
+        if s.cycle_beats is not None:
+            parts.append(f"cyc {float(s.cycle_beats):g}")
+        if s.pattern_rot:
+            parts.append(f"rot {int(s.pattern_rot)}")
+        if s.accents_spec:
+            parts.append(f"acc {s.accents_spec}")
         seed = s.amc_seed()
         if seed is not None:
             parts.append(f"seed {seed}")
@@ -449,7 +462,7 @@ class GrainTUI(App):
             # set Source B must learn it is inert in this mode, not just one who tagged a track.
             if any(t.source2 for t in state.tracks) or (state.source2_path or "").strip():
                 log("Uxn mode: ROM owns the bands — per-track A/B tags and Source B "
-                    "don't apply (env/rv/euclid/poly/lib/snap/swing/seed do)")
+                    "don't apply (env/rv/euclid/pattern/poly/lib/snap/swing/seed do)")
             try:
                 cutter.is_wav_export_enabled = bool(state.wav_export)
                 cutter.is_verbose_mode_enabled = bool(state.verbose)

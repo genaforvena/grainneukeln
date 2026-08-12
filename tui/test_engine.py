@@ -85,6 +85,62 @@ class BuildConfigTest(unittest.TestCase):
         self.assertFalse(cfg.channels_config[1].source2)
 
 
+class PatternConfigTest(unittest.TestCase):
+    """The cyclic pattern engine reaching AutoMixerConfig from the TUI (2026-07-24).
+
+    Asserts the RESOLVED list, not merely that a field was copied: the state holds a spec string,
+    and a build_config that forwarded the string would leave the mixer with an unusable value while
+    every "is it wired" check passed."""
+
+    def test_default_state_is_byte_identical_to_the_pre_pattern_behaviour(self):
+        cfg = engine.build_config(_FakeCutter(), SessionState(sample_length_ms=480, mode="q"))
+        self.assertIsNone(cfg.pattern)
+        self.assertEqual(cfg.cycle_beats, 1.0)
+        self.assertIsNone(cfg.accents)
+        self.assertIsNone(cfg.pattern_label)
+
+    def test_named_pattern_resolves_to_the_slot_list(self):
+        from automixer.iterators.patterns import parse_pattern
+        state = SessionState(cutter=None, sample_length_ms=480, mode="q", pattern_spec="bembe")
+        cfg = engine.build_config(_FakeCutter(), state)
+        self.assertEqual(cfg.pattern, parse_pattern("x.xx.x.xx.x."))
+        self.assertEqual(cfg.cycle_beats, 4.0)          # the library's own cyc, not the 1.0 default
+        self.assertEqual(len(cfg.accents), 12)          # the library's acc, cycled over 12 pulses
+        self.assertEqual(cfg.pattern_label, "bembe")
+
+    def test_explicit_cyc_rot_acc_beat_the_library_defaults(self):
+        state = SessionState(sample_length_ms=480, mode="q", pattern_spec="x..x..x.",
+                             cycle_beats=2.0, pattern_rot=1, accents_spec="0,-6")
+        cfg = engine.build_config(_FakeCutter(), state)
+        self.assertEqual(cfg.pattern, [0, 0, 1, 0, 0, 1, 0, 1])   # tresillo rotated left by 1
+        self.assertEqual(cfg.cycle_beats, 2.0)
+        self.assertEqual(cfg.accents, [-6.0, 0.0, -6.0, 0.0, -6.0, 0.0, -6.0, 0.0])
+        self.assertEqual(cfg.pattern_label, "x..x..x.r1")
+
+    def test_cyc_without_a_pat_resolves_the_current_euclid_grid(self):
+        """CLI parity: cyc/rot/acc with no `pat` re-resolve E(k,n) through the same path, so a
+        16-slot euclid grid can span 4 beats instead of being crammed into one."""
+        state = SessionState(sample_length_ms=480, mode="q", euclid_k=5, euclid_n=16,
+                             cycle_beats=4.0)
+        cfg = engine.build_config(_FakeCutter(), state)
+        self.assertEqual(len(cfg.pattern), 16)
+        self.assertEqual(sum(cfg.pattern), 5)
+        self.assertEqual(cfg.cycle_beats, 4.0)
+        self.assertEqual(cfg.pattern_label, "E5-16")
+
+    def test_crash_recipe_names_the_cycle_not_the_unused_k_n(self):
+        state = SessionState(sample_length_ms=480, mode="q", pattern_spec="clave32")
+        recipe = engine._config_to_recipe(engine.build_config(_FakeCutter(), state))
+        self.assertIn("pat-clave32", recipe)
+        self.assertNotIn("k3", recipe)
+        self.assertNotIn("n8", recipe)
+        # and the euclid names survive when NO pattern is set
+        plain = engine._config_to_recipe(
+            engine.build_config(_FakeCutter(), SessionState(sample_length_ms=480, mode="q")))
+        self.assertIn("k3", plain)
+        self.assertIn("n8", plain)
+
+
 class _FakeCutter:
     """A minimal stand-in exposing exactly the surface build_config touches — no real audio I/O,
     so the test stays fast and does not depend on a loadable second file existing on disk."""

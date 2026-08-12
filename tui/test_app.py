@@ -304,7 +304,9 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
                               "the note must be logged exactly once, not per tick")
             # Asserted in wrap-safe fragments — the RichLog word-wraps long lines across strips.
             self.assertIn("per-track A/B tags and Source B don't apply", log_text)
-            self.assertIn("euclid/poly/lib/snap/swing/seed do", log_text)
+            # `pattern` joined the do-apply list when pat/cyc/rot/acc were wired into the preseed
+            # line (2026-07-24) — the message names what survives ROM mode, so it moves with it.
+            self.assertIn("euclid/pattern/poly/lib/snap/swing/seed do", log_text)
 
     async def test_info_dumps_config_to_run_log(self):
         # `amc info` + `info` parity: pressing `i` writes the live source + grind config to the log.
@@ -327,6 +329,40 @@ class AppWiringTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("ek 3", lines)
             self.assertIn("en 8", lines)
             self.assertIn("bands:", lines)
+
+
+class UxnPatternPreseedTest(unittest.TestCase):
+    """The ROM never emits pat/cyc/rot/acc, so an unseeded pattern is silently dropped for the whole
+    ROM run — the same hole ek/en/fg fell through before 2026-07-24. Asserted end-to-end through the
+    REAL `config_automix`: a preseed line the CLI parser does not act on is not a wiring."""
+
+    def _app(self):
+        return GrainTUI(output_dir=_isolated_output(), session_path=_isolated_session())
+
+    def test_preseed_line_drives_the_pattern_into_the_cutters_config(self):
+        from tui.state import SessionState
+        state = SessionState(sample_length_ms=200, mode="q", pattern_spec="bembe",
+                             cycle_beats=4.0, pattern_rot=2, accents_spec="0,-9,-5")
+        line = self._app()._uxn_preseed_line(state)
+        self.assertIn("pat bembe", line)
+        cutter = _real_cutter()
+        cutter.config_automix(line)
+        cfg = cutter.auto_mixer_config
+        self.assertEqual(len(cfg.pattern), 12)
+        self.assertEqual(cfg.cycle_beats, 4.0)
+        self.assertEqual(cfg.pattern_label, "bember2")
+        self.assertEqual(len(cfg.accents), 12)
+
+    def test_no_pattern_emits_no_cyc_token(self):
+        """A default state must not emit `cyc 1`: with no `pat` present that trips
+        config_automix's cyc-without-pat branch and REPLACES E(k,n) on every tick."""
+        from tui.state import SessionState
+        line = self._app()._uxn_preseed_line(SessionState(sample_length_ms=200))
+        for tok in ("pat ", "cyc ", "rot ", "acc "):
+            self.assertNotIn(tok, line, line)
+        cutter = _real_cutter()
+        cutter.config_automix(line)
+        self.assertIsNone(cutter.auto_mixer_config.pattern)
 
 
 class UxnBandHonestyGuardTest(unittest.TestCase):

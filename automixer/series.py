@@ -376,6 +376,29 @@ def apply_amc_to_state(state, tokens):
                     pass
             i += 2
             continue
+        # Cyclic pattern engine (2026-07-24). ``pat``/``cyc``/``rot`` were declared sweepable in
+        # SERIES_PARAMS the moment the engine landed, but this applier did not know them — so a TUI
+        # sweep ``pat [bembe,clave32]`` expanded to N combinations that all fell back to E(k,n) and
+        # rendered N IDENTICAL files, with N distinct filenames claiming otherwise. The state keeps
+        # the raw spec (SessionState resolves it in engine.build_config), so this is a plain
+        # assignment; ``acc`` is deliberately absent here because it is not sweepable at all (its
+        # value is itself a comma list — see SERIES_PARAMS).
+        if key in ("pat", "cyc", "rot") and i + 1 < len(tokens):
+            val = tokens[i + 1]
+            if key == "pat":
+                state.pattern_spec = val
+            elif key == "cyc":
+                try:
+                    state.cycle_beats = float(val)
+                except ValueError:
+                    pass
+            else:
+                try:
+                    state.pattern_rot = int(val)
+                except ValueError:
+                    pass
+            i += 2
+            continue
         if key == "lib" and i + 1 < len(tokens):
             # lib sim|con — the policy word.
             p = tokens[i + 1]

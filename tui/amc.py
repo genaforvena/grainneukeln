@@ -24,6 +24,10 @@ pairwise has no such ambiguity: a key consumes its value and the scan resumes af
 """
 
 from automixer.config import parse_stream_spec
+# The cyclic pattern engine's ONE parser — imported, never re-implemented. A second `pat`/`acc`
+# reader in the TUI is exactly the CLI↔TUI drift this module exists to close (a library name added
+# to NAMED_PATTERNS would reach the command line and silently not the bar).
+from automixer.iterators.patterns import parse_accents, resolve_pattern
 from automixer.series import parse_series_token, SeriesError
 from tui.state import MODES, LIB_POLICIES, TrackSpec
 
@@ -31,6 +35,7 @@ from tui.state import MODES, LIB_POLICIES, TrackSpec
 VALUE_KEYS = {
     "l", "s", "ss", "w", "m", "c", "pr", "ek", "en", "lib", "lk",
     "sw", "fg", "env", "rv", "src2", "seed",
+    "pat", "cyc", "rot", "acc",
 }
 # Keys that are bare flags (no value follows).
 FLAG_KEYS = {"snap", "nosnap", "fill", "nofill"}
@@ -179,6 +184,20 @@ def parse_amc(text, base_length=0):
                 updates["euclid_k"] = _num(int, val, "ek", 1, 64)
             elif key == "en":
                 updates["euclid_n"] = _num(int, val, "en", 1, 64)
+            elif key == "pat":
+                # Resolve here purely to VALIDATE, then keep the raw spec (see SessionState) —
+                # PatternError subclasses ValueError, so an unknown name lands in ``errors`` and the
+                # field is left untouched. Never fall back to the euclidean default: a clave that
+                # never arrived still renders a plausible groove, and nothing would say so.
+                resolve_pattern(val)
+                updates["pattern_spec"] = val
+            elif key == "cyc":
+                updates["cycle_beats"] = _num(float, val, "cyc", 0.01, 64.0)
+            elif key == "rot":
+                updates["pattern_rot"] = _num(int, val, "rot", -256, 256)
+            elif key == "acc":
+                parse_accents(val)          # validate; the state keeps the raw spec string
+                updates["accents_spec"] = val
             elif key == "lib":
                 if not (val.startswith("sim") or val.startswith("con")):
                     raise AmcError(f"lib: {val!r} — expected sim(ilarity) or con(trast)")
@@ -242,13 +261,29 @@ def format_amc(state, full=False):
     bands = format_bands(state.tracks)
     if full or bands != "raw":
         p.append(f"c {bands}")
+    pattern_spec = (getattr(state, "pattern_spec", "") or "").strip()
     if full or state.mode == "q":
-        p.append(f"ek {state.euclid_k}")
-        p.append(f"en {state.euclid_n}")
+        # A `pat` REPLACES the euclidean generator, so printing ek/en beside it would name the
+        # generator that did NOT produce this render — the same lie `_save_mix` stopped writing into
+        # filenames when it swapped `k3_n8` for `pat-<label>`.
+        if not pattern_spec:
+            p.append(f"ek {state.euclid_k}")
+            p.append(f"en {state.euclid_n}")
         if not state.fill:
             p.append("nofill")
         if full or state.fill_gain_db != -6.0:
             p.append(f"fg {state.fill_gain_db:g}")
+    # pat/cyc/rot/acc print whenever SET, outside the mode gate: an unset pattern has no token form
+    # (its absence IS the euclidean default, so `full` has nothing to print either), and a pattern
+    # armed before a mode switch must still survive the parse(render(state)) round-trip.
+    if pattern_spec:
+        p.append(f"pat {pattern_spec}")
+    if getattr(state, "cycle_beats", None) is not None:
+        p.append(f"cyc {float(state.cycle_beats):g}")
+    if getattr(state, "pattern_rot", 0):
+        p.append(f"rot {int(state.pattern_rot)}")
+    if (getattr(state, "accents_spec", "") or "").strip():
+        p.append(f"acc {state.accents_spec.strip()}")
     if (full or state.mode == "poly") and state.streams_spec:
         p.append(f"pr {state.streams_spec}")
     if full or state.mode == "lib":

@@ -156,6 +156,17 @@ class GrainEffectsSource2AndUxnPersistenceTest(unittest.TestCase):
             self.assertEqual(getattr(original, field), getattr(restored, field),
                              f"roundtrip drift on {field}")
 
+    def test_pattern_spec_fields_roundtrip_as_entered(self):
+        """The state keeps the SPEC, not the resolved slot list — so the JSON stays readable and the
+        recipe line can print `pat bembe` back rather than `pat x.xx.x.xx.x.`."""
+        original = SessionState(pattern_spec="bembe", cycle_beats=4.0, pattern_rot=2,
+                                accents_spec="0,-9,-5")
+        restored = SessionState.from_dict(original.to_dict())
+        for field in ("pattern_spec", "cycle_beats", "pattern_rot", "accents_spec"):
+            self.assertEqual(getattr(original, field), getattr(restored, field),
+                             f"roundtrip drift on {field}")
+        self.assertEqual(original.to_dict()["pattern_spec"], "bembe")
+
     def test_missing_new_keys_default_on_load(self):
         """An old session file (pre-Task-5) has none of the new keys — loading it must still
         construct a valid state with the new fields at their documented defaults."""
@@ -163,6 +174,11 @@ class GrainEffectsSource2AndUxnPersistenceTest(unittest.TestCase):
         s = SessionState.from_dict(d)
         self.assertEqual(s.env_pct, 8.0)
         self.assertEqual(s.reverse_prob, 0.0)
+        # Pattern engine defaults = the absent-`pat` case (engine hands the mixer E(k,n)).
+        self.assertEqual(s.pattern_spec, "")
+        self.assertIsNone(s.cycle_beats)
+        self.assertEqual(s.pattern_rot, 0)
+        self.assertEqual(s.accents_spec, "")
         self.assertEqual(s.source2_path, "")
         self.assertFalse(s.uxn_enabled)
         self.assertEqual(s.uxn_rom_path, "")
