@@ -172,12 +172,12 @@ class AutoMixerConfig:
         self.reverse_prob = float(reverse_prob)
         # Output length bound in ms, or None = unbounded (today's behaviour, unchanged).
         #
-        # The rw mixer is the ONLY mixer with no length bound: q/poly/lib all canvas at ``total_ms``
-        # (the source length), while rw emits ``n_windows × calculate_step(beats)`` and stops when
-        # it runs out of windows. ``calculate_step`` is ``mean(beat POSITIONS)/4`` — roughly an
-        # EIGHTH OF THE TRACK LENGTH, not any beat quantity (``beat_interval``'s docstring has said
-        # so since 2026-07-24; the consequence for rw's output length was never drawn). Windows step
-        # by one beat, so the render is ``n_beats × duration/8`` — QUADRATIC in source duration.
+        # The rw mixer used to be the ONLY mixer with unbounded growth: q/poly/lib all canvas at
+        # ``total_ms`` (the source length), while rw emits ``n_windows × calculate_step(beats)`` and
+        # stops when it runs out of windows. ``calculate_step`` was ``mean(beat POSITIONS)/4`` —
+        # roughly an EIGHTH OF THE TRACK LENGTH, not any beat quantity (``beat_interval``'s docstring
+        # said so since 2026-07-24). Windows step by one beat, so the render was
+        # ``n_beats × duration/8`` — QUADRATIC in source duration.
         #
         # Measured on the operator's 254.9s source (2026-08-01): 408 beats, real beat period 592ms,
         # calculate_step 31285ms. w=5 -> 328 windows × 31.3s = 10261s of audio. A 2.9-HOUR render
@@ -186,10 +186,13 @@ class AutoMixerConfig:
         # No memory budget fixes a quadratic — 01/02/03 died the same way at both ceilings.
         # Short sources hid it (the sound reflex caps its feed ~65s, where 8x is merely "long").
         #
-        # Set it and rw stops at the bound, trimming the last window exactly. Left None, nothing
-        # changes for any existing consumer — this does NOT silently re-cut every rw grind in the
-        # mesh, whose gates are tuned around today's lengths. Fixing ``calculate_step`` itself is
-        # the real repair and belongs to the sound lane, which owns that blast radius.
+        # ``calculate_step`` itself was repaired 2026-08-03: it now delegates to ``beat_interval``
+        # for >=2 beats, so rw's per-window emit tracks the real beat period and the render is
+        # linear in source duration (see ``automixer/utils.py`` and
+        # ``tests/test_target_length.py::test_rw_render_length_is_linear_in_source_duration``).
+        # ``target_ms`` is kept as a general opt-in bound (finite output on request) — set it and rw
+        # stops at the bound, trimming the last window exactly; left None, nothing changes for any
+        # existing consumer. It is no longer load-bearing against the old quadratic blowup.
         self.target_ms = int(target_ms) if target_ms else None
 
     def __str__(self):

@@ -116,10 +116,29 @@ def overlay_bit_identical(canvas_ms, grains_at_pos, frame_rate, sample_width=2, 
 
 
 def calculate_step(beats):
-    """Calculate the step size based on the beats."""
+    """Calculate the step size based on the beats — the real beat PERIOD (see ``beat_interval``),
+    not ``mean(beat POSITIONS) / 4``.
+
+    That old formula scaled with mean POSITION, i.e. with track length, not with the beat — this
+    is what made the ``rw`` mixer's per-window emit (``default_mixer.py``'s
+    ``chunk_length_in_window = calculate_step(config.beats)``) grow with source duration, making
+    the render QUADRATIC in source duration (``n_windows`` is itself linear in beat count, so
+    ``windows * step`` compounded two length-scaling terms). Repaired 2026-08-03 to delegate to
+    ``beat_interval`` for >=2 beats, so the per-window step tracks the beat like the
+    q/poly/lib mixers already do, and the render is linear in source duration instead.
+
+    The single-beat case (``beat_interval`` is 0, "unknowable") keeps the historical
+    positional estimate rather than an arbitrary constant — it is the only case this function's
+    non-mixer caller (``SampleCutter``'s default grain-length seed) actually depends on, and it
+    was never part of the quadratic-growth bug (that needs >=2 beats to even have a "step" that
+    can scale with position).
+    """
+    beats = np.asarray(beats)
     if len(beats) == 0 or np.all(beats <= 0):
         return 1
-    return max(1, int(np.mean(beats) / 4))
+    if len(beats) < 2:
+        return max(1, int(beats[-1] / 4))
+    return beat_interval(beats)
 
 
 def beat_grid_floor(beat_positions, duration_ms, grid_period_ms=500, min_beats=4):

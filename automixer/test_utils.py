@@ -7,11 +7,12 @@ from automixer.utils import beat_interval, calculate_step
 
 class BeatIntervalTest(unittest.TestCase):
     def test_period_is_spacing_not_mean_of_positions(self):
-        # Beats every 500ms. The PERIOD is 500 — not mean(positions)/4 (which calculate_step returns).
+        # Beats every 500ms. The PERIOD is 500 — not mean(positions)/4, which calculate_step used
+        # to return (repaired 2026-08-03: it now delegates to beat_interval for >=2 beats, so the
+        # two agree — that disagreement is exactly why /2 /3 never subdivided the beat).
         beats = np.array([500, 1000, 1500, 2000, 2500, 3000])
         self.assertEqual(beat_interval(beats), 500)
-        # The old base really is nowhere near the beat — this is why /2 /3 never subdivided the beat.
-        self.assertNotEqual(calculate_step(beats), 500)
+        self.assertEqual(calculate_step(beats), 500)
 
     def test_median_is_robust_to_a_dropped_beat(self):
         # One missing beat leaves a 1000ms gap; the median of {500,500,1000,500} is still 500.

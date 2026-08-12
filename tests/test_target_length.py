@@ -12,6 +12,11 @@ Two defects, one render:
    ceiling and again at 16GB. No memory budget fixes a quadratic. ``target_ms`` (amc ``tl``) is the
    opt-in bound; absent, nothing changes for existing consumers.
 
+   ``calculate_step`` itself was repaired 2026-08-03 (see ``automixer/utils.py`` and
+   ``test_rw_render_length_is_linear_in_source_duration`` below) — it now tracks the real beat
+   period, so rw's growth is linear like q/poly/lib, and ``target_ms`` is kept as a general opt-in
+   bound rather than a required patch for this defect.
+
 2. **``amc`` dropped ``low_memory``.** ``SampleCutter.__init__`` built the first config with
    ``low_memory=self.low_memory``; every ``amc ...`` command then REPLACED it with a fresh
    ``AutoMixerConfig`` that omitted the field, so it fell back to the default False. A render is
@@ -47,18 +52,20 @@ def _rw_config(target_ms=None, seed=0):
     )
 
 
-def test_rw_render_length_is_quadratic_in_source_duration():
-    """The defect the bound exists to contain, asserted on the length model itself rather than on a
-    render (a 3-second fixture is far too short to show it — at that size rw UNDERSHOOTS, which is
-    exactly why this went unnoticed until a 4-minute source arrived).
+def test_rw_render_length_is_linear_in_source_duration():
+    """``calculate_step`` was repaired 2026-08-03 (was ``mean(beat POSITIONS)/4``, which scales with
+    track length, not the beat — see its docstring and ``automixer/utils.py``). This test used to
+    assert the QUADRATIC defect itself (asserted on the length model, since a 3-second fixture is
+    far too short to show it in a render — at that size rw undershoots, which is exactly why this
+    went unnoticed until a 4-minute source arrived); it now asserts the repaired, LINEAR behavior,
+    per its own prior instruction: "if this test goes red because calculate_step was repaired, that
+    is the real fix landing — re-derive the sound lane's expectations."
 
-    Hold the beat PERIOD fixed and lengthen the track. The real period is unchanged, so a sane
-    per-window emit would be unchanged too — but ``calculate_step`` is ``mean(beat POSITIONS)/4``,
-    so it grows linearly with track length, and the render (``n_windows x step``) grows
-    QUADRATICALLY. Doubling a track's length should not quadruple its grind.
-
-    If this test goes red because ``calculate_step`` was repaired, that is the real fix landing:
-    re-derive the sound lane's expectations, then decide about the bound — do not weaken this.
+    Hold the beat PERIOD fixed and lengthen the track. The real period is unchanged, and now the
+    per-window emit (``calculate_step``) tracks it instead of the track length, so the render
+    (``n_windows x step``) grows only as fast as ``n_windows`` does — linear in beat count, hence
+    linear in source duration at fixed tempo. Doubling the track roughly doubles the grind instead
+    of quadrupling it, and the render no longer dwarfs the source.
     """
     import numpy as np
     from automixer.utils import calculate_step, beat_interval
@@ -76,18 +83,20 @@ def test_rw_render_length_is_quadratic_in_source_duration():
     period_200, step_200, render_200 = model(200)
 
     assert period_100 == period_200 == period, "the real beat period must be unchanged by length"
-    assert step_200 > 1.9 * step_100, (
+    assert step_100 == step_200 == period, (
         f"per-window emit should track the beat, not the track length "
         f"(step {step_100} -> {step_200} on a 2x longer track at the SAME tempo)"
     )
-    assert render_200 > 3.5 * render_100, (
-        f"render length is quadratic in source duration: {render_100}ms -> {render_200}ms "
-        f"for a 2x longer source"
+    ratio = render_200 / render_100
+    assert 1.8 < ratio < 2.2, (
+        f"render should scale ~linearly with source duration (~2x for a 2x longer track at fixed "
+        f"tempo), got {ratio:.2f}x (render_100={render_100}ms, render_200={render_200}ms)"
     )
-    # And the absolute consequence: at any real track length the render dwarfs its source.
+    # And the absolute consequence: the render no longer dwarfs its source.
     src_ms_200 = 200 * period
-    assert render_200 > 10 * src_ms_200, (
-        f"a {src_ms_200}ms source grinds to {render_200}ms — {render_200 / src_ms_200:.0f}x"
+    assert render_200 < 1.5 * src_ms_200, (
+        f"a {src_ms_200}ms source should grind to roughly its own length now, not the old "
+        f"quadratic blowup — got {render_200}ms ({render_200 / src_ms_200:.2f}x)"
     )
 
 
