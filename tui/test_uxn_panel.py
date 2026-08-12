@@ -51,10 +51,12 @@ class PreviewFunctionTest(unittest.TestCase):
     @unittest.skipUnless(_uxn_available(), "uxncli not built (uxn_ctrl/build.sh)")
     def test_preview_shows_the_mode_axis_moving(self):
         """The 2026-07-24 ROM addition: a run moves through cutting ALGORITHMS. The preview is
-        worthless if it cannot show that, so gate it — 8 ticks at _MODE_PERIOD=4 spans two modes."""
+        worthless if it cannot show that, so gate it — 8 ticks at _MODE_PERIOD=4 spans two modes.
+        rw was dropped from the mode table (689cc9a, operator: "use q or lib or poly, not rw"),
+        so the cycle is q -> poly -> lib, not rw -> q."""
         modes = [describe_line(l)["m"] for l in preview_uxn_sequence(8)]
-        self.assertEqual(modes[:4], ["rw"] * 4)
-        self.assertEqual(modes[4:], ["q"] * 4)
+        self.assertEqual(modes[:4], ["q"] * 4)
+        self.assertEqual(modes[4:], ["poly"] * 4)
 
     def test_describe_line_parses_pairs(self):
         self.assertEqual(describe_line("l 200 w 4 m rw"), {"l": "200", "w": "4", "m": "rw"})
@@ -116,7 +118,7 @@ class UxnPanelTest(unittest.IsolatedAsyncioTestCase):
             text = "\n".join(str(l) for l in app.query_one("#uxn_log", RichLog).lines)
             self.assertIn("[ 0]", text)
             self.assertIn("← mode", text, "the tick where the ALGORITHM changes must be marked")
-            self.assertIn("rw → q", text, "the plan summary must name the mode sequence")
+            self.assertIn("q → poly", text, "the plan summary must name the mode sequence")
 
 
 class UxnPreseedLineTest(unittest.IsolatedAsyncioTestCase):
