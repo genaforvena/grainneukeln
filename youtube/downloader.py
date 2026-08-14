@@ -1,9 +1,17 @@
 import yt_dlp
 import os
+from urllib.parse import urlparse
 
 
 def download_video(url, output_path, progress_callback=None):
-    """Download a YouTube URL to an mp3 under <output_path>/downloads/ and return its path.
+    """Download ANY yt_dlp-supported media URL to an mp3 under <output_path>/downloads/.
+
+    Provider-agnostic by construction: the URL is handed to yt_dlp verbatim and its extractor
+    registry picks the host. YouTube and **SoundCloud** are both first-class (SoundCloud arrives
+    as an HLS m4a and is transcoded to mp3 by the same FFmpegExtractAudio postprocessor); Bandcamp,
+    Vimeo, Mixcloud and the rest of yt_dlp's list work for free. Do NOT add a host allowlist here —
+    the operator's own tracks live on SoundCloud, and a YouTube-only guard would silently sever
+    them. ``test_downloader.py`` pins this.
 
     progress_callback, if given, is called with an integer 0..100 as the download proceeds.
     On any failure this RAISES RuntimeError (it used to return an "Error: …" string, which then got
@@ -40,7 +48,10 @@ def download_video(url, output_path, progress_callback=None):
             filename = ydl.prepare_filename(info)
             final_filename = os.path.splitext(filename)[0] + ".mp3"
     except Exception as e:
-        raise RuntimeError(f"YouTube download failed: {e}") from e
+        # Name the HOST, not "YouTube" — a SoundCloud 404 reported as a "YouTube download failed"
+        # sends the reader to the wrong service (an error message names a cause, not the cause).
+        host = urlparse(url).netloc or "the source"
+        raise RuntimeError(f"download from {host} failed: {e}") from e
     if not os.path.exists(final_filename):
         raise RuntimeError(f"download finished but no file at {final_filename}")
     return final_filename

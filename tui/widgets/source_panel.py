@@ -19,9 +19,11 @@ class SourcePanel(Static):
     impossible: Run only becomes clickable AFTER the Loaded message has set state.cutter.
 
     Input is classified on submit:
-      - ``http(s)://…``               → YouTube URL (downloaded via yt_dlp)
+      - ``http(s)://…``               → any yt_dlp-supported URL (YouTube, **SoundCloud**,
+                                        Bandcamp, Vimeo …) — the host is not gated
       - ``/path``, ``./x``, ``*.wav`` → local file
       - anything else                 → free-text YouTube SEARCH for "artist + track"
+                                        (search is YouTube-only; paste a URL for other hosts)
 
     A search runs ``youtube.search.search`` (ranked for the operator's intent: the
     official Topic/VEVO upload surfaces as #1 even when a fan cover has 50× the
@@ -54,13 +56,13 @@ class SourcePanel(Static):
         # ``searcher`` is injectable for tests; the real default calls yt_dlp.
         # Signature: searcher(query) -> list[result-dict] (see youtube.search.search).
         self._searcher = searcher or yts.search
-        self.status_text = "No source loaded — enter a file path, YouTube URL, or artist + track"
+        self.status_text = "No source loaded — enter a file path, a YouTube/SoundCloud URL, or artist + track"
         self._loading = False
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("Local path · YouTube URL · or artist + track → Enter")
-            yield Input(placeholder="path/to/audio.wav   |   https://youtu.be/…   |   Radiohead - Karma Police",
+            yield Label("Local path · YouTube/SoundCloud URL · or artist + track → Enter")
+            yield Input(placeholder="path/to/audio.wav   |   https://soundcloud.com/…   |   Radiohead - Karma Police",
                         id="source_input")
             yield OptionList(id="source_results")
             yield Label(self.status_text, id="source_status")
@@ -71,7 +73,7 @@ class SourcePanel(Static):
 
     def on_mount(self):
         self.border_title = "◈ 1 · source"
-        self.border_subtitle = "file · youtube · search"
+        self.border_subtitle = "file · url (yt/sc/…) · search"
         # Picker is hidden until a search populates it. ``display=False`` removes
         # it from layout (no empty box on first run).
         try:

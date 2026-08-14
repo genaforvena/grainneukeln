@@ -34,9 +34,14 @@ def _real_loader(value, on_stage=None, low_memory=False):
     os.makedirs(out, exist_ok=True)
     if value.startswith("http://") or value.startswith("https://"):
         import youtube.downloader as downloader
-        stage("Downloading from YouTube… 0%")
+        from urllib.parse import urlparse
+        # Name the HOST being fetched. Hardcoding "YouTube" here told an operator pasting a
+        # SoundCloud link that the wrong service was being contacted — the download was fine, the
+        # label lied. yt_dlp's extractor registry picks the host; this string must follow it.
+        host = urlparse(value).netloc.replace("www.", "") or "source"
+        stage(f"Downloading from {host}… 0%")
         value = downloader.download_video(
-            value, out, progress_callback=lambda pct: stage(f"Downloading from YouTube… {pct}%"))
+            value, out, progress_callback=lambda pct: stage(f"Downloading from {host}… {pct}%"))
         stage(f"Downloaded → {os.path.relpath(value, out)}. Detecting beats (librosa)…")
     else:
         value = os.path.abspath(value)

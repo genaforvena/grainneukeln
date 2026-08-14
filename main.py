@@ -29,8 +29,10 @@ if __name__ == "__main__":
                         help="Enable aggressive garbage collection for memory-constrained nodes. "
                              "Slower but uses ~30%% less peak RAM on long sources.")
     parser.add_argument("source_path", nargs="?",
-                        help="Path to mp3 file to cut, YouTube URL, or free-text search "
-                             "(artist + track → loads the official upload).")
+                        help="Path to an audio file to cut, a media URL (YouTube, SoundCloud, "
+                             "Bandcamp — anything yt_dlp handles; the host is not gated), or "
+                             "free-text search (artist + track → loads the official upload; "
+                             "search itself is YouTube-only).")
     parser.add_argument("destination_path", nargs="?", help="Directory where cut samples will be saved")
     parser.add_argument("commands", nargs="*", help="A list of commands to execute. If provided, the tool will execute them and make automix when done.")
     parser.add_argument("--pick", type=int, default=None,
@@ -102,7 +104,8 @@ if __name__ == "__main__":
         # pulls the studio track, not a fan cover. ``--pick N`` overrides.
         import youtube.search as yts
         if yts.is_url(args.source_path):
-            print("Downloading audio from YouTube")
+            from urllib.parse import urlparse
+            print(f"Downloading audio from {urlparse(args.source_path).netloc or 'source'}")
             import youtube.downloader as downloader
             args.source_path = downloader.download_video(args.source_path, args.destination_path)
         elif not yts.is_local_path(args.source_path):

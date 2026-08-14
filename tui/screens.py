@@ -47,7 +47,7 @@ HELP_TEXT = """\
 [b]grainneukeln TUI[/b] — a granular grinder. Load a source, shape the grain, press Run.
 
 [b]THE FIVE-SECOND VERSION[/b]
-  1. Ctrl+1, type a path / YouTube URL / "artist - track", press Enter.
+  1. Ctrl+1, type a path / YouTube or SoundCloud URL / "artist - track", press Enter.
   2. Ctrl+R.  That's a grind. Everything below is shaping.
 
 [b]KEYS[/b] (no mouse needed)
