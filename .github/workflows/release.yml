@@ -26,8 +26,17 @@ jobs:
             asset: grainneukeln-linux-x64
           - os: windows-latest
             asset: grainneukeln-windows-x64
-          - os: macos-13          # Intel build; also runs on Apple-Silicon Macs via Rosetta 2.
-            asset: grainneukeln-macos            # (setup-ffmpeg ships no static arm64 macOS ffmpeg)
+          # Intel build; also runs on Apple-Silicon Macs via Rosetta 2, while an
+          # arm64 build would not run on an Intel Mac at all — and "an old MacBook"
+          # is Intel by definition. macos-13 was the label here until 2026-08-21 and
+          # it is DEAD: every run's macOS job sat in the queue for the full 24h and
+          # was auto-cancelled, so this workflow had never once produced a macOS
+          # bundle. A retired runner label does not error, it queues — which reads
+          # exactly like "all runners busy". Probed live before changing it:
+          # macos-15-intel / macos-14 / macos-15 / macos-latest all start, macos-13
+          # does not.
+          - os: macos-15-intel
+            asset: grainneukeln-macos
     runs-on: ${{ matrix.os }}
     env:
       # Friend runs macOS 10.13.6 (High Sierra). Target it; the verify step below FAILS the build
@@ -53,7 +62,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ "${{ runner.os }}" = "macOS" ]; then
-            pip install -c constraints-macos.txt -r requirements.txt pyinstaller
+            # No PySide6 in the macOS bundle: its wheels require macOS 12+ while
+            # this build targets a 10.13 floor, so including it would either fail
+            # the verify gate below or ship a bundle that dies on the Mac it was
+            # built for. Lines tagged `# no-macos` are dropped rather than a second
+            # dependency list being kept in step with this one. `main.py` with no
+            # arguments climbs GUI -> TUI, so on this build the TUI IS the app.
+            grep -v '# no-macos' requirements.txt > requirements-macos.txt
+            pip install -c constraints-macos.txt -r requirements-macos.txt pyinstaller
           else
             pip install -r requirements.txt pyinstaller
           fi

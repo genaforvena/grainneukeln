@@ -1,0 +1,53 @@
+[obscura] FULL-TRACK source DUR=331929ms (332s)
+[obscura] mix  4/20  FULL TRACK  mode=[m poly pr 3;2 s 1.6 ss 0.6]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_04.mp3 (4.8M, len=207s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_04.mp3)
+[obscura] mix  5/20  FULL TRACK  mode=[m lib con lk 6 s 1.4 ss 0.75 l 2]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_05.mp3 (7.3M, len=315s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_05.mp3)
+[obscura] mix  6/20  FULL TRACK  mode=[m q pat bembe s 1.2 fg -4]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_06.mp3 (6.4M, len=277s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_06.mp3)
+[obscura] mix  7/20  FULL TRACK  mode=[m rw sw 66 s 1.4 ss 0.65 rv 0.35 tl src]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_07.mp3 (4.0M, len=171s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_07.mp3)
+[obscura] mix  8/20  FULL TRACK  mode=[m q pat teental l 3 ss 0.8]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_08.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_08.mp3)
+[obscura] mix  9/20  FULL TRACK  mode=[m poly pr 5;4 s 1.8 ss 0.6 l 2]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_09.mp3 (4.3M, len=184s of 331929ms source)
+    deliver: TG sendAudio FAILED: 
+[obscura] mix 10/20  FULL TRACK  mode=[m q ek 7 en 16 snap nofill]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_10.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: TG sendAudio FAILED: 
+[obscura] mix 11/20  FULL TRACK  mode=[m lib sim lk 7 env 30]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_11.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: TG sendAudio FAILED: 
+[obscura] mix 12/20  FULL TRACK  mode=[m q pat aksak9 s 1.15]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_12.mp3 (6.7M, len=289s of 331929ms source)
+    deliver: TG sendAudio FAILED: 
+[obscura] mix 13/20  FULL TRACK  mode=[m rw s 0.8 ss 1.35 tl src]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_13.mp3 (6.6M, len=287s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_13.mp3)
+[obscura] mix 14/20  FULL TRACK  mode=[m q pat gnawa cyc 4 s 1.3 ss 0.7]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_14.mp3 (5.9M, len=256s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_14.mp3)
+[obscura] mix 15/20  FULL TRACK  mode=[m poly pr 3:1-1200;2:5000-16000]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_15.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_15.mp3)
+[obscura] mix 16/20  FULL TRACK  mode=[m q pat maqsum snap sw 60 fg -12]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_16.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_16.mp3)
+[obscura] mix 17/20  FULL TRACK  mode=[m lib con lk 4 rv 0.5 l 2]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_17.mp3 (7.6M, len=331s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_17.mp3)
+[obscura] mix 18/20  FULL TRACK  mode=[m q pat jhaptal rot 3 ss 0.6]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_18.mp3 (7.7M, len=332s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_18.mp3)
+[obscura] mix 19/20  FULL TRACK  mode=[m rw c 1,900;2500,12000 env 15 tl src]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_19.mp3 (3.6M, len=155s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_19.mp3)
+[obscura] mix 20/20  FULL TRACK  mode=[m q pat colotomic s 1.45 ss 0.68 snap]
+  -> /home/mesh-home/.mesh/grinds/obscura/obscura_20.mp3 (5.3M, len=229s of 331929ms source)
+    deliver: sent → operator TG (/home/mesh-home/.mesh/grinds/obscura/obscura_20.mp3)
+[obscura] DONE: 17 mixes ground this run (of 20 treatments, started at 4) → /home/mesh-home/.mesh/grinds/obscura

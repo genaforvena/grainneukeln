@@ -16,10 +16,12 @@ pydub
 tqdm
 yt-dlp
 
-# --- GUI only (optional: `python main.py` / `--gui`) ---
-matplotlib
-PySide6
-pyqtgraph
+# --- GUI only (optional: `python main.py --gui`) ---
+# `# no-macos` is read by .github/workflows/release.yml: the macOS bundle targets a
+# 10.13 floor and PySide6 wheels need macOS 12+, so the mac build ships TUI-only.
+matplotlib   # no-macos
+PySide6      # no-macos
+pyqtgraph    # no-macos
 
 # --- TUI only (optional: `python main.py --tui`) — headless-friendly, runs over SSH/tmux ---
 textual

@@ -1,0 +1,46 @@
+[yt15] mix  1/15 start=2000ms len=42000ms L=360 ss=0.88 s=0.92
+  -> output/yt15/ztune_01.mp3 (2.5M)
+[yt15] mix  2/15 start=17000ms len=46000ms L=420 ss=0.91 s=0.94
+  -> output/yt15/ztune_02.mp3 (3.2M)
+[yt15] mix  3/15 start=32000ms len=50000ms L=480 ss=0.94 s=0.96
+  -> output/yt15/ztune_03.mp3 (3.7M)
+[yt15] mix  4/15 start=47000ms len=54000ms L=540 ss=0.97 s=0.98
+  -> output/yt15/ztune_04.mp3 (5.1M)
+[yt15] mix  5/15 start=62000ms len=38000ms L=600 ss=1 s=1
+  -> output/yt15/ztune_05.mp3 (2.7M)
+[yt15] mix  6/15 start=77000ms len=42000ms L=660 ss=1.03 s=0.9
+  -> output/yt15/ztune_06.mp3 (3.4M)
+[yt15] mix  7/15 start=92000ms len=46000ms L=720 ss=1.06 s=0.92
+  -> output/yt15/ztune_07.mp3 (4.3M)
+[yt15] mix  8/15 start=107000ms len=50000ms L=780 ss=1.09 s=0.94
+  -> output/yt15/ztune_08.mp3 (5.0M)
+[yt15] mix  9/15 start=122000ms len=54000ms L=840 ss=1.12 s=0.96
+  -> output/yt15/ztune_09.mp3 (4.0M)
+[yt15] mix 10/15 start=137000ms len=38000ms L=900 ss=1.15 s=0.98
+  -> output/yt15/ztune_10.mp3 (2.0M)
+[yt15] mix 11/15 start=152000ms len=42000ms L=960 ss=1.18 s=1
+  -> output/yt15/ztune_11.mp3 (2.5M)
+[yt15] mix 12/15 start=167000ms len=46000ms L=1020 ss=1.21 s=0.9
+  -> output/yt15/ztune_12.mp3 (4.5M)
+[yt15] mix 13/15 start=182000ms len=50000ms L=1080 ss=1.24 s=0.92
+  -> output/yt15/ztune_13.mp3 (4.9M)
+[yt15] mix 14/15 start=197000ms len=54000ms L=1140 ss=1.27 s=0.94
+  -> output/yt15/ztune_14.mp3 (6.0M)
+[yt15] mix 15/15 start=212000ms len=38000ms L=1200 ss=1.3 s=0.96
+  -> output/yt15/ztune_15.mp3 (3.1M)
+[yt15] DONE: 15/15 mixes in output/yt15
+-rw-rw-r-- 1 mesh-home mesh-home 2619117 Jul 18 11:32 output/yt15/ztune_01.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 3268845 Jul 18 11:32 output/yt15/ztune_02.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 3873261 Jul 18 11:33 output/yt15/ztune_03.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 5345133 Jul 18 11:33 output/yt15/ztune_04.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 2765421 Jul 18 11:34 output/yt15/ztune_05.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 3554925 Jul 18 11:34 output/yt15/ztune_06.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 4466157 Jul 18 11:35 output/yt15/ztune_07.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 5153133 Jul 18 11:36 output/yt15/ztune_08.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 4163181 Jul 18 11:36 output/yt15/ztune_09.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 1993965 Jul 18 11:37 output/yt15/ztune_10.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 2552301 Jul 18 11:37 output/yt15/ztune_11.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 4616685 Jul 18 11:39 output/yt15/ztune_12.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 5090157 Jul 18 11:39 output/yt15/ztune_13.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 6234861 Jul 18 11:41 output/yt15/ztune_14.mp3
+-rw-rw-r-- 1 mesh-home mesh-home 3231597 Jul 18 11:41 output/yt15/ztune_15.mp3

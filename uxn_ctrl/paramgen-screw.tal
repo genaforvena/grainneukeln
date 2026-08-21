@@ -1,0 +1,209 @@
+( paramgen-screw.tal -- a SECOND paramgen ROM, tuned for DJ Screw "My Mind Went Blank" )
+( 2026-07-25, operator: "use full track of dj screw and make 25 different interesting mixes )
+( (please be creative with knobs)" -- on top of the standing "all closed loops only". )
+( )
+( WHY A SEPARATE ROM AND NOT AN EDIT. main.py's --uxn-ctrl takes a PATH, so a custom ROM is a )
+( first-class thing the driver already supports. paramgen.rom is the shared lane's sequencer -- )
+( mesh-sound-reflex's derive() contract and test_uxn_stream's pinned tables both point at it -- )
+( so retuning it for one source would retune every future grind of every source. This ROM is )
+( the creative surface; that one stays the contract. Identical protocol, identical 4 argv )
+( tokens, identical feedback semantics (idx_c EOR fb) -- only the TABLES and the mode arity )
+( differ, which is exactly the part that is supposed to be per-material. )
+( )
+( TWO CHANGES OF SUBSTANCE OVER paramgen.tal: )
+( )
+( 1. THE MODE STRINGS CARRY THEIR OWN SUB-KNOBS. run_uxn_sequence hands the whole emitted line )
+(    to config_automix as "amc <line>", so `m` was never restricted to a bare algorithm name -- )
+(    it is the tail of an amc fragment and can carry that algorithm's OWN parameters. This is )
+(    where the creativity actually lives: euclid ek/en, snap, swing sw, gap-fill gain fg, )
+(    polyrhythm ratios pr (including band-split streams), library cluster count lk with )
+(    similarity/contrast. None of those axes were reachable from a closed-loop run before; the )
+(    old table said "q", "poly", "lib" and every q render in history used q's defaults. )
+( )
+( 2. MOD 7, NOT MOD 3. Seven distinct recipes -- 2 q, 3 poly, 2 lib -- each getting exactly one )
+(    seventh of the mode-ticks. Same reasoning as the 2026-07-24 MOD 3 note: an AND mask can )
+(    only ever pick 1-of-2^n, so a 7-entry table under a mask would silently re-weight itself. )
+(    MOD 7 keeps the choice equal. )
+( )
+( input  : argv "<feedback>" "<tick>" "<macro-tick>" "<mode-tick>" -- unchanged )
+( output : one line "l <N> w <N> s <N> c <N>,<N>;<N>,<N> ss <N> m <mode> <mode-knobs...>\n" )
+( zero-page: acc=00 short, token=02 state (0=fb 1=tick 2=macro 3=mode), fb=03 stashed feedback )
+
+|0100
+    ;on-console #10 DEO2
+    BRK
+
+@on-console
+    #12 DEI
+    DUP #0a NEQ ,&digit JCN
+    POP
+    #02 LDZ #00 EQU ,&store-fb JCN
+    #02 LDZ #01 EQU ,&decide JCN
+    #02 LDZ #02 EQU ;&decide-ss JCN2
+    ;&decide-mode JMP2
+    &digit
+    #30 SUB
+    #00 SWP
+    #00 LDZ2 #000a MUL2
+    ADD2
+    #00 STZ2
+    BRK
+
+    &store-fb
+    #01 LDZ #03 STZ
+    #0000 #00 STZ2
+    #01 #02 STZ
+    BRK
+
+    &decide
+    #01 LDZ #03 AND          ( idx_l = tick_lo & 3 )
+    DUP #00 EQU ,&l0 JCN
+    DUP #01 EQU ,&l1 JCN
+    #02 EQU ,&l2 JCN
+    ,&l3 JMP
+    &l0 POP ;lstr0 ;emit JSR2 ,&wpart JMP
+    &l1 POP ;lstr1 ;emit JSR2 ,&wpart JMP
+    &l2 ;lstr2 ;emit JSR2 ,&wpart JMP
+    &l3 ;lstr3 ;emit JSR2
+
+    &wpart
+    #01 LDZ #02 SFT #03 AND  ( idx_w = (tick_lo >> 2) & 3 )
+    DUP #00 EQU ,&w0 JCN
+    DUP #01 EQU ,&w1 JCN
+    #02 EQU ,&w2 JCN
+    ,&w3 JMP
+    &w0 POP ;wstr0 ;emit JSR2 ,&spart JMP
+    &w1 POP ;wstr1 ;emit JSR2 ,&spart JMP
+    &w2 ;wstr2 ;emit JSR2 ,&spart JMP
+    &w3 ;wstr3 ;emit JSR2
+
+    &spart
+    #01 LDZ #04 SFT #03 AND  ( idx_s = (tick_lo >> 4) & 3 )
+    DUP #00 EQU ,&s0 JCN
+    DUP #01 EQU ,&s1 JCN
+    #02 EQU ,&s2 JCN
+    ,&s3 JMP
+    &s0 POP ;sstr0 ;emit JSR2 ,&cpart JMP
+    &s1 POP ;sstr1 ;emit JSR2 ,&cpart JMP
+    &s2 ;sstr2 ;emit JSR2 ,&cpart JMP
+    &s3 ;sstr3 ;emit JSR2
+
+    &cpart
+    #01 LDZ #06 SFT #03 AND  ( idx_c_raw = (tick_lo >> 6) & 3 )
+    #03 LDZ #03 AND EOR      ( idx_c = idx_c_raw EOR (fb_reg & 3) -- feedback=0 is a no-op )
+    DUP #00 EQU ,&c0 JCN
+    DUP #01 EQU ,&c1 JCN
+    #02 EQU ,&c2 JCN
+    ,&c3 JMP
+    &c0 POP ;cstr0 ;emit JSR2 ,&arm-ss JMP
+    &c1 POP ;cstr1 ;emit JSR2 ,&arm-ss JMP
+    &c2 ;cstr2 ;emit JSR2 ,&arm-ss JMP
+    &c3 ;cstr3 ;emit JSR2
+
+    &arm-ss
+    #0000 #00 STZ2
+    #02 #02 STZ
+    BRK
+
+    &decide-ss
+    #01 LDZ #03 AND         ( idx_ss = macro_tick_lo & 3 )
+    DUP #00 EQU ,&ss0 JCN
+    DUP #01 EQU ,&ss1 JCN
+    #02 EQU ,&ss2 JCN
+    ,&ss3 JMP
+    &ss0 POP ;ssstr0 ;emit JSR2 ,&arm-mode JMP
+    &ss1 POP ;ssstr1 ;emit JSR2 ,&arm-mode JMP
+    &ss2 ;ssstr2 ;emit JSR2 ,&arm-mode JMP
+    &ss3 ;ssstr3 ;emit JSR2
+
+    &arm-mode
+    #0000 #00 STZ2
+    #03 #02 STZ
+    BRK
+
+    &decide-mode
+    ( idx_m = mode_tick_lo MOD 7 -- seven recipes, one seventh of the mode-ticks each )
+    #01 LDZ
+    DUP #07 DIV #07 MUL SUB
+    DUP #00 EQU ,&m0 JCN
+    DUP #01 EQU ,&m1 JCN
+    DUP #02 EQU ,&m2 JCN
+    DUP #03 EQU ,&m3 JCN
+    DUP #04 EQU ,&m4 JCN
+    DUP #05 EQU ,&m5 JCN
+    ( x is 6 by construction -- MOD 7 admits no other value )
+    POP ;mstr6 ;emit JSR2 ,&halt JMP
+    &m0 POP ;mstr0 ;emit JSR2 ,&halt JMP
+    &m1 POP ;mstr1 ;emit JSR2 ,&halt JMP
+    &m2 POP ;mstr2 ;emit JSR2 ,&halt JMP
+    &m3 POP ;mstr3 ;emit JSR2 ,&halt JMP
+    &m4 POP ;mstr4 ;emit JSR2 ,&halt JMP
+    &m5 POP ;mstr5 ;emit JSR2
+
+    &halt
+    #01 #0f DEO
+    BRK
+
+@emit ( str* -- )
+    &loop
+    LDAk #00 EQU ,&done JCN
+    LDAk #18 DEO
+    INC2 ,&loop JMP
+    &done
+    POP2
+    JMP2r
+
+( ============================ THE TABLES -- tuned for a SCREWED source ====================== )
+( The material is already slowed and pitched down: a 6.6-minute chopped-and-screwed tape. So )
+( these tables are not the gong tables with different numbers, they are aimed at what that )
+( material rewards. )
+
+( l -- grain length. Ceiling stays 2000ms: mesh-sound-reflex's derive() clamps l to [120,2000] )
+( and a ROM that emits outside the pool would hand the lane a value it cannot reproduce. The )
+( floor moves UP to 150 (a screwed vocal chopped at 120ms is a click track, not a chop) and the )
+( interior spacing is wider than the canonical 450/1100. )
+@lstr0 "l 20 "150 20 00
+@lstr1 "l 20 "600 20 00
+@lstr2 "l 20 "1400 20 00
+@lstr3 "l 20 "2000 20 00
+
+( w -- grains per window. Reaching 16 is the point: a dense window over long grains is the )
+( smear this material is made of. )
+@wstr0 "w 20 "2 20 00
+@wstr1 "w 20 "5 20 00
+@wstr2 "w 20 "9 20 00
+@wstr3 "w 20 "16 20 00
+
+( s -- playback speed. Straddles 1.0 in BOTH directions on purpose. 0.5 is screwing the screw )
+( (a ~13-minute render of a 6.6-minute tape); 2.0 is the unscrewed flip -- the source snapped )
+( back toward the tempo it was cut from. Both are on-genre, and a table that only went slower )
+( would be one idea four times. )
+@sstr0 "s 20 "0.5 20 00
+@sstr1 "s 20 "0.8 20 00
+@sstr2 "s 20 "1.25 20 00
+@sstr3 "s 20 "2.0 20 00
+
+( c -- band pairs. Screwed tape is bass-forward with tape hiss on top, so three of the four )
+( splits deliberately sit somewhere other than "everything": sub+low-mid, body+presence, and )
+( air-only (hats and hiss with the bass gone). One stays full-range as the control. )
+@cstr0 "c 20 "0,0;1000,15000 20 00
+@cstr1 "c 20 "0,80;300,2500 20 00
+@cstr2 "c 20 "0,200;1200,6000 20 00
+@cstr3 "c 20 "0,2000;6000,16000 20 00
+
+( ss -- stretch (lib multiplies length by s*ss, q/poly do not). 2.4 against s 0.5 is the )
+( long-form end; 0.7 against s 2.0 is the short violent end. )
+@ssstr0 "ss 20 "0.7 20 00
+@ssstr1 "ss 20 "1.0 20 00
+@ssstr2 "ss 20 "1.5 20 00
+@ssstr3 "ss 20 "2.4 20 00
+
+( m -- THE CREATIVE AXIS. Not an algorithm name: an algorithm PLUS its own knobs, because the )
+( emitted line is an amc fragment and always was. Seven recipes, MOD 7, 2 q / 3 poly / 2 lib. )
+@mstr0 "m 20 "q 20 "ek 20 "3 20 "en 20 "8 20 "fg 20 "-3 0a 00
+@mstr1 "m 20 "q 20 "ek 20 "7 20 "en 20 "16 20 "snap 20 "sw 20 "66 0a 00
+@mstr2 "m 20 "poly 20 "pr 20 "3;2 0a 00
+@mstr3 "m 20 "poly 20 "pr 20 "5;4;3 0a 00
+@mstr4 "m 20 "poly 20 "pr 20 "3:1-900;2:4000-16000 0a 00
+@mstr5 "m 20 "lib 20 "sim 20 "lk 20 "5 0a 00
+@mstr6 "m 20 "lib 20 "con 20 "lk 20 "8 0a 00
