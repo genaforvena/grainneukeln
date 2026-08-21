@@ -64,6 +64,29 @@ def parse_stream_spec(spec):
     return streams or None
 
 
+def format_stream_spec(streams):
+    """Render a parsed ``streams`` list back to its ``pr`` grammar — the inverse of
+    ``parse_stream_spec``, kept beside it so the two cannot drift.
+
+    Segments are joined with ``+`` rather than the input's ``;`` so the result is safe to embed in
+    a filename (which is its only caller today: ``_save_mix``). It exists because that caller used
+    to f-string the raw list — a list of dicts holding ChannelConfig OBJECTS — into the name, which
+    both blew NAME_MAX and leaked a heap address, so no two byte-identical renders ever agreed on a
+    name. Returns "" for an empty/None spec.
+    """
+    parts = []
+    for st in streams or []:
+        seg = str(st.get("ratio", ""))
+        if st.get("length") is not None:
+            seg += f"@{st['length']:g}"
+        chans = st.get("channels") or []
+        if chans:
+            ch = chans[0]
+            seg += f":{ch.low_pass}-{ch.high_pass}"
+        parts.append(seg)
+    return "+".join(parts)
+
+
 class AutoMixerConfig:
     modes = {
         "rw": RandomWindowAutoMixer,

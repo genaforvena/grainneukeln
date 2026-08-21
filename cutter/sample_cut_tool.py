@@ -1,3 +1,4 @@
+import hashlib
 import os
 import random
 import re
@@ -9,7 +10,8 @@ import pydub.playback
 import pydub.utils
 from pydub import AudioSegment
 
-from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
+from automixer.config import (AutoMixerConfig, ChannelConfig, format_stream_spec,
+                              parse_stream_spec)
 from automixer.iterators.grid import euclidean
 from automixer.iterators.patterns import (
     NAMED_PATTERNS, PatternError, describe, resolve_pattern,
@@ -40,6 +42,28 @@ def normalize_loudness(seg, target_dbfs=TARGET_DBFS, peak_dbfs=PEAK_DBFS):
     # attenuates a mix whose peak is already over the ceiling, so the export is always peak-safe).
     gain = min(gain, peak_dbfs - seg.max_dBFS)
     return seg.apply_gain(gain)
+
+
+NAME_MAX = 255  # bytes; ext4/xfs/tmpfs alike. Exceeding it raises OSError 36 at export time.
+
+
+def _clamp_file_name(stem, ext_bytes=4):
+    """Bound a render's filename stem so the export cannot fail on a name.
+
+    The params section is unbounded by construction — `c` takes any number of bands, `pr` any
+    number of streams — so a legal recipe can name a file that cannot exist, and the failure lands
+    at `export()`, AFTER the mix is computed and with nothing written. Clamping keeps the head
+    (which carries the params an operator reads) and the tail (the timestamp, which makes the name
+    unique), and splices in a short digest of the FULL stem so two different long recipes rendered
+    in the same minute still get different names.
+    """
+    if len(stem.encode()) + ext_bytes <= NAME_MAX:
+        return stem
+    digest = hashlib.sha1(stem.encode()).hexdigest()[:8]
+    tail = "_" + digest + stem[-16:]  # -16 = "_YYYY_MM_DD_HHMM"
+    budget = NAME_MAX - ext_bytes - len(tail.encode())
+    head = stem.encode()[:budget].decode("utf-8", "ignore")
+    return head + tail
 
 
 class SampleCutter:
@@ -691,11 +715,16 @@ class SampleCutter:
             if cfg.euclid_n:
                 params_parts.append(f"n{cfg.euclid_n}")
         if getattr(cfg, "streams", None):
-            params_parts.append(f"st{cfg.streams}")
+            # The `pr` GRAMMAR, not the parsed structure: `streams` is a list of dicts holding
+            # ChannelConfig objects, and f-stringing it put `<...ChannelConfig object at 0x...>`
+            # per stream into the name — over NAME_MAX (so a banded poly render raised OSError 36
+            # after the whole mix was computed) and address-tagged (so two byte-identical renders
+            # never shared a name). `format_stream_spec` is the parser's inverse, kept beside it.
+            params_parts.append("st" + format_stream_spec(cfg.streams))
         if getattr(cfg, "seed", None):
             params_parts.append(f"seed{cfg.seed}")
 
-        file_name = "_".join(params_parts) + f"_{timestamp}"
+        file_name = _clamp_file_name("_".join(params_parts) + f"_{timestamp}")
         if self.is_wav_export_enabled:
             mix.export(
                 os.path.join(self.destination_path, file_name + ".wav"), format="wav"
