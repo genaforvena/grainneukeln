@@ -72,13 +72,37 @@ class SourcePanel(Static):
             self.reason = reason
             super().__init__()
 
+    # THE RECORDER AND THE PRE-FLIGHT PROBE ARE ONE SEAM, NOT TWO. The probe measures the SYSTEM's
+    # default capture path; a caller holding its own recorder is not using that path, so probing it
+    # would check a different thing than the one about to record — and refusing on that reading would
+    # invent a fault out of an unrelated fact. Binding them in __init__ alone was not enough: four
+    # callers swap ``_recorder_factory`` AFTER construction, which left a fake recorder paired with a
+    # real probe and refused takes that were never going to touch a sound card. A property keeps the
+    # invariant wherever the swap happens, instead of at the one moment someone remembered.
+    @property
+    def recorder_factory(self):
+        return self._recorder_factory
+
+    @recorder_factory.setter
+    def recorder_factory(self, factory):
+        self._recorder_factory = factory
+        self._preflight = mic.probe_device if factory is self._system_recorder_factory else None
+
     def __init__(self, loader, searcher=None, state=None, recorder_factory=None):
         super().__init__()
         self._loader = loader
         # Injectable so the TUI tests never touch a sound card (and so an operator can pin an
         # exclusive-ALSA recorder on a node where PipeWire is not running).
-        self._recorder_factory = recorder_factory or (
+        self._system_recorder_factory = (
             lambda out_dir, device: mic.MicRecorder(out_dir, device=device))
+        self.recorder_factory = recorder_factory or self._system_recorder_factory
+        # The pre-flight probes the SYSTEM's default capture path. A caller that supplies its own
+        # recorder is by definition not using it, so probing the system device would be checking a
+        # different thing than the one about to record — and refusing on THAT would invent a fault
+        # out of an unrelated fact. So the probe is bound to the same seam as the recorder: real
+        # factory -> real probe, injected factory -> injected (or absent) probe. Not a special case
+        # for tests; it is the same object being real or not in both slots at once.
+
         self._recorder = None
         self._rec_timer = None
         self._rec_device = None
@@ -329,8 +353,30 @@ class SourcePanel(Static):
         if self.recording:
             return
         out_dir = getattr(self.state, "output_dir", None) or "output"
+        # PRE-FLIGHT: refuse a DEAD source before the take, not after it. The panel used to open
+        # whatever `default_device()` listed first, record for as long as the operator held it, and
+        # only then report "silent — kept, not loaded". On mesh-home the first listed source is the
+        # rear jack with nothing in it (measured: peak 3 of 32768), while the live mic's card is held
+        # by the room ear's exclusive raw-ALSA grab and is not in the list at all. So the honest
+        # answer was knowable in 0.4s and was instead delivered after the whole take was spent.
+        # Skipped silently when the probe cannot run (`None`): "we could not look" is not "dead", and
+        # refusing on it would invent a fault. Overridable for anyone recording deliberate silence.
+        if self._preflight is not None:
+            probe = self._preflight(self._rec_device or mic.default_device())
+            if probe is not None and probe["dead"]:
+                holders = mic.who_holds_capture()
+                held = ("; the live capture card is held by "
+                        + ", ".join(f"{h['command'].split()[0]}(pid {h['pid']})" for h in holders)
+                        ) if holders else ""
+                why = (f"Record failed to start: source "
+                       f"{self._rec_device or mic.default_device() or 'default'} reads digital "
+                       f"silence (peak {probe['peak']}){held} — pick another input before recording")
+                self._recorder = None
+                self._set_status(why)
+                self.post_message(self.TakeRefused(why))
+                return
         try:
-            recorder = self._recorder_factory(out_dir, self._rec_device)
+            recorder = self.recorder_factory(out_dir, self._rec_device)
             path = recorder.start()
         except Exception as e:
             # Never a silent no-op: a RECORD press that does nothing and says nothing is

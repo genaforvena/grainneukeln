@@ -300,7 +300,7 @@ class RefusedTakeDoesNotDisturbTheLoadedSourceTest(unittest.IsolatedAsyncioTestC
         rec = FakeRecorder("/tmp", measurement=m)
         async with app.run_test() as pilot:
             panel = app.query_one(SourcePanel)
-            panel._recorder_factory = lambda o, d: rec
+            panel.recorder_factory = lambda o, d: rec
             panel.load("/tmp/already-loaded.wav")
             await _settle(app, pilot)
             self.assertIsNotNone(app.state.cutter)
@@ -322,7 +322,7 @@ class RefusedTakeDoesNotDisturbTheLoadedSourceTest(unittest.IsolatedAsyncioTestC
         rec = FakeRecorder("/tmp", start_error=RuntimeError("no capture backend found"))
         async with app.run_test() as pilot:
             panel = app.query_one(SourcePanel)
-            panel._recorder_factory = lambda o, d: rec
+            panel.recorder_factory = lambda o, d: rec
             panel.load("/tmp/already-loaded.wav")
             await _settle(app, pilot)
             panel.toggle_record()
@@ -366,7 +366,7 @@ class RecordAppWiringTest(unittest.IsolatedAsyncioTestCase):
         rec = FakeRecorder("/tmp", measurement=measurement())
         app = self._app(rec)
         async with app.run_test() as pilot:
-            app.query_one(SourcePanel)._recorder_factory = lambda o, d: rec
+            app.query_one(SourcePanel).recorder_factory = lambda o, d: rec
             app.action_record()
             await pilot.pause()
             self.assertTrue(rec.started)
@@ -381,7 +381,7 @@ class RecordAppWiringTest(unittest.IsolatedAsyncioTestCase):
         rec = FakeRecorder("/tmp", measurement=measurement())
         app = self._app(rec)
         async with app.run_test() as pilot:
-            app.query_one(SourcePanel)._recorder_factory = lambda o, d: rec
+            app.query_one(SourcePanel).recorder_factory = lambda o, d: rec
             app.action_record()
             await pilot.pause()
             self.assertTrue(rec.recording)
@@ -423,3 +423,65 @@ class DeviceOptionsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreflightRefusesADeadSourceTest(unittest.IsolatedAsyncioTestCase):
+    """The take is refused BEFORE it is spent, not after.
+
+    The panel used to open whatever ``mic.default_device()`` listed first and only report "silent"
+    once the operator stopped. On mesh-home the first listed source is the rear jack with nothing
+    plugged into it (measured 2026-08-21: peak 3 of 32768), while the live microphone's card is held
+    by the room ear's exclusive raw-ALSA grab and is not in PipeWire's source list at all. So the
+    answer was knowable in 0.4s and was instead delivered after the whole take. That is what the
+    operator meant by "кривовато": nothing looks wrong until it is too late to matter.
+
+    The three arms below are the three things the probe can say, and they must NOT collapse: dead,
+    live, and COULD-NOT-LOOK. Refusing on the third would invent a fault out of our own blindness.
+    """
+
+    def _panel(self, probe, rec):
+        panel = SourcePanel(loader=lambda v, s=None: _FakeCutter(v))
+        panel.recorder_factory = lambda o, d: rec        # public seam: this also clears the probe...
+        panel._preflight = probe                          # ...so the arm under test re-arms it
+        panel._set_status = lambda t: setattr(panel, "status_text", t)
+        panel._set_button = lambda *a, **k: None
+        panel._set_label = lambda *a, **k: None
+        panel.set_interval = lambda *a, **k: None
+        panel.post_message = lambda m: None
+        panel.status_text = ""
+        return panel
+
+    async def test_a_dead_source_is_refused_before_the_recorder_is_ever_built(self):
+        rec = FakeRecorder("/tmp")
+        panel = self._panel(lambda dev: {"peak": 3, "rms": 1, "dead": True}, rec)
+        panel.start_record()
+        self.assertFalse(rec.started, "a dead source still opened a recorder — the take is spent before the refusal")
+        self.assertFalse(panel.recording)
+        self.assertIn("digital silence", panel.status_text)
+        self.assertIn("peak 3", panel.status_text,
+                      "the refusal does not carry the measurement it was made from")
+
+    async def test_a_live_source_records(self):
+        rec = FakeRecorder("/tmp")
+        panel = self._panel(lambda dev: {"peak": 900, "rms": 300, "dead": False}, rec)
+        panel.start_record()
+        self.assertTrue(rec.started, "a live source was refused — the floor is not at digital silence")
+
+    async def test_a_probe_that_could_not_run_does_not_refuse(self):
+        # `None` is "we could not look", which is not "there is nothing there". Collapsing the two
+        # would make every node without a working probe unable to record at all — the exact shape of
+        # the na-vs-0 confusions this codebase keeps finding elsewhere.
+        rec = FakeRecorder("/tmp")
+        panel = self._panel(lambda dev: None, rec)
+        panel.start_record()
+        self.assertTrue(rec.started, "a blind probe was treated as a dead source")
+
+    async def test_injecting_a_recorder_unbinds_the_system_probe(self):
+        # The recorder and the probe are ONE seam. A caller holding its own recorder is not using the
+        # system capture path, so probing that path would measure a different thing than the one about
+        # to record. Binding them only in __init__ was not enough — four call sites swap the factory
+        # afterwards — so the pairing lives in the property setter and is asserted here.
+        panel = SourcePanel(loader=lambda v, s=None: _FakeCutter(v))
+        self.assertIsNotNone(panel._preflight, "the real factory did not arm the real probe")
+        panel.recorder_factory = lambda o, d: FakeRecorder("/tmp")
+        self.assertIsNone(panel._preflight, "swapping in a fake recorder left the real probe armed")

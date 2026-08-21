@@ -157,6 +157,65 @@ def default_device(runner=None):
     return None
 
 
+# A source that is PRESENT is not a source that is LIVE. ``default_device`` returns the first
+# non-monitor source PipeWire lists, which is an ORDERING, not a choice — and on mesh-home the first
+# one is ``alsa_input.pci-0000_2d_00.4.analog-stereo``, the rear jack with nothing plugged into it:
+# measured 2026-08-21, rms 1 / peak 4 out of 32768, i.e. digital silence. The live microphone (the
+# USB camera's) is not in that list at all, because the room ear holds its card with an exclusive raw
+# ALSA grab. So the button opened a dead source, recorded happily for as long as the operator held
+# it, and only THEN said "silent — kept, not loaded". That post-hoc rejection is the whole of
+# "кривовато": nothing is wrong until after you have spent your take.
+#
+# The floor is deliberately at DIGITAL silence, not at "quiet". A hushed room is a legitimate
+# recording and must not be refused; an unplugged jack returns near-exact zeros. Distinguishing the
+# two is the entire value of the probe, so it is stated as a peak threshold rather than a vibe.
+PREFLIGHT_PEAK_FLOOR = 8
+PREFLIGHT_SECONDS = 0.4
+
+
+def probe_device(device, seconds=PREFLIGHT_SECONDS, runner=None, backend=None):
+    """Capture a fraction of a second and report whether the source carries ANY signal.
+
+    Returns ``{"peak": int, "rms": int, "dead": bool}``, or ``None`` when the probe itself could not
+    run. ``None`` is honest and is NOT ``dead``: "we could not look" and "there is nothing there"
+    are different facts, and collapsing them would refuse a take for a reason that never existed.
+    """
+    import tempfile
+    try:
+        name, binary, build = pick_backend(backend)
+    except Exception:
+        return None
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        argv = build(binary, tmp.name, device, 16000, 1)
+        run = runner or _run
+        # A probe that hangs is worse than no probe: it delays the press it exists to make honest.
+        try:
+            proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+        try:
+            proc.wait(timeout=seconds)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        m = measure(tmp.name)
+        if m is None or m.get("frames", 0) <= 0:
+            return None
+        return {"peak": m["peak"], "rms": m["rms"], "dead": m["peak"] < PREFLIGHT_PEAK_FLOOR}
+    except Exception:
+        return None
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
 def who_holds_capture(runner=None):
     """Processes currently holding an ALSA capture PCM, as ``[{pid, command}]``.
 
