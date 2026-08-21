@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>grainneukeln pult</title>
+<style>
+  :root{
+    --bg:#0d0b10; --panel:#16131c; --line:#2c2536; --ink:#e8e2f0; --dim:#8d84a0;
+    --hot:#ff4d6d; --go:#5ee6a8; --amber:#ffc857;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+  h1{font-size:15px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:12px;margin-bottom:10px}
+  .row{display:flex;gap:8px;align-items:center}
+  .row+.row{margin-top:8px}
+  button{font:inherit;color:var(--ink);background:#221c2c;border:1px solid var(--line);
+         border-radius:10px;padding:12px 14px;min-height:48px;flex:1;
+         -webkit-tap-highlight-color:transparent}
+  button:active{transform:translateY(1px)}
+  button[disabled]{opacity:.4}
+  .rec{background:var(--hot);border-color:var(--hot);color:#1a0007;font-weight:700}
+  .rec.on{background:var(--amber);border-color:var(--amber);color:#1a1200}
+  .go{background:var(--go);border-color:var(--go);color:#032117;font-weight:700}
+  input,select{font:inherit;color:var(--ink);background:#0f0d14;border:1px solid var(--line);
+               border-radius:10px;padding:11px;width:100%;min-height:46px}
+  .msg{color:var(--dim);word-break:break-word;font-size:13px;min-height:2.6em}
+  .msg.err{color:var(--hot)}
+  .lbl{color:var(--dim);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+       margin-bottom:6px}
+  .bar{height:5px;background:#0f0d14;border-radius:3px;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;background:var(--go);width:0;transition:width .25s}
+  ul{list-style:none;margin:0;padding:0}
+  li{border-top:1px solid var(--line);padding:9px 0;display:flex;gap:8px;align-items:center}
+  li:first-child{border-top:0}
+  li span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  li button{flex:0 0 auto;min-height:38px;padding:7px 12px}
+  audio{width:100%;margin-top:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#3a3247;flex:0 0 auto}
+  .dot.live{background:var(--hot)}
+  .dot.work{background:var(--amber)}
+  .dot.ok{background:var(--go)}
+</style>
+
+<h1>grainneukeln · pult</h1>
+
+<div class="card">
+  <div class="row">
+    <i class="dot" id="dot"></i>
+    <div class="msg" id="msg">connecting…</div>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+</div>
+
+<div class="card">
+  <div class="lbl">record the room</div>
+  <div class="row"><select id="device"><option value="">auto (default input)</option></select></div>
+  <div class="row">
+    <button class="rec" id="rec">● REC</button>
+    <button id="cancel" style="flex:0 0 40%">discard</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="lbl">source</div>
+  <div class="row"><input id="src" placeholder="path · youtube/soundcloud url · artist - track"></div>
+  <div class="row"><button id="load">load</button></div>
+</div>
+
+<div class="card">
+  <div class="lbl">grind</div>
+  <div class="row"><input id="amc" placeholder="l /2 ss 1.2 s 0.9"></div>
+  <div class="row">
+    <button id="apply" style="flex:0 0 40%">set</button>
+    <button class="go" id="run">▶ GRIND</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="lbl">renders</div>
+  <ul id="outputs"><li><span>—</span></li></ul>
+  <audio id="player" controls preload="none"></audio>
+</div>
+
+<div class="card">
+  <div class="lbl">takes</div>
+  <ul id="takes"><li><span>—</span></li></ul>
+</div>
+
+<script>
+// The token arrives once in the URL (so it can be typed or scanned), is kept in localStorage,
+// and is then sent as a header — keeping it out of every subsequent URL, and out of the server's
+// access log, which is exactly where a secret gets copied into a paste.
+const url = new URL(location.href);
+if (url.searchParams.get('t')) {
+  localStorage.setItem('pult-token', url.searchParams.get('t'));
+  history.replaceState({}, '', url.pathname);
+}
+const TOKEN = localStorage.getItem('pult-token') || '';
+
+const $ = id => document.getElementById(id);
+let state = {}, devicesFilled = false, busyClick = false;
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: {'X-Pult-Token': TOKEN, 'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body || {})
+  });
+  const data = await res.json().catch(() => ({error: 'bad response'}));
+  if (data.state) render(data.state);
+  // A refusal (409) is a message, not a crash — the server says WHY it declined and the phone
+  // shows that sentence rather than a generic failure.
+  if (!res.ok && data.error) flash(data.error, true);
+  return data;
+}
+
+function flash(text, bad) {
+  $('msg').textContent = text;
+  $('msg').className = 'msg' + (bad ? ' err' : '');
+}
+
+function render(s) {
+  state = s;
+  const rec = $('rec');
+  rec.textContent = s.recording ? `■ STOP  ${s.elapsed.toFixed(1)}s` : '● REC';
+  rec.classList.toggle('on', !!s.recording);
+  $('cancel').disabled = !s.recording;
+  $('run').disabled = !!s.busy || s.recording;
+  $('bar').style.width = (s.busy === 'grinding' ? s.progress * 100 : 0) + '%';
+  $('dot').className = 'dot' + (s.recording ? ' live' : s.busy ? ' work' : s.error ? '' : ' ok');
+  if (document.activeElement !== $('amc')) $('amc').value = s.amc || '';
+  flash((s.source ? '◈ ' + s.source + '  ·  ' : '') + (s.message || ''), !!s.error);
+
+  if (!devicesFilled && s.devices && s.devices.length) {
+    devicesFilled = true;
+    for (const d of s.devices) {
+      const o = document.createElement('option');
+      o.value = d.id;
+      // A monitor records what this node is PLAYING, not the room. Say which, never hide it.
+      o.textContent = d.monitor ? '⟲ ' + d.id + ' (what this node plays)' : d.id;
+      $('device').appendChild(o);
+    }
+  }
+  fill('outputs', s.outputs, true);
+  fill('takes', s.takes, false);
+}
+
+function fill(id, rows, playable) {
+  const ul = $(id);
+  const sig = JSON.stringify(rows);
+  if (ul.dataset.sig === sig) return;         // don't rebuild under the operator's finger
+  ul.dataset.sig = sig;
+  ul.innerHTML = '';
+  if (!rows || !rows.length) { ul.innerHTML = '<li><span>—</span></li>'; return; }
+  for (const r of rows) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = r.name + '  ' + (r.size / 1048576).toFixed(1) + 'M';
+    li.appendChild(name);
+    const play = document.createElement('button');
+    play.textContent = '▸';
+    const rel = playable ? r.name : 'recordings/' + r.name;
+    play.onclick = () => {
+      $('player').src = '/audio/' + encodeURI(rel) + '?t=' + encodeURIComponent(TOKEN);
+      $('player').play();
+    };
+    li.appendChild(play);
+    if (!playable) {
+      const use = document.createElement('button');
+      use.textContent = 'use';
+      // A take is named relative to the output dir; the server resolves it there. Sending a bare
+      // name would resolve against the SERVER PROCESS's cwd, which is not where takes live.
+      use.onclick = () => api('/api/source', {value: 'recordings/' + r.name});
+      li.appendChild(use);
+    }
+    ul.appendChild(li);
+  }
+}
+
+$('rec').onclick = async () => {
+  if (busyClick) return; busyClick = true;
+  try {
+    await api(state.recording ? '/api/record/stop' : '/api/record/start',
+              {device: $('device').value || null});
+  } finally { busyClick = false; }
+};
+$('cancel').onclick = () => api('/api/record/cancel', {});
+$('load').onclick = () => { if ($('src').value.trim()) api('/api/source', {value: $('src').value.trim()}); };
+$('src').addEventListener('keydown', e => { if (e.key === 'Enter') $('load').click(); });
+$('apply').onclick = () => api('/api/amc', {line: $('amc').value});
+$('amc').addEventListener('keydown', e => { if (e.key === 'Enter') $('apply').click(); });
+$('run').onclick = () => api('/api/run', {});
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/state', {headers: {'X-Pult-Token': TOKEN}})).json();
+    if (s.error) flash(s.error, true); else render(s);
+  } catch (e) {
+    flash('pult unreachable — is it still running?', true);
+  }
+  // Faster while something is moving, idle otherwise: a phone left open on this page should not
+  // hammer the node that is trying to render audio.
+  setTimeout(poll, (state.recording || state.busy) ? 400 : 2000);
+}
+poll();
+</script>

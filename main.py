@@ -43,6 +43,13 @@ if __name__ == "__main__":
                         help="List capture backends and sources this node can actually record "
                              "from, plus any process currently holding a capture device, then "
                              "exit. A device held by a raw-ALSA client is absent from the list.")
+    parser.add_argument("--pult", nargs="?", type=int, const=8731, default=None, metavar="PORT",
+                        help="Serve the LAN pult — a phone-reachable control surface (record, "
+                             "grind, listen) on PORT (default 8731). Prints the URL and the "
+                             "access token. LAN only; never expose it to the internet.")
+    parser.add_argument("--pult-bind", default="0.0.0.0",
+                        help="Interface for --pult (default 0.0.0.0 so a phone on the LAN can "
+                             "reach it; use 127.0.0.1 to keep it on this host).")
     parser.add_argument("--low-memory", action="store_true",
                         help="Enable aggressive garbage collection for memory-constrained nodes. "
                              "Slower but uses ~30%% less peak RAM on long sources.")
@@ -108,6 +115,16 @@ if __name__ == "__main__":
             for h in holders:
                 print(f"  {h['device']}  pid {h['pid']}: {h['command'][:80]}")
         sys.exit(0 if backends else 1)
+
+    if args.pult is not None:
+        from pult.server import serve
+        # A pult has no SOURCE — the phone chooses one. So a lone positional is read as the output
+        # directory (`main.py --pult out/`), which is the only thing it could sensibly mean, and
+        # saves the operator writing an empty source argument to reach the second slot.
+        out = os.path.abspath(args.destination_path or args.source_path or "output")
+        os.makedirs(out, exist_ok=True)
+        serve(out, host=args.pult_bind, port=args.pult)
+        sys.exit(0)
 
     if args.record is not None:
         from capture import mic

@@ -30,14 +30,15 @@ for pkg in ("PySide6", "pyqtgraph", "matplotlib", "textual", "pyfiglet"):
         pass
 
 # The app's own packages are imported dynamically in places (uxn_stream, youtube.*, tui.app).
-for pkg in ("automixer", "capture", "cutter", "tui", "youtube"):
+for pkg in ("automixer", "capture", "cutter", "pult", "tui", "youtube"):
     hiddenimports += collect_submodules(pkg)
 
 # Ship the vendored Uxn control ROMs (paramgen.rom drives --uxn-ctrl).
 datas += [("uxn_ctrl", "uxn_ctrl")]
-# Non-Python files the app READS at runtime. collect_submodules gathers modules only, so a
-# stylesheet is invisible to it and the bundled TUI would come up unstyled.
-datas += [("tui/app.tcss", "tui")]
+# Non-Python files the app READS at runtime. collect_submodules gathers modules only, so anything
+# that is not a .py is invisible to it and a bundle silently loses the feature that reads it:
+# `--pult` would 500 on its own page, and the TUI would come up unstyled.
+datas += [("pult/index.html", "pult"), ("tui/app.tcss", "tui")]
 
 a = Analysis(
     ["main.py"],

@@ -105,6 +105,42 @@ source (grind your own speakers), which is why the picker labels it instead of h
 
 ---
 
+## The pult — grind from your phone
+
+```bash
+python main.py --pult output/        # prints a URL with a token; open it on the phone
+python main.py --pult 9000 output/   # a different port
+python main.py --pult --pult-bind 127.0.0.1   # this host only
+```
+
+```
+grainneukeln pult
+  output   /home/you/grainneukeln/output
+  open     http://192.168.8.224:8731/?t=Ur3k9Xq2p
+```
+
+A single mobile page with the same three verbs the TUI has — **record · load · grind** — plus a
+player for what came out. Params go in as an `amc` line (`l /2 ss 1.2 s 0.9`), the same grammar
+the TUI's command bar and the CLI take.
+
+It is **not** a remote control for a running TUI: there is no IPC into a Textual app, and one
+would make the phone's buttons work only while a particular tmux pane happened to be alive.
+Instead it runs its own session and shares the TUI's checkpoint file, so params set on the phone
+are there when the TUI next starts, and the other way round.
+
+Two things to know before you leave it running:
+
+* **The token is not optional.** Binding to `0.0.0.0` is the whole point — a phone has to reach
+  it — and a LAN is not a trusted room. Every API route needs the token; it arrives once in the
+  URL and then lives in the browser's local storage. Anyone who can reach the port *and* has the
+  token can record and grind on this machine. Pin your own with `$GRAINNEUKELN_PULT_TOKEN`.
+* **LAN only.** Do not port-forward it. There is no TLS and no rate limiting; it is a pult for a
+  room, not a service.
+
+APK later — the page is a plain URL in the meantime, and it installs to a phone home screen as a
+web app.
+
+---
 
 ## Use it — TUI (recommended, headless-friendly)
 
