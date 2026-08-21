@@ -85,3 +85,41 @@ class RunPanelTest(unittest.IsolatedAsyncioTestCase):
                 cb.value = False
                 await pilot.pause()
                 self.assertFalse(getattr(state, attr))
+
+
+class ProgressTeardownTest(unittest.IsolatedAsyncioTestCase):
+    """A render can outlive the app that started it — a test leaving its ``run_test`` block, or
+    the operator quitting mid-series. The worker keeps calling back into widgets that are gone."""
+
+    async def test_progress_after_teardown_does_not_raise_into_the_worker(self):
+        """Regression: ``_on_progress`` was the one of the panel's two worker-driven callbacks
+        WITHOUT a teardown guard (``_log`` has had one). NoMatches raised inside the render
+        thread, ``engine.run`` recorded a crash and re-raised, and a series aborted — losing the
+        remaining combinations' output files and failing an unrelated test. Recorded in the crash
+        log on 2026-07-24, 2026-08-01 and 2026-08-21, always with the last series recipe."""
+        state = SessionState(cutter=object(), sample_length_ms=300)
+        app = _Host(state, lambda s, on_progress, on_log: None)
+        async with app.run_test() as pilot:
+            panel = app.query_one(RunPanel)
+            await pilot.pause()
+            panel._on_progress(0.5)          # widget present: the normal path still works
+        # Outside the block the app is torn down and the ProgressBar is gone.
+        panel._on_progress(1.0)              # must not raise
+        panel._log("late line")              # the already-guarded sibling, for symmetry
+
+    async def test_a_real_error_from_the_bar_still_surfaces(self):
+        """The guard tolerates the widget being GONE, not every failure — a progress bar that
+        silently stops moving is its own kind of lie."""
+        from textual.widgets import ProgressBar
+        state = SessionState(cutter=object(), sample_length_ms=300)
+        app = _Host(state, lambda s, on_progress, on_log: None)
+        async with app.run_test() as pilot:
+            panel = app.query_one(RunPanel)
+            await pilot.pause()
+            bar = app.query_one("#run_progress", ProgressBar)
+
+            def boom(*a, **k):
+                raise ValueError("bar is broken")
+            bar.update = boom
+            with self.assertRaises(ValueError):
+                panel._on_progress(0.5)

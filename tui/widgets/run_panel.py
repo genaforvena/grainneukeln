@@ -1,3 +1,4 @@
+from textual.css.query import NoMatches
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Input, Label, ProgressBar, RichLog, Static
@@ -135,7 +136,22 @@ class RunPanel(Static):
             self._on_finished(path)
 
     def _on_progress(self, fraction):
-        self.query_one("#run_progress", ProgressBar).update(progress=fraction * 100)
+        # Same teardown guard as ``_log`` below — the grind worker drives BOTH from its thread and
+        # only one of them was protected. When the app exits with a render still in flight (a test
+        # leaving its ``run_test`` block, or the operator quitting mid-series) the ProgressBar is
+        # already unmounted, this raised NoMatches INSIDE the worker, ``engine.run`` recorded a
+        # crash and re-raised, and the series aborted — losing the remaining combinations' files
+        # and failing a test that had nothing to do with progress. Seen in the crash log on
+        # 2026-07-24, 2026-08-01 and 2026-08-21, always with the last series recipe.
+        #
+        # Narrower than ``_log``'s bare except on purpose: only the widget being GONE is tolerated.
+        # A real error inside update() still surfaces, because a progress bar that silently stops
+        # moving is its own kind of lie.
+        try:
+            bar = self.query_one("#run_progress", ProgressBar)
+        except NoMatches:
+            return
+        bar.update(progress=fraction * 100)
 
     def _log(self, text):
         # The grind worker posts log lines from its thread; if the panel has been torn down
