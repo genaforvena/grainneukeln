@@ -33,4 +33,4 @@ jobs:
       # capture/ and pult/ are hermetic on a runner with no sound card: the real-hardware tests
       # in capture/ SKIP (honest absence) rather than pass, and everything else uses fakes. A
       # suite that is written but never run is a suite that can never fail.
-      run: pytest tests/ cutter/test_normalize_loudness.py automixer/test_utils.py automixer/test_uxn_stream.py capture/ pult/ -v
+      run: pytest tests/ .github/test_verify_macos_min.py cutter/test_normalize_loudness.py automixer/test_utils.py automixer/test_uxn_stream.py capture/ pult/ -v
