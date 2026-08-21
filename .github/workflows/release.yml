@@ -86,6 +86,22 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 .github/verify_macos_min.py dist/grainneukeln 10.13
 
+      # Finder will not reliably run an extension-less Unix executable, and a friend who
+      # does get it running by hand lands on a bare `grainneukeln` with no arguments. A
+      # `.command` file is the one thing macOS double-clicks into Terminal by contract, so
+      # it is the actual entry point for someone who has never opened a terminal.
+      - name: Add a double-clickable launcher (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cat > "dist/grainneukeln/Open grainneukeln.command" <<'EOF'
+          #!/bin/bash
+          # Double-click me. Runs the app from the folder I live in, whatever the working dir is.
+          cd "$(dirname "$0")" || exit 1
+          ./grainneukeln
+          EOF
+          chmod +x "dist/grainneukeln/Open grainneukeln.command"
+
       - name: Add a plain-language README for friends
         shell: bash
         run: |
@@ -94,9 +110,13 @@ jobs:
 
           WINDOWS:  double-click grainneukeln.exe, OR in a terminal:
                       grainneukeln.exe --gui
-          MAC:      right-click grainneukeln > Open (first time, to bypass Gatekeeper),
+          MAC:      right-click "Open grainneukeln.command" > Open (first time only, to get
+                    past Gatekeeper's "unidentified developer"), then double-click it from then on.
                     OR in Terminal:   ./grainneukeln --gui
           LINUX:    ./grainneukeln --gui
+
+          Started with no arguments (the double-click case) it opens the graphical UI, or the
+          keyboard-driven terminal UI if this build has no graphical one. Press F1 there for help.
 
           No graphics? Use the terminal UI:   grainneukeln --tui
           Command line grind:  grainneukeln <song.mp3-or-YouTube-URL> out/ amc l 500 w 6 m q

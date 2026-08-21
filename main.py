@@ -15,6 +15,34 @@ def launch_gui():
         print(f"Error launching GUI: {e}")
         return None
 
+
+def launch_best_ui():
+    """No arguments at all -> open the app, do not print a usage screen.
+
+    This is the DOUBLE-CLICK path.  A released bundle is a console executable, so
+    a friend who double-clicks it in Finder/Explorer gets whatever this function
+    does -- and printing argparse's help into a window that closes itself is
+    indistinguishable, to them, from the program being broken.
+
+    The ladder is GUI -> TUI -> help, and it is a ladder rather than a single
+    choice because the macOS bundle cannot always carry PySide6: the release job
+    targets a macOS 10.13 floor and current PySide6 wheels need 12+, so on that
+    build the GUI is genuinely ABSENT and the TUI is the app.  Each rung says
+    which one it took, so a friend reporting "it opened a black window with text"
+    is reporting the TUI, not a failure.
+    """
+    result = launch_gui()
+    if result is not None:
+        return result
+    try:
+        from tui.app import run_tui
+    except Exception as e:
+        print(f"No graphical UI in this build and the terminal UI is unavailable: {e}")
+        return None
+    print("Opening the terminal UI (this build has no graphical UI). Press F1 for help, ctrl+q to quit.")
+    run_tui()
+    return 0
+
 if __name__ == "__main__":
     import argparse
 
@@ -226,5 +254,11 @@ if __name__ == "__main__":
         print("Starting cut tool with file: " + args.source_path)
         sample_cut_tool.main(args.source_path, args.destination_path, commands, low_memory=args.low_memory)
     elif not args.gui:
+        # Bare invocation (the double-click case) opens the app; a WRONG invocation
+        # -- some flags given but not a usable source/destination pair -- still gets
+        # the help screen, because there the user is at a prompt and can read it.
+        bare = len(sys.argv) == 1
+        if bare:
+            sys.exit(0 if launch_best_ui() is not None else 1)
         parser.print_help()
         sys.exit(1)
