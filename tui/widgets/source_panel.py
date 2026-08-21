@@ -54,8 +54,22 @@ class SourcePanel(Static):
         """Emitted when a load starts — the app disables Run until it resolves."""
 
     class Failed(Message):
+        """A SOURCE failed to load — nothing runnable is left, so the app clears the cutter."""
+
         def __init__(self, error):
             self.error = error
+            super().__init__()
+
+    class TakeRefused(Message):
+        """A recording did not become a source (it could not start, or it carried no signal).
+
+        Deliberately NOT ``Failed``: the two are different events and sharing one message made
+        pressing REC in a quiet room throw away the file the operator had already loaded, because
+        the app's Failed handler clears ``state.cutter`` and disables Run. A refused take leaves
+        whatever was loaded exactly as it was."""
+
+        def __init__(self, reason):
+            self.reason = reason
             super().__init__()
 
     def __init__(self, loader, searcher=None, state=None, recorder_factory=None):
@@ -323,7 +337,7 @@ class SourcePanel(Static):
             # indistinguishable from a recording in progress.
             self._recorder = None
             self._set_status(f"Record failed to start: {e}")
-            self.post_message(self.Failed(str(e) or e.__class__.__name__))
+            self.post_message(self.TakeRefused(str(e) or e.__class__.__name__))
             return
         self._recorder = recorder
         self._set_button("■ STOP", "warning")
@@ -347,14 +361,14 @@ class SourcePanel(Static):
         except Exception as e:
             self._set_label("record_elapsed", "")
             self._set_status(f"Record failed: {e}")
-            self.post_message(self.Failed(str(e) or e.__class__.__name__))
+            self.post_message(self.TakeRefused(str(e) or e.__class__.__name__))
             return
         self._set_label("record_elapsed", f"{m['duration_s']:.1f}s")
         line = mic.describe(m, m.get("holders"))
         if m["silent"] or m["too_short"]:
             # Kept, named, NOT loaded — see the class docstring.
             self._set_status(f"{line} · kept at {m['path']} — type that path + Enter to grind it anyway")
-            self.post_message(self.Failed(line))
+            self.post_message(self.TakeRefused(line))
             return
         self._set_status(f"Recorded {line} — loading…")
         self.load(m["path"])

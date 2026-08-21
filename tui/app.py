@@ -229,6 +229,12 @@ class GrainTUI(App):
         self.state.cutter = None
         self.query_one(RunPanel).set_ready(False, "load a source first")
 
+    def on_source_panel_take_refused(self, msg):
+        """A recording that did not become a source. Whatever was loaded stays loaded and Run
+        stays exactly as it was — the panel's status line already carries the reason, and there is
+        nothing here to invalidate. (This exists precisely so it is NOT the Failed handler above.)"""
+        return
+
     def on_source_panel_loaded(self, msg):
         self.state.cutter = msg.cutter
         # Remember the path so a crash-restart can re-load the same source — the operator does not

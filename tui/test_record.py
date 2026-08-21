@@ -76,6 +76,7 @@ class _Host(App):
         self._state = state or SessionState(output_dir="/tmp/gk-test-out")
         self.loaded = None
         self.failed = None
+        self.refused = None
 
     def compose(self) -> ComposeResult:
         yield SourcePanel(self._loader, state=self._state,
@@ -86,6 +87,9 @@ class _Host(App):
 
     def on_source_panel_failed(self, msg):
         self.failed = msg.error
+
+    def on_source_panel_take_refused(self, msg):
+        self.refused = msg.reason
 
 
 async def _settle(app, pilot):
@@ -177,7 +181,10 @@ class RecordButtonTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(app.loaded, "a silent take must not become the source")
             self.assertIn("SILENT", panel.status_text)
             self.assertIn("/tmp/rec/dead.wav", panel.status_text)   # kept, and named
-            self.assertIsNotNone(app.failed)
+            # TakeRefused, NOT Failed — Failed means "no source is loaded" and would throw away a
+            # file the operator had already loaded before reaching for the mic.
+            self.assertIn("SILENT", app.refused)
+            self.assertIsNone(app.failed)
 
     async def test_a_silent_take_names_the_process_holding_the_card(self):
         """On this node that contender is real — mesh-overhear holds the USB mic through raw
@@ -217,7 +224,8 @@ class RecordButtonTest(unittest.IsolatedAsyncioTestCase):
             await _settle(app, pilot)
             self.assertFalse(panel.recording)
             self.assertIn("no capture backend", panel.status_text)
-            self.assertIn("no capture backend", app.failed)
+            self.assertIn("no capture backend", app.refused)
+            self.assertIsNone(app.failed)
 
     async def test_a_stop_failure_reports_and_clears_the_recorder(self):
         rec = FakeRecorder("/tmp", stop_error=RuntimeError("wrote no audio"))
@@ -274,6 +282,67 @@ class RecordButtonTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
         self.assertEqual(captured["out_dir"], "/tmp/gk-chosen-out")
         self.assertIsNone(captured["device"])       # "auto" means: we did not pick
+
+
+class RefusedTakeDoesNotDisturbTheLoadedSourceTest(unittest.IsolatedAsyncioTestCase):
+    """A refused take is not a failed LOAD. The two used to share the ``Failed`` message, and the
+    app's Failed handler clears ``state.cutter`` and disables Run — so pressing REC in a quiet
+    room threw away the file you had already loaded."""
+
+    def _app(self):
+        from tui.app import GrainTUI
+        return GrainTUI(output_dir="/tmp/gk-test-out", loader=lambda v, s=None: _FakeCutter(v),
+                        player=lambda p: None, session_path="/tmp/gk-test-session2.json")
+
+    async def _load_then_record(self, m):
+        from tui.widgets.run_panel import RunPanel
+        app = self._app()
+        rec = FakeRecorder("/tmp", measurement=m)
+        async with app.run_test() as pilot:
+            panel = app.query_one(SourcePanel)
+            panel._recorder_factory = lambda o, d: rec
+            panel.load("/tmp/already-loaded.wav")
+            await _settle(app, pilot)
+            self.assertIsNotNone(app.state.cutter)
+            panel.toggle_record()
+            await pilot.pause()
+            panel.toggle_record()
+            await _settle(app, pilot)
+            return app, panel, app.query_one(RunPanel)
+
+    async def test_a_silent_take_leaves_the_loaded_source_alone(self):
+        app, panel, run_panel = await self._load_then_record(measurement(silent=True, rms=1))
+        self.assertIsNotNone(app.state.cutter, "a refused take threw away the loaded source")
+        self.assertEqual(app.state.source_path, "/tmp/already-loaded.wav")
+        self.assertIn("SILENT", panel.status_text)
+
+    async def test_a_record_start_failure_leaves_the_loaded_source_alone(self):
+        from tui.widgets.run_panel import RunPanel
+        app = self._app()
+        rec = FakeRecorder("/tmp", start_error=RuntimeError("no capture backend found"))
+        async with app.run_test() as pilot:
+            panel = app.query_one(SourcePanel)
+            panel._recorder_factory = lambda o, d: rec
+            panel.load("/tmp/already-loaded.wav")
+            await _settle(app, pilot)
+            panel.toggle_record()
+            await _settle(app, pilot)
+            self.assertIsNotNone(app.state.cutter)
+            self.assertIn("no capture backend", panel.status_text)
+
+    async def test_a_real_load_failure_still_clears_the_source(self):
+        """The Failed path must keep working for what it is FOR — a gate that never fires is not
+        a gate. A source that failed to load leaves nothing runnable behind."""
+        from tui.app import GrainTUI
+
+        def boom(v, s=None):
+            raise ValueError("bad file")
+        app = GrainTUI(output_dir="/tmp/gk-test-out", loader=boom, player=lambda p: None,
+                       session_path="/tmp/gk-test-session3.json")
+        async with app.run_test() as pilot:
+            app.query_one(SourcePanel).load("/tmp/nope.wav")
+            await _settle(app, pilot)
+            self.assertIsNone(app.state.cutter)
 
 
 class RecordAppWiringTest(unittest.IsolatedAsyncioTestCase):

@@ -136,6 +136,24 @@ class PultVerbsTest(unittest.TestCase):
         self.assertIn("/tmp/dead.wav", p.message)
         self.assertIsNone(p.state.cutter)
 
+    def test_a_refused_take_leaves_an_already_loaded_source_alone(self):
+        """Same rule the TUI needed a separate message to keep: pressing REC in a quiet room must
+        not throw away the file already loaded. Here it is structural (nothing touches
+        ``state.cutter`` on the refusal path) — asserted so a future edit cannot quietly change
+        that."""
+        rec = FakeRecorder(self.tmp, measurement=measurement(silent=True, rms=1))
+        p = _pult(self.tmp, recorder_factory=lambda o, d: rec)
+        p.load_source("/tmp/already-loaded.wav")
+        _join_workers()
+        loaded = p.state.cutter
+        self.assertIsNotNone(loaded)
+        p.record_start()
+        out = p.record_stop()
+        self.assertFalse(out["loaded"])
+        self.assertIs(p.state.cutter, loaded)
+        self.assertEqual(p.state.source_path, "/tmp/already-loaded.wav")
+        self.assertTrue(p.snapshot()["source_loaded"])
+
     def test_a_second_record_press_is_refused_not_queued(self):
         rec = FakeRecorder(self.tmp, measurement=measurement())
         p = _pult(self.tmp, recorder_factory=lambda o, d: rec)
