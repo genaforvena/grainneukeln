@@ -29,7 +29,8 @@ Everything below is shaping.
 
 | | panel | what it is for |
 |---|---|---|
-| **Ctrl+1** | ◈ 1 source | load Source A (file · URL · search) and optionally Source B |
+| **Ctrl+1** | ◈ 1 source | load Source A (file · URL · search · ● rec) and optionally Source B |
+| **Ctrl+G** | ● record | live mic capture — press to start, press again to stop |
 | **Ctrl+2** | ◈ 2 grind params | length, speeds, window, grain envelope, reverse, seed |
 | **Ctrl+3** | ◈ 3 mixer & effects | which mixer, and its per-mode knobs + snap/swing |
 | **Ctrl+4** | ◈ 4 bands | the multiband list — raw or filtered, Source A or B |
@@ -40,6 +41,38 @@ Everything below is shaping.
 
 `Tab` also cycles. `F1` / `?` opens the full help. `q` quits. `i` dumps the live config into the
 run log. `Ctrl+T` shows the last crash, whole.
+
+---
+
+## ● RECORD — grinding the room
+
+The source panel's fourth input, next to file / URL / search. **Ctrl+G** anywhere, or the red
+button. Press to start, press again to stop; the elapsed time runs beside it. The take lands in
+`<output>/recordings/` and is loaded as the source through exactly the same path a file takes.
+
+The dropdown beside it picks the capture device; `auto` means *let the backend choose*, which is
+the right answer on a machine whose input list changes when something else grabs a card. An entry
+marked `⟲ … (what this node plays)` is a **monitor** — it records this machine's own playback
+rather than the room, which is a fine thing to grind, as long as you know that is what it is.
+
+**A take with no signal is refused, not loaded.** A muted, unplugged, or already-occupied mic
+still produces a perfectly well-formed wav — it is just full of zeros, and nothing short of
+looking at the samples can tell it from a good recording. So every take is measured, and one
+that comes back silent (or under half a second) stays on disk with its path named in the status
+line instead of quietly becoming the thing you are about to grind:
+
+```
+SILENT capture — 4.2s · 44100Hz · 1ch · rms 1 · peak 4 (below rms 8: nothing was on the input)
+  · pcmC0D0c is held by pid 1127493: arecord -D plughw:CARD=Camera,DEV=0
+  · kept at output/recordings/rec-20260821-014238.wav — type that path + Enter to grind it anyway
+```
+
+The middle line is the one that saves an evening: it is the difference between a broken mic and
+another program holding it. If you want the silence anyway (it is a legitimate texture), the path
+is right there — paste it into the source box.
+
+Ctrl+G is the binding rather than something more obvious because `Ctrl+B` is tmux's prefix, and
+this TUI mostly runs inside tmux.
 
 ---
 

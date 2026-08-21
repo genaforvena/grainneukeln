@@ -74,6 +74,7 @@ class GrainTUI(App):
         ("ctrl+r", "run", "Run grind"),
         ("ctrl+e", "focus_amc", "amc bar"),
         ("ctrl+l", "focus_source", "Focus source"),
+        ("ctrl+g", "record", "● Rec mic"),
         Binding("ctrl+1", "focus_panel('1')", "Source", show=False),
         Binding("ctrl+2", "focus_panel('2')", "Params", show=False),
         Binding("ctrl+3", "focus_panel('3')", "Mixer", show=False),
@@ -162,6 +163,10 @@ class GrainTUI(App):
     def on_unmount(self):
         # Final checkpoint on exit — captures any state changes after the last save. Best-effort.
         self._save_session()
+        # NOTE: stopping an in-flight mic take is SourcePanel.on_unmount's job, not this one.
+        # By the time an App's on_unmount runs, query_one(SourcePanel) no longer resolves, so the
+        # attempt that used to live here could never fire — it read as coverage while the recorder
+        # outlived the app. tui/test_record.py pins the panel-level edge.
         # Stop playback on exit so ffplay isn't orphaned after the TUI closes (operator 2026-07-19:
         # 'playback should be possible to start/stop' — closing the app is an implicit stop).
         if self._player is not None and hasattr(self._player, "stop"):
@@ -312,6 +317,13 @@ class GrainTUI(App):
             self.query_one("#amc_input", Input).focus()
         except Exception:
             pass
+
+    def action_record(self):
+        """ctrl+g — toggle live mic capture. Bound at APP level (not panel-local) on purpose: the
+        operator is usually typing in the source Input when they decide to record the room, and a
+        bare-letter shortcut would insert a letter instead. ctrl+g specifically because ctrl+b is
+        tmux's prefix on the nodes this runs on and would never reach the app."""
+        self.query_one(SourcePanel).toggle_record()
 
     def action_focus_source(self):
         """Ctrl+L: jump straight to the source input and select-all so a new path overwrites."""

@@ -164,3 +164,9 @@ ListView:focus > ListItem.--highlight { background: $secondary 40%; color: $fore
 /* --- footer --- */
 Footer { background: $panel; }
 Footer > .footer-key--key { color: $secondary; text-style: bold; }
+
+/* RECORD row — live mic capture, a peer of file/URL/search (2026-08-21). */
+#record_row { height: 3; align-vertical: middle; }
+#record_btn { min-width: 9; width: 9; height: 3; margin: 0 1 0 0; }
+#record_device { width: 1fr; height: 3; }
+#record_elapsed { width: 8; color: $error; text-align: right; padding: 1 0 0 1; }

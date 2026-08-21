@@ -25,6 +25,24 @@ if __name__ == "__main__":
                         help="Seed every mixer's RNG so two runs with the same seed + params are "
                              "byte-identical. Injected into the amc command as `seed <N>`. Absent = "
                              "legacy unseeded behaviour (runs differ as before).")
+    parser.add_argument("--record", nargs="?", type=float, const=10.0, default=None,
+                        metavar="SECONDS",
+                        help="Record SECONDS of live mic audio (default 10) and use it as the "
+                             "source — the CLI half of the TUI's RECORD button. The take is "
+                             "MEASURED before it is used: a silent or too-short capture is "
+                             "reported and refused rather than handed to the grinder, because a "
+                             "muted or already-held mic yields a well-formed wav full of zeros.")
+    parser.add_argument("--record-device", default=None,
+                        help="Capture source for --record (see --list-inputs). Absent = let the "
+                             "backend pick.")
+    parser.add_argument("--record-backend", default=None,
+                        help="Pin the capture backend: pw-record | parecord | ffmpeg | arecord. "
+                             "arecord is raw ALSA and EXCLUSIVE — it locks the card away from "
+                             "every other client for the duration. Absent = best available.")
+    parser.add_argument("--list-inputs", action="store_true",
+                        help="List capture backends and sources this node can actually record "
+                             "from, plus any process currently holding a capture device, then "
+                             "exit. A device held by a raw-ALSA client is absent from the list.")
     parser.add_argument("--low-memory", action="store_true",
                         help="Enable aggressive garbage collection for memory-constrained nodes. "
                              "Slower but uses ~30%% less peak RAM on long sources.")
@@ -69,6 +87,47 @@ if __name__ == "__main__":
                              "default off (byte-identical to today's open-loop behaviour).")
 
     args = parser.parse_args()
+
+    if args.list_inputs:
+        from capture import mic
+        backends = mic.available_backends()
+        print("capture backends (best first):")
+        for b in backends:
+            print(f"  {b['name']:<10} {b['binary']}  — {b['why']}")
+        if not backends:
+            print("  (none — install pipewire-utils, pulseaudio-utils, ffmpeg or alsa-utils)")
+        print("capture sources:")
+        for d in mic.list_devices():
+            kind = "playback loopback" if d["monitor"] else "input"
+            print(f"  {d['id']}  [{kind}]")
+        holders = mic.who_holds_capture()
+        if holders:
+            # Named, because a device held here is a device MISSING from the list above — and a
+            # missing device reads as broken hardware unless the holder is named.
+            print("held capture devices (absent from the list above while held):")
+            for h in holders:
+                print(f"  {h['device']}  pid {h['pid']}: {h['command'][:80]}")
+        sys.exit(0 if backends else 1)
+
+    if args.record is not None:
+        from capture import mic
+        out = os.path.abspath(args.destination_path or "output")
+        os.makedirs(out, exist_ok=True)
+        print(f"● Recording {args.record:g}s… (ctrl-c to abort)")
+        try:
+            m = mic.record_clip(args.record, out, device=args.record_device,
+                                backend=args.record_backend)
+        except mic.CaptureError as e:
+            print(f"Record failed: {e}")
+            sys.exit(1)
+        print(mic.describe(m, m.get("holders")))
+        if m["silent"] or m["too_short"]:
+            # Refused, not silently accepted: grinding zeros produces a silent render that the
+            # operator reads as a grinder bug. The file is kept so they can override by naming it.
+            print(f"Refusing to grind it. Kept at {m['path']} — pass that path to use it anyway.")
+            sys.exit(1)
+        args.source_path = m["path"]
+        print(f"Source ← {m['path']}")
 
     if args.tui:
         # Every flag reaches the TUI (2026-07-24). Previously `--tui` dropped the positional

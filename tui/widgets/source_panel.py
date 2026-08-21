@@ -3,12 +3,13 @@ import os
 
 from textual import work
 from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Input, Label, OptionList, Static
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Button, Input, Label, OptionList, Select, Static
 from textual.widgets.option_list import Option
 from textual.message import Message
 
 import youtube.search as yts
+from capture import mic
 
 
 class SourcePanel(Static):
@@ -24,6 +25,18 @@ class SourcePanel(Static):
       - ``/path``, ``./x``, ``*.wav`` → local file
       - anything else                 → free-text YouTube SEARCH for "artist + track"
                                         (search is YouTube-only; paste a URL for other hosts)
+
+    **RECORD** (ctrl+g, or the ● button) is the fourth source and a peer of the other three: the
+    room itself. Press to start, press again to stop; the take is measured and then handed to the
+    SAME ``load()`` pipeline a file would take, so everything downstream — beat detection, the
+    session checkpoint, Run — is unchanged.
+
+    A recorded take is auto-loaded ONLY if it carries signal. A muted, unplugged, or
+    already-held mic yields a perfectly well-formed wav full of zeros, and auto-loading that
+    would put the operator in front of a Run button that can only produce silence — they would
+    blame the grinder. So a SILENT take is kept on disk, named in the status line together with
+    whatever process is holding the card, and left for the operator to load by hand if they
+    want it anyway. Loud, not blocked.
 
     A search runs ``youtube.search.search`` (ranked for the operator's intent: the
     official Topic/VEVO upload surfaces as #1 even when a fan cover has 50× the
@@ -45,9 +58,16 @@ class SourcePanel(Static):
             self.error = error
             super().__init__()
 
-    def __init__(self, loader, searcher=None, state=None):
+    def __init__(self, loader, searcher=None, state=None, recorder_factory=None):
         super().__init__()
         self._loader = loader
+        # Injectable so the TUI tests never touch a sound card (and so an operator can pin an
+        # exclusive-ALSA recorder on a node where PipeWire is not running).
+        self._recorder_factory = recorder_factory or (
+            lambda out_dir, device: mic.MicRecorder(out_dir, device=device))
+        self._recorder = None
+        self._rec_timer = None
+        self._rec_device = None
         # Source B (dual-source grinding) lives HERE, next to Source A — it was buried in the Run
         # panel between the series spec and the Uxn row, which is the one place an operator looking
         # for "where do I put the second source" would never look. ``state`` is optional so the
@@ -65,6 +85,11 @@ class SourcePanel(Static):
             yield Input(placeholder="path/to/audio.wav   |   https://soundcloud.com/…   |   Radiohead - Karma Police",
                         id="source_input")
             yield OptionList(id="source_results")
+            with Horizontal(id="record_row"):
+                yield Button("● REC", id="record_btn", variant="error")
+                yield Select(self._device_options(), id="record_device",
+                             allow_blank=False, value="auto")
+                yield Label("", id="record_elapsed")
             yield Label(self.status_text, id="source_status")
             yield Label("Source B (optional) — bands tagged B in the tracks panel pull from it")
             yield Input(getattr(self.state, "source2_path", "") if self.state else "",
@@ -73,7 +98,7 @@ class SourcePanel(Static):
 
     def on_mount(self):
         self.border_title = "◈ 1 · source"
-        self.border_subtitle = "file · url (yt/sc/…) · search"
+        self.border_subtitle = "file · url (yt/sc/…) · search · ● rec (ctrl+g)"
         # Picker is hidden until a search populates it. ``display=False`` removes
         # it from layout (no empty box on first run).
         try:
@@ -239,6 +264,147 @@ class SourcePanel(Static):
         else:
             self._set_status(f"✓ Loaded: {beats} beats · default cut {int(step)} ms · ready to grind")
         self.post_message(self.Loaded(cutter))
+
+    # --- record path (live mic as a first-class source) ---
+
+    def _device_options(self):
+        """Options for the capture Select. ``auto`` first — it means "let the backend pick", which
+        is a different statement from naming a device, and it is the right default on a node whose
+        source list changes when another process seizes a card.
+
+        A device already held by a raw-ALSA client is ABSENT from the audio server's list, so it is
+        absent here too: the picker cannot offer a device that cannot be opened."""
+        options = [("auto (default input)", "auto")]
+        try:
+            for d in mic.list_devices():
+                label = d["id"]
+                if d["monitor"]:
+                    # A monitor records what this node is PLAYING, not the room. Legitimate — it
+                    # is how you grind whatever is coming out of the speakers — but it must never
+                    # be mistaken for a mic, so the label says which it is.
+                    label = f"⟲ {label}  (what this node plays)"
+                options.append((label, d["id"]))
+        except Exception:
+            pass
+        return options
+
+    @property
+    def recording(self):
+        return self._recorder is not None and self._recorder.recording
+
+    def on_select_changed(self, event):
+        if getattr(event.select, "id", None) == "record_device":
+            self._rec_device = None if event.value == "auto" else event.value
+
+    def on_button_pressed(self, event):
+        if getattr(event.button, "id", None) == "record_btn":
+            event.stop()
+            self.toggle_record()
+
+    def toggle_record(self):
+        """The RECORD button / ctrl+g. Start on the first press, stop on the second."""
+        if self.recording:
+            self.stop_record()
+        else:
+            self.start_record()
+
+    def start_record(self):
+        if self._loading:
+            self._set_status("Still loading a source — one moment…")
+            return
+        if self.recording:
+            return
+        out_dir = getattr(self.state, "output_dir", None) or "output"
+        try:
+            recorder = self._recorder_factory(out_dir, self._rec_device)
+            path = recorder.start()
+        except Exception as e:
+            # Never a silent no-op: a RECORD press that does nothing and says nothing is
+            # indistinguishable from a recording in progress.
+            self._recorder = None
+            self._set_status(f"Record failed to start: {e}")
+            self.post_message(self.Failed(str(e) or e.__class__.__name__))
+            return
+        self._recorder = recorder
+        self._set_button("■ STOP", "warning")
+        self._set_status(f"● Recording via {getattr(recorder, 'backend', '?')} "
+                         f"→ {os.path.basename(path or 'take.wav')} — press again to stop")
+        self._tick_elapsed()
+        try:
+            self._rec_timer = self.set_interval(0.25, self._tick_elapsed)
+        except Exception:
+            self._rec_timer = None
+
+    def stop_record(self):
+        recorder = self._recorder
+        if recorder is None:
+            return
+        self._recorder = None
+        self._stop_timer()
+        self._set_button("● REC", "error")
+        try:
+            m = recorder.stop()
+        except Exception as e:
+            self._set_label("record_elapsed", "")
+            self._set_status(f"Record failed: {e}")
+            self.post_message(self.Failed(str(e) or e.__class__.__name__))
+            return
+        self._set_label("record_elapsed", f"{m['duration_s']:.1f}s")
+        line = mic.describe(m, m.get("holders"))
+        if m["silent"] or m["too_short"]:
+            # Kept, named, NOT loaded — see the class docstring.
+            self._set_status(f"{line} · kept at {m['path']} — type that path + Enter to grind it anyway")
+            self.post_message(self.Failed(line))
+            return
+        self._set_status(f"Recorded {line} — loading…")
+        self.load(m["path"])
+
+    def on_unmount(self):
+        """Stop an in-flight take when the panel goes away — the panel OWNS the recorder, so this
+        is where the shutdown edge belongs. The app's own on_unmount cannot do it: by the time it
+        runs, ``query_one(SourcePanel)`` no longer resolves, and the take survived the app (seen
+        red, 2026-08-21). The file is kept and NOT auto-loaded: loading spawns a worker thread
+        into a UI that is already tearing down."""
+        recorder = self._recorder
+        self._recorder = None
+        self._stop_timer()
+        if recorder is None:
+            return
+        try:
+            recorder.stop()
+        except Exception:
+            try:
+                recorder.cancel()
+            except Exception:
+                pass
+
+    def _tick_elapsed(self):
+        if not self.recording:
+            self._stop_timer()
+            return
+        self._set_label("record_elapsed", f"● {self._recorder.elapsed():.1f}s")
+
+    def _stop_timer(self):
+        if self._rec_timer is not None:
+            try:
+                self._rec_timer.stop()
+            except Exception:
+                pass
+            self._rec_timer = None
+
+    def _set_button(self, label, variant):
+        try:
+            btn = self.query_one("#record_btn", Button)
+            btn.label = label
+            btn.variant = variant
+        except Exception:
+            pass
+
+    def _set_label(self, wid, text):
+        try:
+            self.query_one(f"#{wid}", Label).update(text)
+        except Exception:
+            pass
 
     def _set_status(self, text):
         self.status_text = text

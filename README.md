@@ -71,6 +71,41 @@ will fetch the audio first.
 
 ---
 
+## Record the room — live mic as a source
+
+The fourth source, a peer of file / URL / search: the room you are sitting in.
+
+```bash
+python main.py --list-inputs                 # what this node can actually record from
+python main.py --record 15 "" output/ amc l /2   # 15s off the mic, then grind it
+python main.py --record 15 --record-device alsa_input.pci-0000_2d.analog-stereo "" output/
+```
+
+In the TUI it is the **● REC** button in the source panel, or **ctrl+g** from anywhere. Press to
+start, press again to stop; the take lands in `<output>/recordings/` and is loaded as the source
+through the same pipeline a file takes.
+
+**Every take is measured before it is used.** A muted, unplugged, or already-held mic produces a
+perfectly well-formed wav full of zeros — indistinguishable from a good recording by every check
+except the one that looks at the samples. So a silent or too-short take is *reported and refused*
+rather than handed to the grinder, and kept on disk so you can load it by hand if you meant it:
+
+```
+SILENT capture — 2.0s · 44100Hz · 1ch · rms 1 · peak 4 (below rms 8: nothing was on the input)
+  · pcmC0D0c is held by pid 1127493: arecord -D plughw:CARD=Camera,DEV=0
+```
+
+That second line is the difference between "the mic is broken" and "something else already has
+it". Capture backends are tried best-first — `pw-record`, `parecord`, `ffmpeg`, then `arecord`
+last because raw ALSA is **exclusive** and locks the card away from every other client on the
+machine. Pin one with `--record-backend` if you want that.
+
+A `.monitor` source records what this node is *playing* rather than the room — a legitimate
+source (grind your own speakers), which is why the picker labels it instead of hiding it.
+
+---
+
+
 ## Use it — TUI (recommended, headless-friendly)
 
 ```bash
