@@ -223,3 +223,26 @@ def slice_source(config, channel, start_ms, length_ms):
     if end_ms <= n:
         return src[start_ms:end_ms]
     return src[start_ms:n] + src[0:end_ms - n]
+
+
+# --- mp3 export settings -------------------------------------------------------------------
+# `mix.export(path, format="mp3")` with no bitrate hands ffmpeg its DEFAULT, which is 128 kbps —
+# and 128 kbps is not transparent to a granular render. Measured 2026-08-30 on world/gnawa-0: the
+# source clip carried content out to 15.6 kHz at -60 dB and the rendered mp3 died at 8.3 kHz. The
+# top octave was being thrown away in the WRITER, after every other stage had preserved it.
+#
+# Both export call sites (cutter/sample_cut_tool.py and tui/engine.py) call this ONE function, so
+# the deciding value cannot drift between the two paths that write the same kind of file.
+MP3_BITRATE_DEFAULT = "320k"
+
+
+def mp3_export_kwargs():
+    """Keyword args for a full-bandwidth mp3 export.
+
+    `GRAINNEUKELN_MP3_BITRATE` overrides (e.g. "192k", or "V0" style is NOT accepted here — pydub
+    passes this straight to ffmpeg's -b:a). For a render with no lossy stage at all, ask for the
+    wav export instead; this only stops the mp3 from being the narrowest link in the chain.
+    """
+    import os
+
+    return {"bitrate": os.environ.get("GRAINNEUKELN_MP3_BITRATE", MP3_BITRATE_DEFAULT)}

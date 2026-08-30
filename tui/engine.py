@@ -7,6 +7,7 @@ from datetime import datetime
 from automixer.config import AutoMixerConfig, ChannelConfig, parse_stream_spec
 from automixer.iterators.grid import euclidean
 from automixer.iterators.patterns import resolve_pattern
+from automixer.utils import mp3_export_kwargs
 from automixer.runner import AutoMixerRunner
 from cutter.sample_cut_tool import normalize_loudness
 
@@ -229,7 +230,7 @@ def run(config, out_dir, on_progress=None, wav_export=False, source_path="", nam
             safe_suffix = f"_{safe}"
         base = f"grain_cut{int(config.sample_length)}{safe_suffix}_{stamp}"
         mp3_path = os.path.join(out_dir, base + ".mp3")
-        mix.export(mp3_path, format="mp3")
+        mix.export(mp3_path, format="mp3", **mp3_export_kwargs())
         if wav_export:
             mix.export(os.path.join(out_dir, base + ".wav"), format="wav")
 

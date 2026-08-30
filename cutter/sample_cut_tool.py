@@ -17,7 +17,7 @@ from automixer.iterators.patterns import (
     NAMED_PATTERNS, PatternError, describe, resolve_pattern,
 )
 from automixer.runner import AutoMixerRunner
-from automixer.utils import calculate_step, beat_interval
+from automixer.utils import calculate_step, beat_interval, mp3_export_kwargs
 
 # Loudness targets for the exported mix. The granular automix routinely comes out far below unity — a
 # sparse or quiet source grinds down to a -30..-45 dBFS mix — so a straight export is near-inaudible.
@@ -732,7 +732,8 @@ class SampleCutter:
             print("Saved " + file_name + ".wav to " + self.destination_path)
         mp3_automix_path = os.path.join(self.destination_path, file_name + ".mp3")
         mix.export(
-            os.path.join(self.destination_path, file_name + ".mp3"), format="mp3"
+            os.path.join(self.destination_path, file_name + ".mp3"), format="mp3",
+            **mp3_export_kwargs()
         )
         if self._self_feed:
             self._load_audio(mp3_automix_path)

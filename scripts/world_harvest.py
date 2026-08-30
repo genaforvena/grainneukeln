@@ -45,10 +45,17 @@ CLIPS = OUT / "clips"
 MANIFEST = OUT / "MANIFEST.jsonl"
 LOG = OUT / "harvest.log"
 
-CLIP_SECONDS = 35          # matches the existing ethnic clips; grainneukeln wants short feeds
-CLIP_OFFSET_FRAC = 0.25    # cut a quarter in — skips announcements, run-in groove and lead silence
-SILENCE_FLOOR_DBFS = -45.0 # a near-silent clip yields a dead mix (0 beats), so drop it here
-MAX_FETCH_BYTES = 60 * 1024 * 1024
+# NO CUT. The first version took a 35-second slice because the old ethnic clips are 35 s, and that
+# repeated verbatim the mistake this repo already paid for and fixed on 2026-08-21: an input cap
+# that looked like a budget was an AMPUTATION. The measurement that settled it — peak RSS is linear
+# in feed length (~4.12 MB/s + ~230 MB base) and does NOT depend on the recipe (the most pathological
+# and the calmest recipe differed by 108 KB out of five gigabytes) — means length costs memory, not
+# correctness, and this node has 31 GB. Keep the whole track.
+SILENCE_FLOOR_DBFS = -45.0 # a near-silent source yields a dead mix (0 beats), so drop it here
+# Raised from 60 MB for the same reason the format preference below inverted: a full-length 24-bit
+# FLAC of a 78 runs ~50 MB and a modern lossless track more, and capping bytes silently selects the
+# most band-limited derivative available.
+MAX_FETCH_BYTES = 400 * 1024 * 1024
 BULK_TAG_LIMIT = 15        # more tags than this and the item describes a shelf, not a recording
 NARROW_TAG_CHARS = 40      # a tag long enough to hold a sentence is not a genre label
 
@@ -105,7 +112,13 @@ TRADITIONS = [
     ("yodel",        "Alps",             "pd78", "yodel",            "waltz3"),
 ]
 
-AUDIO_FORMATS = ("VBR MP3", "MP3", "128Kbps MP3", "Ogg Vorbis", "Flac", "24bit Flac", "WAVE")
+# ORDER IS THE PREFERENCE, best first. The first version picked the SMALLEST usable file "because
+# we only keep 35 s of it, so bytes are pure cost" — which is a rule that selects, every single
+# time, the most heavily compressed and therefore most BAND-LIMITED derivative on the item. Measured
+# on the corpus it built: 0 of 45 sources lossless (30 VBR MP3, 15 Ogg Vorbis) and content dying at
+# 12.1-16.8 kHz. The pipeline itself is clean — a full-band white-noise source grinds out to 20.3 kHz
+# at 320 kbps — so every kilohertz missing from those renders was thrown away HERE, at selection.
+AUDIO_FORMATS = ("24bit Flac", "Flac", "WAVE", "VBR MP3", "MP3", "Ogg Vorbis", "128Kbps MP3")
 
 
 def log(msg: str) -> None:
@@ -186,10 +199,16 @@ def subject_confirms(meta: dict, term: str) -> tuple[bool, str]:
 
 
 def pick_file(meta: dict):
-    """Smallest usable audio derivative — we only ever keep 35 s of it, so bytes are pure cost."""
+    """Highest-fidelity usable derivative: best FORMAT first, then LARGEST within that format.
+
+    Both keys point the same way and both are the opposite of the first version. Lossless beats
+    lossy outright, and inside one lossy format a bigger file is a higher bitrate, i.e. a higher
+    lowpass. Bytes are not the cost being minimised here — bandwidth is the thing being preserved.
+    """
     best = None
     for f in meta.get("files", []):
-        if f.get("format") not in AUDIO_FORMATS:
+        fmt = f.get("format")
+        if fmt not in AUDIO_FORMATS:
             continue
         try:
             size = int(f.get("size", 0))
@@ -197,9 +216,58 @@ def pick_file(meta: dict):
             continue
         if size <= 0 or size > MAX_FETCH_BYTES:
             continue
-        if best is None or size < best[0]:
-            best = (size, f)
+        rank = (AUDIO_FORMATS.index(fmt), -size)
+        if best is None or rank < best[0]:
+            best = (rank, f)
     return best[1] if best else None
+
+
+def top_freq_khz(path: Path) -> float | None:
+    """The highest frequency carrying energy within 60 dB of the peak, measured mid-file.
+
+    Published per clip so "frequencies preserved" is a MEASURED column and not an assertion —
+    a source that was already lowpassed at 12 kHz by whoever encoded it cannot be un-lowpassed by
+    any care taken downstream, and the manifest should say which clips those are.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        # numpy lives in the repo venv, not in the system interpreter, and a harvest launched with
+        # plain `python3` therefore wrote `top_freq_khz: null` on EVERY row — a measurement column
+        # silently absent is worse than no column, because a reader takes null for "unmeasurable"
+        # rather than "we ran the wrong interpreter". Re-exec this one measurement in the venv.
+        venv = ROOT / ".venv" / "bin" / "python"
+        if not venv.exists():
+            return None
+        r = subprocess.run([str(venv), __file__, "--measure", str(path)],
+                           capture_output=True, text=True)
+        try:
+            return float(r.stdout.strip())
+        except ValueError:
+            return None
+    probe = path.with_suffix(".probe.wav")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(path), "-ac", "1",
+                        "-ar", "44100", "-f", "wav", str(probe)], capture_output=True)
+    try:
+        if r.returncode != 0 or not probe.exists():
+            return None
+        import array
+        import wave
+        with wave.open(str(probe)) as w:
+            n = 1 << 15
+            if w.getnframes() < n:
+                return None
+            w.setpos(w.getnframes() // 2)
+            d = array.array("h")
+            d.frombytes(w.readframes(n))
+            sr = w.getframerate()
+        x = np.array(d, dtype=float)[:n]
+        spec = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+        freqs = np.fft.rfftfreq(len(x), 1 / sr)
+        loud = np.where(spec > spec.max() * 10 ** (-60 / 20))[0]
+        return round(float(freqs[loud[-1]]) / 1000, 1) if len(loud) else None
+    finally:
+        probe.unlink(missing_ok=True)
 
 
 def mean_dbfs(path: Path) -> float | None:
@@ -286,26 +354,25 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             continue
 
         dur = duration_of(tmp)
-        if not dur or dur < CLIP_SECONDS + 2:
-            log(f"  SKIP {ident}: too short to cut {CLIP_SECONDS}s (dur={dur})")
+        if not dur or dur < 20:
+            log(f"  SKIP {ident}: too short to be a track (dur={dur})")
             tmp.unlink(missing_ok=True)
             continue
-        offset = max(0.0, min(dur * CLIP_OFFSET_FRAC, dur - CLIP_SECONDS - 1))
 
         clip = CLIPS / f"{slug}-{got}.wav"
         cut = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{offset:.2f}",
-             "-t", str(CLIP_SECONDS), "-i", str(tmp), "-ac", "2", "-ar", "44100",
-             "-c:a", "pcm_s16le", str(clip)], capture_output=True, text=True)
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(tmp),
+             "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(clip)],
+            capture_output=True, text=True)
         tmp.unlink(missing_ok=True)
         if cut.returncode != 0 or not clip.exists() or clip.stat().st_size < 100000:
-            log(f"  SKIP {ident}: ffmpeg cut failed")
+            log(f"  SKIP {ident}: ffmpeg convert failed")
             clip.unlink(missing_ok=True)
             continue
 
         loud = mean_dbfs(clip)
         if loud is not None and loud < SILENCE_FLOOR_DBFS:
-            log(f"  SKIP {ident}: clip is near-silent ({loud} dBFS) — a dead clip grinds to a dead mix")
+            log(f"  SKIP {ident}: near-silent ({loud} dBFS) — a dead source grinds to a dead mix")
             clip.unlink(missing_ok=True)
             continue
 
@@ -317,8 +384,10 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             "licenceurl": licenceurl, "licence_kind": licence_kind,
             "subject": md.get("subject"), "collection": md.get("collection"),
             "source_file": f["name"], "source_format": f.get("format"),
-            "source_url": url, "match_basis": why, "cut_offset_s": round(offset, 2), "cut_seconds": CLIP_SECONDS,
-            "mean_dbfs": loud, "clip": str(clip.relative_to(ROOT)),
+            "source_url": url, "match_basis": why,
+            "duration_s": round(dur, 1), "cut": None,   # the WHOLE track — see the NO CUT note
+            "mean_dbfs": loud, "top_freq_khz": top_freq_khz(clip),
+            "clip": str(clip.relative_to(ROOT)),
             "harvested": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         with MANIFEST.open("a") as fh:
@@ -376,4 +445,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "--measure":
+        # The re-exec entry point for top_freq_khz above. Prints one number or nothing.
+        v = top_freq_khz(Path(sys.argv[2]))
+        if v is not None:
+            print(v)
+        sys.exit(0)
     sys.exit(main())
