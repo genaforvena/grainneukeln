@@ -108,6 +108,61 @@ NAMED_PATTERNS = {
     "jajinmori": {"pat": "x..x..x..x..", "cyc": 4,
                   "acc": "0,-12,-12,-6,-12,-12,-3,-12,-12,-6,-12,-12",
                   "note": "Korean 12/8 janggu cycle — four triplet groups, accent on 1 and 7"},
+
+    # ---- Europe ------------------------------------------------------------------------------
+    # Added 2026-08-30 for the world-tradition corpus (scripts/world_harvest.py). Before this the
+    # library covered Africa, the diaspora and Asia and NOTHING west of the Bosphorus except the
+    # aksaks, so a flamenco or a fado clip could only be ground on E(k,n) — the "different metric
+    # universe" ethnic_grind.sh already warns about. Each entry below is an accent SKELETON of a
+    # timeline, never a transcription of a performance, exactly like the entries above.
+    "buleria": {"pat": "..x..x.x.x.x", "cyc": 4,
+                "acc": "-12,-12,-3,-12,-12,-3,-12,0,-12,-3,-12,-3",
+                "note": "flamenco compas of 12 — accents on 12, 3, 6, 8, 10, written from beat 1 "
+                        "so the cycle's strongest stroke (12) lands last"},
+    "freylekhs": {"pat": "+3,3,2", "cyc": 2,
+                  "note": "klezmer freylekhs/bulgar — the 3+3+2 of an 8/8 dance bar (the tresillo "
+                          "cell reached from the Ashkenazi side, not the Caribbean one)"},
+    "polka2": {"pat": "x.x.", "cyc": 1,
+               "acc": "0,-12,-6,-12",
+               "note": "duple 2/4 dance pulse — polka, csardas, kamarinskaya"},
+    "reel": {"pat": "x...x...", "cyc": 2,
+             "acc": "0,-12,-8,-12,-4,-12,-8,-12",
+             "note": "Irish/Scots reel — straight 4/4, the bar's two halves unequal in weight"},
+    "jig": {"pat": "x..x..", "cyc": 2,
+            "acc": "0,-12,-12,-4,-12,-12",
+            "note": "double jig — 6/8, two dotted beats"},
+    "polska": {"pat": "+3,2,3", "cyc": 2,
+               "note": "Swedish/Norwegian polska — three beats of DELIBERATELY uneven length, the "
+                       "shape a euclidean generator can never produce"},
+    "tarantella": {"pat": "xxxxxx", "cyc": 2,
+                   "acc": "0,-10,-10,-4,-10,-10",
+                   "note": "southern Italian tarantella — a continuous 6/8 tambourine stream "
+                           "carried by accent, like gnawa one ring west"},
+    "waltz3": {"pat": "x..", "cyc": 1,
+               "acc": "0,-10,-10",
+               "note": "3/4 — waltz, laendler"},
+
+    # ---- The Americas ------------------------------------------------------------------------
+    "habanera": {"pat": "x..x.x.x", "cyc": 2,
+                 "acc": "0,-12,-12,-5,-12,-8,-12,-8",
+                 "note": "habanera/tango cell — dotted quarter, eighth, two quarters; the "
+                         "lineage fado and tango share"},
+    "surdo": {"pat": "xx", "cyc": 1,
+              "acc": "-10,0",
+              "note": "Brazilian surdo — the essential inversion: the DOWNBEAT is the weak one "
+                      "and the stroke that carries samba lands on 2"},
+    "sesquialtera": {"pat": "x..xx.x.xx..", "cyc": 4,
+                     "acc": "0,-12,-12,-4,-4,-12,-6,-12,-4,-6,-12,-12",
+                     "note": "the 6/8-against-3/4 hemiola of son jarocho / huapango — the union "
+                             "of both groupings' accents in one 12-pulse cycle"},
+    "huayno": {"pat": "x.xx", "cyc": 1,
+               "acc": "0,-12,-6,-8",
+               "note": "Andean huayno — eighth plus two sixteenths, the limp that names the dance"},
+
+    # ---- Middle East ---------------------------------------------------------------------
+    "sheshohasht": {"pat": "x..x.x", "cyc": 2,
+                    "acc": "0,-12,-12,-4,-12,-6",
+                    "note": "Persian shesh-o-hasht — the 6/8 dombak figure"},
 }
 
 
