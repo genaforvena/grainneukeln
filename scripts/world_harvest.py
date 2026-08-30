@@ -22,10 +22,32 @@ Keyword search is noisy in both lanes — a Léo Ferré chanson called *Le Flame
 "flamenco" on title alone. Every candidate is therefore re-checked against the item's OWN subject
 list before it is downloaded; a title-only match is rejected (`--loose` disables this, loudly).
 
+AND A SUBJECT GATE IS STILL NOT A GENRE GATE, because a subject tag says what an item is ABOUT and
+never what it IS. Measured over this repo's own 42-row corpus on 2026-08-30: **10 rows (24%) were
+speech or talk radio**, every one of them past the subject gate legitimately — a 1916 Cambridge
+lecture series filed as `balkan` (and handed the aksak7 grid), two podcasts, a talk show, a radio
+interview about flamenco, and four music radio SHOWS. Every existing SKIP arm passed them: they are
+real, licensed, audio, long enough and not near-silent. The failure direction is silent.
+
+Two gates answer it and they are not alternatives — `--recheck` prints the census that says so:
+
+  * **collection** (pre-download, free): archive.org files librivox, podcasts and radio shows into
+    their own collections by FORMAT. Caught 9 of the 10, with zero false positives on music.
+  * **measurement** (post-download): 2 axes on probe windows. Caught 6, of which **1 has no
+    collection tell at all** (`gamelan-edc5dbd8`, "Art Monthly Talk Show", filed only under
+    `opensource_audio`) and is therefore reachable by no metadata gate whatsoever.
+
+The measured gate is NOT the rhythm-density floor that suggests itself. That was tried first and
+MEASURED DEAD: beat density over all 42 clips spans 1.45..2.85 b/s, with the 2.5-hour lecture at
+1.55 and a gnawa at 1.60 — all 42 clear the 0.8 b/s floor, so it separates nothing. The beat
+detector's hallucinated grid is not merely unreliable, it is uniformly dense. See SPEECH_LER_MIN.
+
   usage:  scripts/world_harvest.py [--per 3] [--only slug,slug] [--lane cc|pd78|all] [--dry-run]
+          scripts/world_harvest.py --recheck [--quarantine]   # census the corpus; move the speech out
   out:    downloads/world/clips/<slug>-<n>.wav        35 s, 44.1 kHz stereo
           downloads/world/MANIFEST.jsonl              one line per clip, provenance verbatim
           downloads/world/harvest.log
+          downloads/world/quarantine/                          --quarantine moves, never deletes
 """
 from __future__ import annotations
 
@@ -58,6 +80,62 @@ SILENCE_FLOOR_DBFS = -45.0 # a near-silent source yields a dead mix (0 beats), s
 MAX_FETCH_BYTES = 400 * 1024 * 1024
 BULK_TAG_LIMIT = 15        # more tags than this and the item describes a shelf, not a recording
 NARROW_TAG_CHARS = 40      # a tag long enough to hold a sentence is not a genre label
+
+# A SUBJECT TAG SAYS WHAT AN ITEM IS ABOUT, NEVER WHAT IT IS. `subject:("balkan")` is a genuine
+# metadata gate and it is still the wrong one: a 1916 Cambridge lecture series on the Balkans
+# carries subject `balkans`, and a podcast episode discussing the oud carries subject `oud`. Both
+# are real, licensed, audio, long enough and not near-silent, so every SKIP arm above passes them —
+# the failure direction is SILENT. Measured on this repo's own corpus 2026-08-30: 10 of 42 rows
+# (24%) were speech or talk radio, not music.
+#
+# A COLLECTION is the opposite kind of claim: archive.org files librivox, podcasts and radio shows
+# into their own collections by FORMAT, i.e. by what the item IS. Membership is therefore a gate and
+# topicality is not. Measured catch on the 42-row corpus: 9 of the 10 contaminants, zero false
+# positives on music.
+#
+# `audio_religion` is deliberately NOT here and the omission is measured, not an oversight: it is a
+# SUBJECT collection like the tags above, and its one member in this corpus (`persian-080e0a3d`,
+# "Sabke Man") reads pulse 0.597 — the third most rhythmic item of all 42. A subject collection
+# smuggled into a format list is the same defect one ring in.
+SPEECH_COLLECTIONS = frozenset({
+    "librivoxaudio", "audio_bookspoetry", "librivox_audiobooks",
+    "podcasts", "podcasts_miscellaneous", "podcast",
+    "radioprograms", "radioshowarchive", "radioshowinbox", "radiostationarchives",
+    "oralhistory", "audio_news", "audio_podcast", "spokenword", "lecture",
+})
+
+# THE POST-DOWNLOAD DISCRIMINATOR, AND WHY IT IS NOT THE ONE THAT WAS ASKED FOR.
+# The brief proposed a rhythm-DENSITY floor, on the standing rule that the beat detector
+# hallucinates a grid and cannot report "no rhythm". The rule is right and the remedy does not
+# follow from it: MEASURED over all 42 clips, beat density spans 1.45..2.85 b/s with the 2.5-hour
+# LECTURE at 1.55 and a gnawa at 1.60 — every single clip clears the 0.8 b/s floor, so the density
+# gate separates NOTHING. The hallucinated grid is not merely unreliable, it is uniformly dense.
+#
+# Two axes that do separate, and they only work as a CONJUNCTION:
+#   ler   low-energy rate — the share of frames under half the mean RMS. Speech pauses between
+#         syllables and words; sustained music does not.
+#   pulse the peak of the normalised autocorrelation of the onset envelope over musical lags
+#         (30..300 BPM). Unlike a beat COUNT this can return ~0, i.e. it CAN say "no rhythm".
+# Neither alone is usable: `pulse` alone also condemns `ethiopian-15e1bb37` (0.106), `soukous-04da23da`
+# (0.115) and `kora-2a1f3ad4` (0.135), which are music with a loose pulse; `ler` alone also condemns
+# the georgeblood 78s, whose shellac gaps and inter-track silence inflate it. The AND spares all of them.
+#
+# Thresholds are the MIDPOINTS of the measured gap on the cc lane, not round numbers:
+#   ler    highest survivor 0.233 (carnatic-6677e027) .. lowest catch 0.288 (oud-c9e51a5a)  -> 0.26
+#   pulse  lowest survivor  0.215 (carnatic-6400be30) .. highest catch 0.171 (gamelan-edc5dbd8) -> 0.19
+# On the cc lane that is 6 caught, 6 speech, 0 false positives. Re-derive with --recheck; do not
+# quote these numbers as still true of a corpus that has moved.
+SPEECH_LER_MIN   = float(os.environ.get("WH_SPEECH_LER_MIN", "0.26"))
+SPEECH_PULSE_MAX = float(os.environ.get("WH_SPEECH_PULSE_MAX", "0.19"))
+SPEECH_PROBES    = 3       # windows spread across the track
+SPEECH_WIN       = 20.0    # seconds per window
+
+# The pd78 lane is EXEMPT from the measured gate and the exemption is a mechanism, not a
+# convenience: both false positives the two axes produced on the whole corpus are georgeblood 78s
+# (`fado-10371737` ler 0.443 / pulse 0.108, `koto-c5a41c40` 0.288 / 0.151), where shellac surface
+# noise depresses pulse and the silence between medley sides inflates ler. Their columns are still
+# MEASURED and written; only the skip is withheld, and the row says so.
+SPEECH_GATE_LANES = ("cc",)
 
 # slug | region | lane | archive.org subject term | the timeline its grains should land on.
 # The pattern column is the point of the pairing: a source is ground on a grid from its OWN metric
@@ -150,8 +228,13 @@ def search(lane: str, term: str, rows: int):
     if lane == "pd78":
         q = f'collection:(georgeblood) AND ("{term}")'
     else:
+        # The NOT clause is a bandwidth saving, NOT the gate — a search index and an item's own
+        # metadata can disagree, and a query-side exclusion produces no SKIP line anyone can read.
+        # The gate that actually decides is collection_confirms() below, on the item's own metadata.
+        deny = " OR ".join(sorted(SPEECH_COLLECTIONS))
         q = (f'mediatype:(audio) AND subject:("{term}") '
-             f'AND licenseurl:(*creativecommons* OR *publicdomain*)')
+             f'AND licenseurl:(*creativecommons* OR *publicdomain*) '
+             f'AND NOT collection:({deny})')
     params = [("q", q), ("rows", str(rows)), ("output", "json"), ("sort[]", "downloads desc")]
     for f in ("identifier", "title", "creator", "licenseurl", "subject", "year", "collection"):
         params.append(("fl[]", f))
@@ -196,6 +279,127 @@ def subject_confirms(meta: dict, term: str) -> tuple[bool, str]:
     if any(term in t for t in tags):
         return False, "term only inside a wide tag — not specific to this item"
     return False, "term not in the item's own subject tags (title-only match)"
+
+
+def collections_of(meta: dict) -> list[str]:
+    c = meta.get("metadata", {}).get("collection", [])
+    if isinstance(c, str):
+        c = [c]
+    return [str(x).strip().lower() for x in c if str(x).strip()]
+
+
+def collection_confirms(meta: dict) -> tuple[bool, str]:
+    """Reject an item whose OWN collections say it is a book, a podcast or a radio show.
+
+    This is the pre-download half of the subject-tag defect. It costs one metadata read that was
+    already being made, and it is the only one of the two halves that saves the download.
+    """
+    hit = sorted(set(collections_of(meta)) & SPEECH_COLLECTIONS)
+    if hit:
+        return False, "speech-format collection %s — a show/book/podcast, not a recording" % ",".join(hit)
+    return True, ""
+
+
+def speech_axes(path: Path, dur: float | None) -> dict:
+    """MEASURED speech-vs-music axes over probe windows spread across the track.
+
+    Returns `{"ler":…, "pulse":…, "cov":…, "n":…}` or `{"why": …}` when it could not measure.
+    It NEVER returns a number it did not measure: an absent librosa, an unreadable file or a
+    too-short track render `why`, and the caller writes `unmeasured` rather than a passing verdict.
+
+    COVERAGE TRAVELS WITH THE READING. The probes total SPEECH_PROBES * SPEECH_WIN seconds against a
+    corpus whose median track is 434 s, so a typical reading covers ~14% and the 2.5-hour lecture
+    0.7%. A window narrower than its subject reports a SAMPLE, not a state, and `cov` is what lets a
+    consumer see which one it is holding.
+    """
+    try:
+        import numpy as np
+        import librosa
+    except ImportError:
+        venv = ROOT / ".venv" / "bin" / "python"
+        if not venv.exists():
+            return {"why": "librosa absent and no repo venv to re-exec into"}
+        r = subprocess.run([str(venv), __file__, "--speech", str(path), str(dur or 0)],
+                           capture_output=True, text=True)
+        try:
+            return json.loads(r.stdout.strip())
+        except (ValueError, json.JSONDecodeError):
+            return {"why": "venv re-exec produced no reading"}
+
+    if dur is None:
+        return {"why": "no duration known — cannot place a probe window"}
+    if dur < 5:
+        return {"why": "too short to probe (dur=%.1fs)" % dur}
+    # The probes must not OVERLAP, or `cov` double-counts and can exceed 1.0 — measured live on
+    # `carnatic-6677e027` (a 31 s track), where three 20 s windows summed to cov=1.917. A coverage
+    # term that can report more than the whole track is not a coverage term. Drop probes until they
+    # fit, and clamp as a second line of defence.
+    win = min(SPEECH_WIN, dur)
+    nprobe = max(1, min(SPEECH_PROBES, int(dur // win)))
+    if nprobe <= 1 or dur <= win:
+        offs, win = [0.0], win
+    else:
+        offs = [max(0.0, min(dur - win, dur * (i + 1) / (nprobe + 1) - win / 2))
+                for i in range(nprobe)]
+
+    lers, pulses, probed = [], [], 0.0
+    probe = path.with_suffix(".speech.wav")
+    try:
+        for off in offs:
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(off), "-t", str(win),
+                                "-i", str(path), "-ac", "1", "-ar", "22050", str(probe)],
+                               capture_output=True)
+            if r.returncode != 0 or not probe.exists():
+                continue
+            try:
+                y, sr = librosa.load(str(probe), sr=22050, mono=True)
+            except Exception:
+                continue
+            if len(y) < sr:
+                continue
+            S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
+            rms = librosa.feature.rms(S=S)[0]
+            if rms.mean() <= 0:
+                continue
+            lers.append(float((rms < 0.5 * rms.mean()).mean()))
+            o = librosa.onset.onset_strength(S=librosa.power_to_db(S ** 2), sr=sr)
+            o = o - o.mean()
+            if o.std() < 1e-9:
+                pulses.append(0.0)
+            else:
+                ac = librosa.autocorrelate(o, max_size=len(o))
+                ac = ac / (ac[0] + 1e-12)
+                fps = sr / 512.0
+                lo, hi = int(fps * 60 / 300), min(int(fps * 60 / 30), len(ac) - 1)
+                pulses.append(float(ac[lo:hi].max()) if hi > lo else 0.0)
+            probed += len(y) / sr
+    finally:
+        probe.unlink(missing_ok=True)
+
+    if not lers or not pulses:
+        return {"why": "no probe window was readable"}
+    import statistics
+    return {"ler": round(statistics.median(lers), 3),
+            "pulse": round(statistics.median(pulses), 3),
+            "cov": round(min(1.0, probed / dur), 4), "n": len(lers)}
+
+
+def speech_verdict(ax: dict, lane: str) -> tuple[str, str]:
+    """`(verdict, why)` — one of speech / music / unmeasured / exempt-<lane>.
+
+    An unmeasurable reading is its OWN word. Folding it into `music` would make a missing
+    interpreter indistinguishable from a passing measurement, which is the silent-fallback shape
+    this gate exists to remove.
+    """
+    if "why" in ax:
+        return "unmeasured", ax["why"]
+    hot = ax["ler"] >= SPEECH_LER_MIN and ax["pulse"] <= SPEECH_PULSE_MAX
+    detail = "ler=%.3f pulse=%.3f cov=%.3f n=%d" % (ax["ler"], ax["pulse"], ax["cov"], ax["n"])
+    if not hot:
+        return "music", detail
+    if lane not in SPEECH_GATE_LANES:
+        return "exempt-%s" % lane, detail + " — over the speech thresholds but the lane is exempt"
+    return "speech", detail
 
 
 def pick_file(meta: dict):
@@ -338,6 +542,14 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             log(f"  SKIP {ident}: {why}")
             continue
 
+        # The subject gate above asked what the item is ABOUT; this one asks what it IS. `--loose`
+        # does NOT disable it — loose exists to widen the TOPIC match, and a librivox lecture is not
+        # a loose match for a tradition, it is a different medium.
+        okc, whyc = collection_confirms(meta)
+        if not okc:
+            log(f"  SKIP {ident}: {whyc}")
+            continue
+
         md = meta.get("metadata", {})
         licenceurl = md.get("licenseurl")
         if lane == "cc":
@@ -392,6 +604,20 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             clip.unlink(missing_ok=True)
             continue
 
+        # The post-download half. It costs the download it cannot prevent, which is exactly why the
+        # collection gate above exists — but a talk show filed under `opensource_audio` carries no
+        # collection tell at all (`gamelan-edc5dbd8`, "Art Monthly Talk Show"), and only a
+        # measurement catches it. The two remedies are not alternatives.
+        ax = speech_axes(clip, dur)
+        verdict, vwhy = speech_verdict(ax, lane)
+        if verdict == "speech":
+            log(f"  SKIP {ident}: measured SPEECH not music ({vwhy})")
+            clip.unlink(missing_ok=True)
+            continue
+        if verdict in ("unmeasured",) or verdict.startswith("exempt-"):
+            # Loud on purpose: a gate that could not run must not read like a gate that passed.
+            log(f"  KEEP {ident}: speech gate {verdict} — {vwhy}")
+
         row = {
             "slug": cslug, "tradition": slug, "region": region, "lane": lane,
             "pattern": pattern, "search_term": term,
@@ -403,6 +629,12 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             "source_url": url, "match_basis": why,
             "duration_s": round(dur, 1), "cut": None,   # the WHOLE track — see the NO CUT note
             "mean_dbfs": loud, "top_freq_khz": top_freq_khz(clip),
+            # MEASURED columns, so "is this corpus music?" is answerable from the manifest instead
+            # of being re-estimated from titles. `speech_cov` is the share of the track actually
+            # probed — read it before reading the two axes.
+            "speech_ler": ax.get("ler"), "speech_pulse": ax.get("pulse"),
+            "speech_cov": ax.get("cov"), "speech_verdict": verdict,
+            "speech_why": vwhy,
             "clip": str(clip.relative_to(ROOT)),
             "harvested": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
@@ -412,6 +644,98 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
         got += 1
 
     return got
+
+
+def recheck(quarantine: bool = False) -> int:
+    """Re-measure the existing manifest. Prints one line per clip and a census by verdict.
+
+    Every number this file's comments quote came from here. A threshold calibrated against a corpus
+    ROTS as the corpus moves, so re-run this rather than trusting the constants.
+    """
+    if not MANIFEST.exists():
+        log("recheck: no manifest at %s" % MANIFEST)
+        return 2
+    rows = []
+    for line in MANIFEST.read_text().splitlines():
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            continue
+    counts, coll_hits, missing = {}, 0, 0
+    by_coll, by_measure = set(), set()
+    for r in rows:
+        clip = ROOT / r.get("clip", "")
+        colls = r.get("collection") or []
+        if isinstance(colls, str):
+            colls = [colls]
+        cl = sorted(set(c.strip().lower() for c in colls) & SPEECH_COLLECTIONS)
+        if cl:
+            coll_hits += 1
+            by_coll.add(r.get("slug"))
+        if not clip.exists():
+            missing += 1
+            print("%-24s CLIP-MISSING%s" % (r.get("slug"), "  collection:" + ",".join(cl) if cl else ""))
+            counts["clip-missing"] = counts.get("clip-missing", 0) + 1
+            continue
+        ax = speech_axes(clip, r.get("duration_s"))
+        v, why = speech_verdict(ax, r.get("lane", "cc"))
+        r["speech_ler"], r["speech_pulse"] = ax.get("ler"), ax.get("pulse")
+        r["speech_cov"], r["speech_verdict"], r["speech_why"] = ax.get("cov"), v, why
+        counts[v] = counts.get(v, 0) + 1
+        if v == "speech":
+            by_measure.add(r.get("slug"))
+        print("%-24s %-14s %s%s  :: %s" % (
+            r.get("slug"), v, why,
+            ("  collection:" + ",".join(cl)) if cl else "",
+            (r.get("title") or "")[:44]), flush=True)
+    n = len(rows)
+    print("\n=== %d row(s) ===" % n)
+    for k in sorted(counts):
+        print("  %-14s %d" % (k, counts[k]))
+    print("  %-14s %d  (pre-download gate would have refused these without downloading)"
+          % ("speech-collection", coll_hits))
+    # The UNION, computed, not bounded. `speech + speech-collection` is not the contamination
+    # count: the two gates overlap heavily by design, and printing their sum would inflate the very
+    # number this mode exists to measure.
+    union, both = by_coll | by_measure, by_coll & by_measure
+    print("  contamination: %d of %d (%.0f%%) — %d by collection only, %d by measurement only, "
+          "%d by both" % (len(union), n, 100.0 * len(union) / n if n else 0,
+                          len(by_coll - by_measure), len(by_measure - by_coll), len(both)))
+    if quarantine:
+        QUAR = OUT / "quarantine"
+        moved, annotated = 0, []
+        for r in rows:
+            slug = r.get("slug")
+            if slug not in union:
+                annotated.append(r)
+                continue
+            clip = ROOT / r.get("clip", "")
+            reasons = []
+            if slug in by_coll:
+                reasons.append("speech-format collection")
+            if slug in by_measure:
+                reasons.append("measured speech")
+            r["quarantined"] = " + ".join(reasons)
+            r["quarantined_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            if clip.exists():
+                QUAR.mkdir(parents=True, exist_ok=True)
+                dest = QUAR / clip.name
+                clip.rename(dest)
+                r["clip"] = str(dest.relative_to(ROOT))
+                moved += 1
+            annotated.append(r)
+        with MANIFEST.open("w") as fh:
+            for r in annotated:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print("  quarantined: %d clip(s) moved to %s; %d manifest row(s) annotated"
+              % (moved, QUAR.relative_to(ROOT), len(union)))
+    only_m = sorted(by_measure - by_coll)
+    if only_m:
+        print("  measurement-only (no collection tell — the pre-download gate CANNOT catch these): %s"
+              % ", ".join(only_m))
+    print("  thresholds in force: ler>=%.3f AND pulse<=%.3f, gate lanes %s"
+          % (SPEECH_LER_MIN, SPEECH_PULSE_MAX, ",".join(SPEECH_GATE_LANES)))
+    return 0
 
 
 def main() -> int:
@@ -424,6 +748,15 @@ def main() -> int:
                     help="print tradition<TAB>grid from the CURRENT table and exit — the manifest "
                          "stores whatever the pairing was at harvest time, and the pairing is CODE, "
                          "so a consumer must re-read it here instead of trusting a stale copy")
+    ap.add_argument("--quarantine", action="store_true",
+                    help="with --recheck: MOVE every contaminated clip out of clips/ into "
+                         "quarantine/ and annotate its manifest row. It moves rather than deletes — "
+                         "these clips ARE the evidence for the contamination rate, and a gate that "
+                         "destroys its own counterexamples cannot be re-audited when it drifts")
+    ap.add_argument("--recheck", action="store_true",
+                    help="re-measure the EXISTING manifest against both gates and print a census — "
+                         "the contamination rate is a measurement, not an estimate from titles, and "
+                         "the thresholds in this file must be re-derived here rather than quoted")
     ap.add_argument("--loose", action="store_true",
                     help="accept title-only keyword matches (noisy — says so per hit)")
     args = ap.parse_args()
@@ -432,6 +765,9 @@ def main() -> int:
         for slug, _region, _lane, _term, pattern in TRADITIONS:
             print(f"{slug}\t{pattern}")
         return 0
+
+    if args.recheck:
+        return recheck(quarantine=args.quarantine)
 
     only = {s.strip() for s in args.only.split(",") if s.strip()}
     OUT.mkdir(parents=True, exist_ok=True)
@@ -461,6 +797,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 4 and sys.argv[1] == "--speech":
+        # The re-exec entry point for speech_axes above, same shape as --measure: the repo venv
+        # holds librosa and a harvest launched with plain `python3` cannot see it.
+        print(json.dumps(speech_axes(Path(sys.argv[2]), float(sys.argv[3]) or None)))
+        sys.exit(0)
     if len(sys.argv) == 3 and sys.argv[1] == "--measure":
         # The re-exec entry point for top_freq_khz above. Prints one number or nothing.
         v = top_freq_khz(Path(sys.argv[2]))

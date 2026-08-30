@@ -42,6 +42,20 @@ mkdir -p "$OUT"
 
 [ -s "$MANIFEST" ] || { echo "no corpus — run scripts/world_harvest.py first" >&2; exit 2; }
 
+# A SUBJECT TAG SAYS WHAT AN ITEM IS ABOUT, NOT WHAT IT IS — so the harvester's subject gate admitted
+# a 1916 lecture series as `balkan` and this loop would have ground it on an aksak7 grid it does not
+# have. `--recheck --quarantine` MOVES such clips, but moving is not enough: the manifest row still
+# names them and `[ -s "$clip" ]` finds them at their new path, so the grinder must refuse them by
+# their DECLARATION. Polarity is deliberate — exclude what declares itself contaminated rather than
+# admitting only what declares itself music, so a manifest predating those fields still grinds
+# instead of silently going empty.
+excluded=$(jq -r 'select(.quarantined or (.speech_verdict == "speech")) | .slug' "$MANIFEST" | wc -l)
+total=$(wc -l < "$MANIFEST")
+if [ "$excluded" -gt 0 ]; then
+  echo "EXCLUDED $excluded of $total manifest row(s): quarantined or measured speech" | tee -a "$LOG"
+  jq -r 'select(.quarantined or (.speech_verdict == "speech")) | "  - \(.slug)  \(.quarantined // .speech_verdict)  :: \(.title)"' "$MANIFEST" | tee -a "$LOG"
+fi
+
 PATTAB=$(python3 scripts/world_harvest.py --patterns 2>/dev/null)
 [ -n "$PATTAB" ] || echo "WARN: current pairing table unreadable — falling back to the manifest's harvest-time grids" | tee -a "$LOG"
 
@@ -82,7 +96,7 @@ while IFS=$'\t' read -r slug clip pattern tradition region licence kind ident ba
   dur=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$clip" 2>/dev/null)
   dur=${dur%.*}; dur=${dur:-0}
   need=$(( dur * 412 / 100 + 230 ))
-  avail=${MESH_GRIND_MEM_MB:-$(awk '"'"'/MemAvailable/{print int($2/1024)}'"'"' /proc/meminfo)}
+  avail=${MESH_GRIND_MEM_MB:-$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)}
   if [ "$need" -gt "$avail" ]; then
     printf 'SKIP-MEM %-16s %-13s %ss of audio wants ~%s MB, only %s MB available\n' \
       "$slug" "$pattern" "$dur" "$need" "$avail" | tee -a "$LOG"
@@ -125,7 +139,7 @@ SIDE
   printf '%-4s %-16s %-13s %4ss %7s  %s\n    %s\n' \
     "$tag" "$slug" "$pattern" "$((t1-t0))" "$(du -h "$final" | cut -f1)" "$licence" "$verdict" \
     | tee -a "$LOG"
-done < <(jq -r '[.slug,.clip,.pattern,.tradition,.region,(.licenceurl//"georgeblood: collection-level PD claim, no per-item licence"),.licence_kind,.identifier,.match_basis,(.title|tostring)]|@tsv' "$MANIFEST")
+done < <(jq -r 'select((.quarantined|not) and (.speech_verdict != "speech")) | [.slug,.clip,.pattern,.tradition,.region,(.licenceurl//"georgeblood: collection-level PD claim, no per-item licence"),.licence_kind,.identifier,.match_basis,(.title|tostring)]|@tsv' "$MANIFEST")
 
 printf '=== %d song / %d dropped / %d unverifiable / %d skipped ===\n' \
   "$pass" "$fail" "$unver" "$skipped" | tee -a "$LOG"
