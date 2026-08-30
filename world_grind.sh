@@ -71,6 +71,24 @@ while IFS=$'\t' read -r slug clip pattern tradition region licence kind ident ba
   seed=$(printf '%s' "$slug" | cksum | cut -d' ' -f1)
   amc="$amc seed $((seed % 9000 + 1000))"
 
+  # MEMORY, not length, is what bounds a grind here, and the arithmetic is measured, not guessed:
+  # peak RSS is linear in feed length at ~4.12 MB per second of audio plus a ~230 MB base, and it
+  # does NOT depend on the recipe (2026-08-21: the most pathological and the calmest recipe landed
+  # 108 KB apart across five gigabytes). A 75-minute source therefore wants ~18.8 GB, which this
+  # 31 GB node cannot give while the minds are resident. Refusing such a track LOUDLY, with the
+  # number, is not the input cap this repo already deleted — that cap silently truncated every
+  # source; this declines a whole one and says exactly why, and raising MESH_GRIND_MEM_MB or
+  # freeing memory makes it run untouched.
+  dur=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$clip" 2>/dev/null)
+  dur=${dur%.*}; dur=${dur:-0}
+  need=$(( dur * 412 / 100 + 230 ))
+  avail=${MESH_GRIND_MEM_MB:-$(awk '"'"'/MemAvailable/{print int($2/1024)}'"'"' /proc/meminfo)}
+  if [ "$need" -gt "$avail" ]; then
+    printf 'SKIP-MEM %-16s %-13s %ss of audio wants ~%s MB, only %s MB available\n' \
+      "$slug" "$pattern" "$dur" "$need" "$avail" | tee -a "$LOG"
+    skipped=$((skipped+1)); continue
+  fi
+
   before=$(ls -t "$OUT"/*.mp3 2>/dev/null | head -1)
   t0=$(date +%s)
   if ! timeout 900 $PY main.py "$clip" "$OUT/" amc $amc >"$OUT/.$slug.render.log" 2>&1; then

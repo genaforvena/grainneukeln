@@ -287,6 +287,21 @@ def duration_of(path: Path) -> float | None:
         return None
 
 
+def clip_slug(tradition, ident):
+    """`<tradition>-<8 hex of the identifier>`, NOT `<tradition>-<counter>`.
+
+    The counter version restarted at 0 on every run while `seen` only de-duplicated identifiers,
+    so a second run wrote a DIFFERENT recording into `gnawa-0.wav` and appended a second `gnawa-0`
+    row — leaving the first row's licence and archive.org id pointing at audio that had been
+    replaced underneath it. Not a cosmetic collision: it silently attributes one item's licence to
+    another item's sound, the exact failure this whole manifest exists to make impossible. Keying
+    on the identifier makes a re-harvest idempotent instead.
+    """
+    import hashlib
+
+    return "%s-%s" % (tradition, hashlib.sha1(ident.encode()).hexdigest()[:8])
+
+
 def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
     got, tried = 0, 0
     for doc in search(lane, term, rows=want * 8):
@@ -341,12 +356,13 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
         url = ("https://archive.org/download/" + urllib.parse.quote(ident) + "/"
                + urllib.parse.quote(f["name"]))
         if dry:
-            log(f"  WOULD {slug}-{got}: {ident} [{licence_kind}] {licenceurl or '-'} :: {f['name']}")
+            log(f"  WOULD {clip_slug(slug, ident)}: {ident} [{licence_kind}] {licenceurl or '-'} :: {f['name']}")
             got += 1
             continue
 
         CLIPS.mkdir(parents=True, exist_ok=True)
-        tmp = CLIPS / f".{slug}-{got}.src"
+        cslug = clip_slug(slug, ident)
+        tmp = CLIPS / f".{cslug}.src"
         dl = subprocess.run(["curl", "-sSL", "-m", "300", "-o", str(tmp), url])
         if dl.returncode != 0 or not tmp.exists() or tmp.stat().st_size < 10000:
             log(f"  SKIP {ident}: download failed")
@@ -359,7 +375,7 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             tmp.unlink(missing_ok=True)
             continue
 
-        clip = CLIPS / f"{slug}-{got}.wav"
+        clip = CLIPS / f"{cslug}.wav"
         cut = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(tmp),
              "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(clip)],
@@ -377,7 +393,7 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
             continue
 
         row = {
-            "slug": f"{slug}-{got}", "tradition": slug, "region": region, "lane": lane,
+            "slug": cslug, "tradition": slug, "region": region, "lane": lane,
             "pattern": pattern, "search_term": term,
             "identifier": ident, "item_url": f"https://archive.org/details/{ident}",
             "title": md.get("title"), "creator": md.get("creator"), "year": md.get("year"),
@@ -392,7 +408,7 @@ def harvest_one(slug, region, lane, term, pattern, want, dry, loose, seen):
         }
         with MANIFEST.open("a") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-        log(f"  OK   {slug}-{got}  {licence_kind}  {licenceurl or 'georgeblood'}  :: {md.get('title')}")
+        log(f"  OK   {cslug}  {licence_kind}  {licenceurl or 'georgeblood'}  :: {md.get('title')}")
         got += 1
 
     return got
